@@ -80,3 +80,16 @@ describe("accessibility primitives", () => {
     expect(input).toHaveAccessibleDescription("Enter a valid email address.");
   });
 });
+
+describe("AnimatedNumber", () => {
+  it("exposes the final value to assistive tech immediately", async () => {
+    const { AnimatedNumber } = await import("./animated-number");
+    render(<AnimatedNumber value="6,428" />);
+    expect(screen.getByText("6,428", { selector: ".sr-only" })).toBeInTheDocument();
+  });
+  it("renders non-numeric values unchanged", async () => {
+    const { AnimatedNumber } = await import("./animated-number");
+    render(<AnimatedNumber value="7h 12m" />);
+    expect(screen.getAllByText("7h 12m")).toHaveLength(2);
+  });
+});

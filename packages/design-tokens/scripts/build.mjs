@@ -71,42 +71,42 @@ function swiftHex(hex) {
 
 function buildSwift() {
   const lines = [`// ${HEADER}`, "", "import SwiftUI", ""];
-  lines.push("public enum DesignTokens {");
-  lines.push("    public enum Colors {");
+  lines.push("enum DesignTokens {");
+  lines.push("    enum Colors {");
   for (const [k, v] of Object.entries(tokens.color)) {
     const dark = tokens.colorDark[k].value;
     if (v.description) lines.push(`        /// ${v.description}`);
-    lines.push(`        public static let ${k} = Color(light: ${swiftHex(v.value)}, dark: ${swiftHex(dark)})`);
+    lines.push(`        static let ${k} = Color(light: ${swiftHex(v.value)}, dark: ${swiftHex(dark)})`);
   }
   lines.push("    }", "");
-  lines.push("    public enum Radius {");
-  for (const [k, v] of Object.entries(tokens.radius)) lines.push(`        public static let ${k}: CGFloat = ${v.value}`);
+  lines.push("    enum Radius {");
+  for (const [k, v] of Object.entries(tokens.radius)) lines.push(`        static let ${k}: CGFloat = ${v.value}`);
   lines.push("    }", "");
-  lines.push("    public enum Spacing {");
-  for (const [k, v] of Object.entries(tokens.spacing)) lines.push(`        public static let ${k}: CGFloat = ${v.value}`);
+  lines.push("    enum Spacing {");
+  for (const [k, v] of Object.entries(tokens.spacing)) lines.push(`        static let ${k}: CGFloat = ${v.value}`);
   lines.push("    }", "");
-  lines.push("    public struct TypeStyle: Sendable {");
-  lines.push("        public let size: CGFloat");
-  lines.push("        public let weight: Int");
-  lines.push("        public let lineHeight: CGFloat");
-  lines.push("        public let tracking: CGFloat");
+  lines.push("    struct TypeStyle: Sendable {");
+  lines.push("        let size: CGFloat");
+  lines.push("        let weight: Int");
+  lines.push("        let lineHeight: CGFloat");
+  lines.push("        let tracking: CGFloat");
   lines.push("    }", "");
-  lines.push("    public enum Typography {");
+  lines.push("    enum Typography {");
   for (const [k, v] of Object.entries(tokens.typography)) {
-    lines.push(`        public static let ${k} = TypeStyle(size: ${v.size}, weight: ${v.weight}, lineHeight: ${v.lineHeight}, tracking: ${v.tracking})`);
+    lines.push(`        static let ${k} = TypeStyle(size: ${v.size}, weight: ${v.weight}, lineHeight: ${v.lineHeight}, tracking: ${v.tracking})`);
   }
   lines.push("    }", "");
-  lines.push("    public struct ShadowStyle: Sendable {");
-  lines.push("        public let x: CGFloat");
-  lines.push("        public let y: CGFloat");
-  lines.push("        public let radius: CGFloat");
-  lines.push("        public let color: UInt32");
-  lines.push("        public let opacity: Double");
+  lines.push("    struct ShadowStyle: Sendable {");
+  lines.push("        let x: CGFloat");
+  lines.push("        let y: CGFloat");
+  lines.push("        let radius: CGFloat");
+  lines.push("        let color: UInt32");
+  lines.push("        let opacity: Double");
   lines.push("    }", "");
-  lines.push("    public enum Shadow {");
+  lines.push("    enum Shadow {");
   for (const [k, v] of Object.entries(tokens.shadow)) {
     // CSS blur ≈ 2 × SwiftUI shadow radius
-    lines.push(`        public static let ${k} = ShadowStyle(x: ${v.x}, y: ${v.y}, radius: ${v.blur / 2}, color: ${swiftHex(v.color)}, opacity: ${v.opacity})`);
+    lines.push(`        static let ${k} = ShadowStyle(x: ${v.x}, y: ${v.y}, radius: ${v.blur / 2}, color: ${swiftHex(v.color)}, opacity: ${v.opacity})`);
   }
   lines.push("    }");
   lines.push("}", "");

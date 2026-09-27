@@ -28,7 +28,8 @@ export function ProgressRing({ value, max = 100, size = 120, stroke = 10, tone =
           strokeLinecap="round"
           strokeDasharray={c}
           strokeDashoffset={c * (1 - pct)}
-          className={cn("transition-[stroke-dashoffset] duration-700", toneClasses[tone].fg)}
+          className={cn("animate-ring-draw transition-[stroke-dashoffset] duration-700", toneClasses[tone].fg)}
+          style={{ "--ring-circumference": `${c}` } as React.CSSProperties}
           stroke="currentColor"
         />
       </svg>

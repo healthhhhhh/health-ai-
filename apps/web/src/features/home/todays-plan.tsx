@@ -2,9 +2,10 @@
 
 import type { PlanTask } from "@healthmate/shared-types";
 import { ListChecks } from "lucide-react";
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useRef, useState, useTransition } from "react";
 import { setTaskCompletedAction } from "@/app/(app)/home/actions";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ConfettiBurst } from "@/components/ui/confetti-burst";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProgressBar } from "@/components/ui/progress";
 import { TaskRow } from "@/components/ui/task-row";
@@ -20,9 +21,21 @@ export function TodaysPlan({ tasks, className }: { tasks: PlanTask[]; className?
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { done, total } = planProgress(optimistic);
+  const [celebrations, setCelebrations] = useState(0);
+  const [announcement, setAnnouncement] = useState("");
+  const wasComplete = useRef(total > 0 && done === total);
 
   const toggle = (id: string, completed: boolean) => {
     setError(null);
+    const nextDone = done + (completed ? 1 : -1);
+    const nowComplete = total > 0 && nextDone === total;
+    if (nowComplete && !wasComplete.current) {
+      setCelebrations((c) => c + 1);
+      setAnnouncement("Everything on today's plan is done. Nice work!");
+    } else {
+      setAnnouncement("");
+    }
+    wasComplete.current = nowComplete;
     startTransition(async () => {
       applyOptimistic({ id, completed });
       try {
@@ -48,8 +61,19 @@ export function TodaysPlan({ tasks, className }: { tasks: PlanTask[]; className?
         <EmptyState icon={<ListChecks />} title="Nothing planned today" description="Tasks from your care plan and habits you add will show up here." className="py-6" />
       ) : (
         <>
-          <p className="text-caption font-semibold text-success">
-            {done} of {total} completed
+          <div className="relative flex items-center gap-2">
+            <p className="text-caption font-semibold text-success">
+              {done} of {total} completed
+            </p>
+            {done === total && (
+              <span key={celebrations} className="animate-pop text-caption font-semibold text-success">
+                🎉 All done!
+              </span>
+            )}
+            <ConfettiBurst trigger={celebrations} />
+          </div>
+          <p aria-live="polite" className="sr-only">
+            {announcement}
           </p>
           <ProgressBar value={done} max={total} tone="green" label="Today's plan progress" className="mt-2 mb-1" />
           <div className="divide-y divide-separator">

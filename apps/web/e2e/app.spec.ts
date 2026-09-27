@@ -38,7 +38,7 @@ test.describe("home", () => {
   });
 
   test("completing a task persists across reloads", async ({ page }) => {
-    await page.goto("/home");
+    await page.goto("/home", { waitUntil: "networkidle" }); // wait for hydration before interacting
     const walk = page.getByRole("checkbox", { name: /Evening walk/ });
     const initial = await walk.isChecked();
     await walk.click();
@@ -46,24 +46,54 @@ test.describe("home", () => {
     await page.waitForLoadState("networkidle");
     await page.reload();
     await expect(page.getByRole("checkbox", { name: /Evening walk/ })).toBeChecked({ checked: !initial });
-    await page.getByRole("checkbox", { name: /Evening walk/ }).click(); // restore shared demo state
-    await page.waitForLoadState("networkidle");
+    // Restore the shared demo state, and confirm the server has it before the next test.
+    await page.getByRole("checkbox", { name: /Evening walk/ }).click();
+    await expect(page.getByRole("checkbox", { name: /Evening walk/ })).toBeChecked({ checked: initial });
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByRole("checkbox", { name: /Evening walk/ })).toBeChecked({ checked: initial, timeout: 1000 });
+    }).toPass();
+  });
+
+  test("finishing the whole plan celebrates", async ({ page }) => {
+    await page.goto("/home", { waitUntil: "networkidle" }); // wait for hydration before interacting
+    const boxes = page.getByRole("checkbox"); // only Today's Plan has checkboxes on Home
+    const toggled: number[] = [];
+    for (let i = 0; i < (await boxes.count()); i++) {
+      if (!(await boxes.nth(i).isChecked())) {
+        await boxes.nth(i).click();
+        await expect(boxes.nth(i)).toBeChecked();
+        toggled.push(i);
+      }
+    }
+    await expect(page.getByText("All done!")).toBeVisible();
+    for (const i of toggled) {
+      await boxes.nth(i).click(); // restore shared demo state
+      await expect(boxes.nth(i)).not.toBeChecked();
+    }
+    await expect(async () => {
+      await page.reload();
+      for (const i of toggled) await expect(boxes.nth(i)).not.toBeChecked({ timeout: 1000 });
+    }).toPass();
   });
 
   test("mood check-in gives feedback", async ({ page }) => {
-    await page.goto("/home");
+    await page.goto("/home", { waitUntil: "networkidle" }); // wait for hydration before interacting
     await page.getByText("Good", { exact: true }).click();
     await expect(page.getByRole("radio", { name: "Good" })).toBeChecked();
     await expect(page.getByText("Nice. Your check-in has been saved.")).toBeVisible();
   });
 
   test("has no detectable accessibility violations", async ({ page }) => {
+    // Axe measures colours at a single instant; freeze entrance animations so it sees final styles.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/home");
     const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
     expect(results.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
   });
 
   test("welcome has no detectable accessibility violations", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
     const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
     expect(results.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);

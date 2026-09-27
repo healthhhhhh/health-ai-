@@ -16,7 +16,7 @@ export function IconButton({ label, icon, indicator, className, type = "button",
       aria-label={label}
       title={label}
       className={cn(
-        "relative inline-flex size-10 items-center justify-center rounded-pill text-text-primary transition-colors hover:bg-card-muted [&_svg]:size-5",
+        "relative inline-flex size-10 items-center justify-center rounded-pill text-text-primary transition-colors hover:bg-card-muted [&_svg]:size-5 hover:[&_svg]:animate-wiggle",
         className,
       )}
       {...props}

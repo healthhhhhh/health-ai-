@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import type { Tone } from "@/lib/tone";
+import { AnimatedNumber } from "./animated-number";
 import { IconBadge } from "./icon-badge";
 
 export interface MetricCardProps {
@@ -14,17 +15,20 @@ export interface MetricCardProps {
   context?: string;
   href?: string;
   layout?: "compact" | "stacked";
+  /** Gentle heartbeat on the icon (heart rate). */
+  beat?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }
 
-export function MetricCard({ label, value, unit, icon, tone, context, href, layout = "compact", className }: MetricCardProps) {
+export function MetricCard({ label, value, unit, icon, tone, context, href, layout = "compact", beat, className, style }: MetricCardProps) {
   const body = (
     <>
-      <IconBadge icon={icon} tone={tone} size={layout === "stacked" ? "md" : "md"} />
+      <IconBadge icon={icon} tone={tone} className={beat ? "animate-heartbeat" : undefined} />
       <div className="min-w-0">
         <p className="text-caption text-text-secondary">{label}</p>
         <p className="text-metric whitespace-nowrap text-text-primary">
-          {value}
+          <AnimatedNumber value={value} />
           {unit && <span className="ml-1 text-body font-medium text-text-secondary">{unit}</span>}
         </p>
         {context && <p className="mt-0.5 line-clamp-2 text-xs font-medium text-text-secondary">{context}</p>}
@@ -34,14 +38,16 @@ export function MetricCard({ label, value, unit, icon, tone, context, href, layo
   const classes = cn(
     "flex rounded-lg bg-card p-4 shadow-card transition-shadow",
     layout === "stacked" ? "flex-col gap-3" : "items-center gap-3",
-    href && "hover:ring-1 hover:ring-primary-tint",
+    href && "lift hover:ring-1 hover:ring-primary-tint",
     className,
   );
   return href ? (
-    <Link href={href} className={classes} aria-label={`${label}: ${value}${unit ? ` ${unit}` : ""}${context ? `, ${context}` : ""}`}>
+    <Link href={href} className={classes} style={style} aria-label={`${label}: ${value}${unit ? ` ${unit}` : ""}${context ? `, ${context}` : ""}`}>
       {body}
     </Link>
   ) : (
-    <div className={classes}>{body}</div>
+    <div className={classes} style={style}>
+      {body}
+    </div>
   );
 }

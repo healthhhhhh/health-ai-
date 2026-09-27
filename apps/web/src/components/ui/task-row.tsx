@@ -27,12 +27,12 @@ export function TaskRow({ title, detail, time, completed, onToggle, disabled, so
           checked={completed}
           disabled={disabled}
           onChange={(e) => onToggle(e.target.checked)}
-          className="peer size-6 cursor-pointer appearance-none rounded-sm border-2 border-separator bg-card transition-colors checked:border-primary-fill checked:bg-primary-fill disabled:cursor-not-allowed"
+          className="peer size-6 cursor-pointer appearance-none rounded-sm border-2 border-separator bg-card transition-colors checked:border-primary-fill checked:bg-primary-fill checked:animate-pop disabled:cursor-not-allowed"
         />
-        <Check aria-hidden strokeWidth={3} className="pointer-events-none absolute inset-0 m-auto size-4 text-on-primary opacity-0 peer-checked:opacity-100" />
+        <Check aria-hidden strokeWidth={3} className="pointer-events-none absolute inset-0 m-auto size-4 scale-50 text-on-primary opacity-0 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] peer-checked:scale-100 peer-checked:opacity-100" />
       </span>
       <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
-        <span className={cn("block text-body font-semibold text-text-primary", completed && "text-text-secondary line-through decoration-text-muted")}>{title}</span>
+        <span className={cn("block text-body font-semibold text-text-primary transition-colors duration-300", completed && "text-text-secondary line-through decoration-text-muted")}>{title}</span>
         {(detail || sourceLabel) && (
           <span className="block truncate text-caption text-text-secondary">
             {detail}

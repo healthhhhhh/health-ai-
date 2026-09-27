@@ -22,3 +22,5 @@ export * from "./tabs";
 export * from "./task-row";
 export * from "./timeline-item";
 export * from "./upload-dropzone";
+export * from "./animated-number";
+export * from "./confetti-burst";

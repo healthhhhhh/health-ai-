@@ -24,12 +24,12 @@ export function MoodSelector({ value, onChange, disabled }: { value?: Mood; onCh
             <label
               key={v}
               className={cn(
-                "flex cursor-pointer flex-col items-center gap-1.5 rounded-md py-2.5 text-xs font-semibold transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary",
-                selected ? cn(className, "ring-2 ring-current") : "text-text-secondary hover:bg-card-muted",
+                "flex cursor-pointer flex-col items-center gap-1.5 rounded-md py-2.5 text-xs font-semibold transition-[color,background-color,transform] duration-200 active:scale-95 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary",
+                selected ? cn(className, "scale-105 ring-2 ring-current") : "text-text-secondary hover:-translate-y-0.5 hover:bg-card-muted",
               )}
             >
               <input type="radio" name="mood" value={v} checked={selected} onChange={() => onChange(v)} className="sr-only" />
-              <Icon aria-hidden className="size-6" />
+              <Icon key={selected ? "on" : "off"} aria-hidden className={cn("size-6", selected && "animate-pop")} />
               {label}
             </label>
           );

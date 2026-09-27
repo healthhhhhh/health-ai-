@@ -23,17 +23,19 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Greeting firstName={user.firstName} serverNow={serverNow} timeZone={user.timeZone} />
+      <div className="animate-fade-up">
+        <Greeting firstName={user.firstName} serverNow={serverNow} timeZone={user.timeZone} />
+      </div>
       <HomeAskBar />
 
-      <div className="grid gap-6 xl:grid-cols-12 [&>*]:min-w-0">
+      <div className="animate-fade-up grid gap-6 [animation-delay:60ms] xl:grid-cols-12 [&>*]:min-w-0">
         <AssistantHeroCard firstName={user.firstName} className="xl:col-span-8" />
         <MoodCheckIn initialMood={summary.todayMood?.mood} className="xl:col-span-4" />
       </div>
 
       <TodaysHealth metrics={summary.metrics} />
 
-      <div className="grid gap-6 lg:grid-cols-12 [&>*]:min-w-0">
+      <div className="animate-fade-up grid gap-6 [animation-delay:380ms] lg:grid-cols-12 [&>*]:min-w-0">
         <TodaysPlan tasks={summary.tasks} className="lg:col-span-7" />
         <div className="flex flex-col gap-6 lg:col-span-5">
           {summary.insight && (
@@ -47,7 +49,7 @@ export default async function HomePage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-12 [&>*]:min-w-0">
+      <div className="animate-fade-up grid gap-6 [animation-delay:480ms] lg:grid-cols-12 [&>*]:min-w-0">
         <RecentActivity events={summary.recentActivity} serverNow={serverNow} className="lg:col-span-7" />
         <DailyProgress tasks={summary.tasks} metrics={summary.metrics} className="lg:col-span-5" />
       </div>

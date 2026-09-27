@@ -16,9 +16,23 @@ export function TodaysHealth({ metrics }: { metrics: HealthMetric[] }) {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 [&>*]:min-w-0">
-          {metrics.map((m) => {
+          {metrics.map((m, i) => {
             const p = presentMetric(m);
-            return <MetricCard key={m.kind} label={p.label} value={p.value} unit={p.unit} context={p.context} tone={p.tone} icon={METRIC_ICON[m.kind]} href="/health" />;
+            return (
+              <MetricCard
+                key={m.kind}
+                label={p.label}
+                value={p.value}
+                unit={p.unit}
+                context={p.context}
+                tone={p.tone}
+                icon={METRIC_ICON[m.kind]}
+                href="/health"
+                beat={m.kind === "heart_rate"}
+                className="animate-fade-up"
+                style={{ animationDelay: `${120 + i * 70}ms` }}
+              />
+            );
           })}
         </div>
       )}

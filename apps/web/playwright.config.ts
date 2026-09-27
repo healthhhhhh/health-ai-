@@ -6,7 +6,9 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined;
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // Tests share one in-memory sample-data store on the server, so run them serially.
+  fullyParallel: false,
+  workers: 1,
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${PORT}`,

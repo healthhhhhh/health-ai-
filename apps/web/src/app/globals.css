@@ -48,3 +48,101 @@
 @utility bg-app-gradient {
   background-image: linear-gradient(180deg, var(--color-background-gradient-top) 0%, var(--color-background-gradient-bottom) 60%);
 }
+
+/* ───────────────────────── Motion ─────────────────────────
+   Soft, short and purposeful. Every animation below is neutralised by the
+   prefers-reduced-motion rule in the base layer. */
+
+@theme {
+  --animate-fade-up: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-float: float 4.4s ease-in-out infinite;
+  --animate-blink: blink 4.8s ease-in-out infinite;
+  --animate-wave: wave 2.8s ease-in-out 0.6s 2 both;
+  --animate-heartbeat: heartbeat 1.6s ease-in-out infinite;
+  --animate-pop: pop 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-twinkle: twinkle 2.6s ease-in-out infinite;
+  --animate-halo: halo 3.2s ease-in-out infinite;
+  --animate-wiggle: wiggle 0.5s ease-in-out;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(2%); }
+    50% { transform: translateY(-3%); }
+  }
+  @keyframes blink {
+    0%, 92%, 100% { transform: scaleY(1); }
+    95% { transform: scaleY(0.1); }
+  }
+  @keyframes wave {
+    0%, 100% { transform: rotate(0deg); }
+    15% { transform: rotate(-22deg); }
+    30% { transform: rotate(10deg); }
+    45% { transform: rotate(-18deg); }
+    60% { transform: rotate(6deg); }
+  }
+  @keyframes heartbeat {
+    0%, 40%, 100% { transform: scale(1); }
+    10% { transform: scale(1.18); }
+    20% { transform: scale(1); }
+    30% { transform: scale(1.1); }
+  }
+  @keyframes pop {
+    0% { transform: scale(0.6); }
+    60% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.35; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+  @keyframes halo {
+    0%, 100% { transform: scale(0.96); opacity: 0.7; }
+    50% { transform: scale(1.1); opacity: 0.2; }
+  }
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-14deg); }
+    75% { transform: rotate(12deg); }
+  }
+  @keyframes ring-draw {
+    from { stroke-dashoffset: var(--ring-circumference); }
+  }
+  @keyframes confetti {
+    0% { opacity: 1; transform: translate(0, 0) scale(0.6) rotate(0deg); }
+    70% { opacity: 1; }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(200deg); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+@utility animate-ring-draw {
+  animation: ring-draw 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility animate-confetti {
+  animation: confetti 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@utility skeleton {
+  background-image: linear-gradient(90deg, var(--color-separator) 0%, var(--color-card-muted) 50%, var(--color-separator) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Lift interactive cards slightly on hover. */
+@utility lift {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease;
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 34px rgb(30 58 138 / 0.1);
+  }
+  &:active {
+    transform: translateY(0) scale(0.99);
+  }
+}

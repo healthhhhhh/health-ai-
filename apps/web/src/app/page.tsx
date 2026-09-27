@@ -13,18 +13,21 @@ export default function WelcomePage() {
       <div className="mx-auto grid min-h-dvh max-w-6xl items-center gap-12 px-6 py-12 lg:grid-cols-[1fr_1.05fr] lg:px-10">
         {/* Brand + features */}
         <section aria-labelledby="welcome-title" className="mx-auto flex w-full max-w-md flex-col items-center text-center lg:mx-0 lg:items-start lg:text-left">
-          <span className="mb-6 inline-flex size-28 items-center justify-center rounded-full bg-card shadow-[0_12px_40px_rgb(47_100_236/0.18)] ring-8 ring-primary-soft">
-            <LogoMark size={60} />
+          <span className="animate-fade-up relative mb-6 inline-flex size-28 items-center justify-center">
+            <span aria-hidden className="animate-halo absolute -inset-4 rounded-full bg-primary-tint" />
+            <span className="relative inline-flex size-28 items-center justify-center rounded-full bg-card shadow-[0_12px_40px_rgb(47_100_236/0.18)] ring-8 ring-primary-soft">
+              <LogoMark size={60} className="animate-heartbeat" />
+            </span>
           </span>
-          <h1 id="welcome-title" className="text-display text-text-primary sm:text-[2.5rem]">
+          <h1 id="welcome-title" className="animate-fade-up text-display text-text-primary [animation-delay:80ms] sm:text-[2.5rem]">
             HealthMate
           </h1>
-          <p className="mt-1 text-lg text-text-secondary">Your AI Health Companion</p>
+          <p className="animate-fade-up mt-1 text-lg text-text-secondary [animation-delay:130ms]">Your AI Health Companion</p>
 
           <ul className="mt-9 flex w-full flex-col gap-5 text-left">
-            {ONBOARDING_FEATURES.map(({ title, description, icon: Icon, tone }) => (
-              <li key={title} className="flex items-center gap-4">
-                <IconBadge icon={<Icon />} tone={tone} size="lg" />
+            {ONBOARDING_FEATURES.map(({ title, description, icon: Icon, tone }, i) => (
+              <li key={title} className="animate-fade-up group flex items-center gap-4" style={{ animationDelay: `${220 + i * 90}ms` }}>
+                <IconBadge icon={<Icon />} tone={tone} size="lg" className="transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6" />
                 <div>
                   <p className="text-card-title text-text-primary">{title}</p>
                   <p className="text-caption text-text-secondary">{description}</p>
@@ -33,7 +36,7 @@ export default function WelcomePage() {
             ))}
           </ul>
 
-          <div className="mt-10 flex w-full flex-col items-center gap-3 lg:items-stretch">
+          <div className="animate-fade-up mt-10 flex w-full flex-col items-center gap-3 [animation-delay:600ms] lg:items-stretch">
             <ButtonLink href="/home" size="lg" fullWidth>
               Get Started
             </ButtonLink>
@@ -55,7 +58,7 @@ export default function WelcomePage() {
         </section>
 
         {/* Visual: assistant introduction (desktop/tablet) */}
-        <section aria-label="Meet your AI Health Assistant" className="relative hidden lg:block">
+        <section aria-label="Meet your AI Health Assistant" className="animate-fade-up relative hidden [animation-delay:250ms] lg:block">
           <div className="bg-hero-gradient relative overflow-hidden rounded-xl p-10 shadow-card">
             <div className="flex items-center gap-8">
               <Mascot size={220} withBackdrop />
@@ -70,11 +73,11 @@ export default function WelcomePage() {
               </div>
             </div>
             <div className="mt-8 grid grid-cols-2 gap-3" aria-hidden>
-              <div className="rounded-lg bg-card p-4 shadow-card">
+              <div className="lift rounded-lg bg-card p-4 shadow-card">
                 <p className="text-caption text-text-secondary">Sleep</p>
                 <p className="text-metric text-text-primary">7h 12m</p>
               </div>
-              <div className="rounded-lg bg-card p-4 shadow-card">
+              <div className="lift rounded-lg bg-card p-4 shadow-card">
                 <p className="text-caption text-text-secondary">Today&apos;s plan</p>
                 <p className="text-metric text-text-primary">
                   2 <span className="text-body font-medium text-text-secondary">of 5 done</span>

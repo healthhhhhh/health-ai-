@@ -38,7 +38,9 @@ export function MoodCheckIn({ initialMood, className }: { initialMood?: Mood; cl
     <Card className={cn("flex flex-col", className)}>
       <h2 className="text-card-title text-text-primary">How are you feeling today?</h2>
       <p className="mb-4 text-caption text-text-secondary">A quick daily check-in helps spot patterns over time.</p>
-      <MoodSelector value={mood} onChange={choose} disabled={pending} />
+      <div className="my-auto py-2">
+        <MoodSelector value={mood} onChange={choose} disabled={pending} />
+      </div>
       <p aria-live="polite" className={cn("mt-3 min-h-5 text-caption", error ? "font-medium text-error" : "text-text-secondary")}>
         {error ?? (mood ? FOLLOW_UP[mood] : "")}
       </p>
