@@ -1,0 +1,150 @@
+/* GENERATED FILE — do not edit. Source: packages/design-tokens/tokens.json (run `npm run tokens`). */
+
+:root {
+  --hm-primary: #2A5CE0;
+  --hm-primary-pressed: #224CC2;
+  --hm-primary-fill: #2F64EC;
+  --hm-primary-soft: #EAF0FF;
+  --hm-primary-tint: #DCE6FF;
+  --hm-success: #17783F;
+  --hm-success-soft: #E6F6EC;
+  --hm-warning: #A35600;
+  --hm-warning-soft: #FFF1DF;
+  --hm-error: #C0342A;
+  --hm-error-soft: #FDE9E7;
+  --hm-purple: #6B4DE6;
+  --hm-purple-soft: #EFEAFE;
+  --hm-teal: #0C766C;
+  --hm-teal-soft: #E1F5F2;
+  --hm-background: #F6F8FC;
+  --hm-background-gradient-top: #EEF3FF;
+  --hm-background-gradient-bottom: #FFFFFF;
+  --hm-card: #FFFFFF;
+  --hm-card-muted: #F8FAFD;
+  --hm-separator: #E9EDF5;
+  --hm-text-primary: #101828;
+  --hm-text-secondary: #5B6474;
+  --hm-text-muted: #646D80;
+  --hm-on-primary: #FFFFFF;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --hm-primary: #8AA8FF;
+    --hm-primary-pressed: #A3BBFF;
+    --hm-primary-fill: #3F6FF0;
+    --hm-primary-soft: #1C2744;
+    --hm-primary-tint: #243357;
+    --hm-success: #4CC47E;
+    --hm-success-soft: #15301F;
+    --hm-warning: #F4A340;
+    --hm-warning-soft: #3A2812;
+    --hm-error: #F2766C;
+    --hm-error-soft: #3B1A18;
+    --hm-purple: #A48CFF;
+    --hm-purple-soft: #2A2248;
+    --hm-teal: #3CCBBC;
+    --hm-teal-soft: #123330;
+    --hm-background: #0D1220;
+    --hm-background-gradient-top: #141C33;
+    --hm-background-gradient-bottom: #0D1220;
+    --hm-card: #161D2E;
+    --hm-card-muted: #1B2336;
+    --hm-separator: #262F44;
+    --hm-text-primary: #F2F5FA;
+    --hm-text-secondary: #AAB3C5;
+    --hm-text-muted: #7C8699;
+    --hm-on-primary: #FFFFFF;
+  }
+}
+
+:root[data-theme="dark"] {
+  --hm-primary: #8AA8FF;
+  --hm-primary-pressed: #A3BBFF;
+  --hm-primary-fill: #3F6FF0;
+  --hm-primary-soft: #1C2744;
+  --hm-primary-tint: #243357;
+  --hm-success: #4CC47E;
+  --hm-success-soft: #15301F;
+  --hm-warning: #F4A340;
+  --hm-warning-soft: #3A2812;
+  --hm-error: #F2766C;
+  --hm-error-soft: #3B1A18;
+  --hm-purple: #A48CFF;
+  --hm-purple-soft: #2A2248;
+  --hm-teal: #3CCBBC;
+  --hm-teal-soft: #123330;
+  --hm-background: #0D1220;
+  --hm-background-gradient-top: #141C33;
+  --hm-background-gradient-bottom: #0D1220;
+  --hm-card: #161D2E;
+  --hm-card-muted: #1B2336;
+  --hm-separator: #262F44;
+  --hm-text-primary: #F2F5FA;
+  --hm-text-secondary: #AAB3C5;
+  --hm-text-muted: #7C8699;
+  --hm-on-primary: #FFFFFF;
+}
+
+@theme inline {
+  --color-primary: var(--hm-primary);
+  --color-primary-pressed: var(--hm-primary-pressed);
+  --color-primary-fill: var(--hm-primary-fill);
+  --color-primary-soft: var(--hm-primary-soft);
+  --color-primary-tint: var(--hm-primary-tint);
+  --color-success: var(--hm-success);
+  --color-success-soft: var(--hm-success-soft);
+  --color-warning: var(--hm-warning);
+  --color-warning-soft: var(--hm-warning-soft);
+  --color-error: var(--hm-error);
+  --color-error-soft: var(--hm-error-soft);
+  --color-purple: var(--hm-purple);
+  --color-purple-soft: var(--hm-purple-soft);
+  --color-teal: var(--hm-teal);
+  --color-teal-soft: var(--hm-teal-soft);
+  --color-background: var(--hm-background);
+  --color-background-gradient-top: var(--hm-background-gradient-top);
+  --color-background-gradient-bottom: var(--hm-background-gradient-bottom);
+  --color-card: var(--hm-card);
+  --color-card-muted: var(--hm-card-muted);
+  --color-separator: var(--hm-separator);
+  --color-text-primary: var(--hm-text-primary);
+  --color-text-secondary: var(--hm-text-secondary);
+  --color-text-muted: var(--hm-text-muted);
+  --color-on-primary: var(--hm-on-primary);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+  --text-display: 2.125rem;
+  --text-display--line-height: 2.5rem;
+  --text-display--letter-spacing: -0.0375rem;
+  --text-display--font-weight: 700;
+  --text-page-heading: 1.625rem;
+  --text-page-heading--line-height: 2rem;
+  --text-page-heading--letter-spacing: -0.025rem;
+  --text-page-heading--font-weight: 700;
+  --text-section-heading: 1.1875rem;
+  --text-section-heading--line-height: 1.5rem;
+  --text-section-heading--letter-spacing: -0.0125rem;
+  --text-section-heading--font-weight: 650;
+  --text-card-title: 1rem;
+  --text-card-title--line-height: 1.375rem;
+  --text-card-title--letter-spacing: -0.00625rem;
+  --text-card-title--font-weight: 600;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.375rem;
+  --text-body--letter-spacing: 0rem;
+  --text-body--font-weight: 400;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.125rem;
+  --text-caption--letter-spacing: 0rem;
+  --text-caption--font-weight: 400;
+  --text-metric: 1.5rem;
+  --text-metric--line-height: 1.75rem;
+  --text-metric--letter-spacing: -0.025rem;
+  --text-metric--font-weight: 700;
+  --shadow-card: 0px 6px 24px rgb(30 58 138 / 0.06);
+  --shadow-raised: 0px 10px 30px rgb(59 110 246 / 0.22);
+}

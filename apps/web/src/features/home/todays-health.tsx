@@ -1,0 +1,27 @@
+import type { HealthMetric } from "@healthmate/shared-types";
+import { MetricCard } from "@/components/ui/metric-card";
+import { SectionHeader } from "@/components/ui/section-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { HeartPulse } from "lucide-react";
+import { presentMetric } from "@/lib/metrics";
+import { METRIC_ICON } from "./metric-icons";
+
+export function TodaysHealth({ metrics }: { metrics: HealthMetric[] }) {
+  return (
+    <section aria-labelledby="todays-health">
+      <SectionHeader id="todays-health" title="Today's Health" actionLabel="See All" actionHref="/health" />
+      {metrics.length === 0 ? (
+        <div className="rounded-lg bg-card shadow-card">
+          <EmptyState icon={<HeartPulse />} title="No health data yet" description="Connect Apple Health on iPhone or add a measurement to see your daily snapshot here." />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 [&>*]:min-w-0">
+          {metrics.map((m) => {
+            const p = presentMetric(m);
+            return <MetricCard key={m.kind} label={p.label} value={p.value} unit={p.unit} context={p.context} tone={p.tone} icon={METRIC_ICON[m.kind]} href="/health" />;
+          })}
+        </div>
+      )}
+    </section>
+  );
+}

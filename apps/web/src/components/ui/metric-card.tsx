@@ -1,0 +1,47 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { cn } from "@/lib/cn";
+import type { Tone } from "@/lib/tone";
+import { IconBadge } from "./icon-badge";
+
+export interface MetricCardProps {
+  label: string;
+  value: string;
+  unit?: string;
+  icon: ReactNode;
+  tone: Tone;
+  /** Short context line, e.g. "In your usual range" or "64% of goal". Data → Context → Meaning. */
+  context?: string;
+  href?: string;
+  layout?: "compact" | "stacked";
+  className?: string;
+}
+
+export function MetricCard({ label, value, unit, icon, tone, context, href, layout = "compact", className }: MetricCardProps) {
+  const body = (
+    <>
+      <IconBadge icon={icon} tone={tone} size={layout === "stacked" ? "md" : "md"} />
+      <div className="min-w-0">
+        <p className="text-caption text-text-secondary">{label}</p>
+        <p className="text-metric whitespace-nowrap text-text-primary">
+          {value}
+          {unit && <span className="ml-1 text-body font-medium text-text-secondary">{unit}</span>}
+        </p>
+        {context && <p className="mt-0.5 line-clamp-2 text-xs font-medium text-text-secondary">{context}</p>}
+      </div>
+    </>
+  );
+  const classes = cn(
+    "flex rounded-lg bg-card p-4 shadow-card transition-shadow",
+    layout === "stacked" ? "flex-col gap-3" : "items-center gap-3",
+    href && "hover:ring-1 hover:ring-primary-tint",
+    className,
+  );
+  return href ? (
+    <Link href={href} className={classes} aria-label={`${label}: ${value}${unit ? ` ${unit}` : ""}${context ? `, ${context}` : ""}`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={classes}>{body}</div>
+  );
+}

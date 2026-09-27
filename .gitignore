@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.log
+# iOS
+apps/ios/HealthMate.xcodeproj/
+apps/ios/**/xcuserdata/
+apps/ios/**/.build/
+apps/ios/DerivedData/
+*.xcworkspace/xcuserdata/
