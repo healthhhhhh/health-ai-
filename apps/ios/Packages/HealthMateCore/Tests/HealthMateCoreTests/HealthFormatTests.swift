@@ -25,8 +25,10 @@ final class HealthFormatTests: XCTestCase {
 
     func testClockTime() {
         let us = Locale(identifier: "en_US")
-        XCTAssertEqual(HealthFormat.clockTime("08:00", locale: us), "8:00 AM")
-        XCTAssertEqual(HealthFormat.clockTime("22:30", locale: us), "10:30 PM")
+        // Recent ICU versions put a narrow no-break space (U+202F) before AM/PM.
+        func normalized(_ s: String) -> String { s.replacingOccurrences(of: "\u{202F}", with: " ") }
+        XCTAssertEqual(normalized(HealthFormat.clockTime("08:00", locale: us)), "8:00 AM")
+        XCTAssertEqual(normalized(HealthFormat.clockTime("22:30", locale: us)), "10:30 PM")
         XCTAssertEqual(HealthFormat.clockTime("soon", locale: us), "soon")
         XCTAssertEqual(HealthFormat.clockTime("25:00", locale: us), "25:00")
     }
