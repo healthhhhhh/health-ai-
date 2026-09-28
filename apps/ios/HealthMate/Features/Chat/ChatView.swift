@@ -187,6 +187,7 @@ struct ChatView: View {
                 } else {
                     CircleIconButton(systemName: "arrow.up", label: "Send", filled: true, action: submit)
                         .disabled(model.sending)
+                        .accessibilityIdentifier("sendMessage")
                 }
             }
             Text("AI-generated information, not a diagnosis.")

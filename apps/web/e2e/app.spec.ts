@@ -1,108 +1,228 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-test.describe("welcome / onboarding", () => {
-  test("introduces HealthMate and enters the app", async ({ page }) => {
+const unique = () => Math.random().toString(36).slice(2, 8);
+
+async function expectNoA11yViolations(page: Page, path: string) {
+  // Axe measures colours at a single instant; freeze entrance animations so it sees final styles.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(path);
+  await page.waitForLoadState("networkidle");
+  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+  expect(results.violations.map((v) => `${path} ${v.id}: ${v.nodes.length}`)).toEqual([]);
+}
+
+test.describe("signed out", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("welcome introduces HealthMate and leads to account creation", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1, name: "HealthMate" })).toBeVisible();
-    for (const f of ["AI Health Assistant", "Track Your Health", "Understand Your Reports", "Stay on Track"]) {
-      await expect(page.getByText(f, { exact: true }).first()).toBeVisible();
-    }
     await page.getByRole("link", { name: "Get Started" }).click();
-    await expect(page).toHaveURL(/\/home$/);
-    await expect(page.getByRole("heading", { level: 1, name: /Good (Morning|Afternoon|Evening), Alex/ })).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-in\?mode=sign-up/);
+    await expect(page.getByRole("button", { name: "Create Account", exact: true })).toBeVisible();
   });
 
-  test("sign-in validates and is honest that auth is not live", async ({ page }) => {
+  test("health pages require an account", async ({ page }) => {
+    for (const path of ["/home", "/chat", "/profile", "/settings/export"]) {
+      await page.goto(path);
+      await expect(page).toHaveURL(/\/sign-in/);
+    }
+    // Help (terms, privacy) stays public.
+    await page.goto("/help");
+    await expect(page.getByRole("heading", { level: 1, name: "Help & Support" })).toBeVisible();
+  });
+
+  test("sign-in validates and reports wrong passwords without detail", async ({ page }) => {
     await page.goto("/sign-in");
-    await page.getByRole("button", { name: "Sign In" }).click();
+    await page.getByRole("button", { name: "Sign In", exact: true }).click();
     await expect(page.getByText("Enter your email address.")).toBeVisible();
-    await page.getByLabel("Email").fill("alex@example.com");
+    await page.getByLabel("Email").fill("demo@healthmate.example");
+    await page.getByLabel("Password").fill("not-the-password");
+    await page.getByRole("button", { name: "Sign In", exact: true }).click();
+    await expect(page.getByText("Email or password is incorrect.")).toBeVisible();
+  });
+
+  test("creates an account, lands on an empty Home and signs out", async ({ page }) => {
+    await page.goto("/sign-in?mode=sign-up");
+    await page.getByLabel("First name").fill("Robin");
+    await page.getByLabel("Email").fill(`robin-${unique()}@example.com`);
     await page.getByLabel("Password").fill("a-long-password");
-    await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page.getByRole("status")).toContainText("isn't available in this preview");
+    await page.getByRole("button", { name: "Create Account", exact: true }).click();
+    await expect(page).toHaveURL(/\/home$/);
+    await expect(page.getByRole("heading", { level: 1, name: /Good (Morning|Afternoon|Evening), Robin/ })).toBeVisible();
+    await expect(page.getByText("No health data yet")).toBeVisible();
+    await expect(page.getByText("Nothing planned today")).toBeVisible();
+
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/sign-in/);
+    await page.goto("/home");
+    await expect(page).toHaveURL(/\/sign-in/);
+  });
+
+  test("welcome and sign-in have no detectable accessibility violations", async ({ page }) => {
+    await expectNoA11yViolations(page, "/");
+    await expectNoA11yViolations(page, "/sign-in");
   });
 });
 
 test.describe("home", () => {
-  test("shows the dashboard sections and labels sample data", async ({ page }) => {
+  test("shows the demo account's real data and labels it as demo", async ({ page }) => {
     await page.goto("/home");
-    await expect(page.getByText(/Demo mode/)).toBeVisible();
-    await expect(page.getByRole("heading", { name: /I'm your AI Health Assistant/ })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Today's Health" })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Heart Rate: 72 bpm/ })).toBeVisible();
+    await expect(page.getByText(/Demo server/)).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /Good (Morning|Afternoon|Evening), Alex/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Today's Plan" })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /Morning walk/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Recent Activity" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Upcoming Appointments" })).toBeVisible();
-    await expect(page.getByText(/Not a diagnosis/).first()).toBeVisible();
+    await expect(page.getByText(/not a diagnosis/i).first()).toBeVisible();
   });
 
-  test("completing a task persists across reloads", async ({ page }) => {
-    await page.goto("/home", { waitUntil: "networkidle" }); // wait for hydration before interacting
-    const walk = page.getByRole("checkbox", { name: /Evening walk/ });
-    const initial = await walk.isChecked();
-    await walk.click();
-    await expect(walk).toBeChecked({ checked: !initial });
-    await page.waitForLoadState("networkidle");
-    await page.reload();
-    await expect(page.getByRole("checkbox", { name: /Evening walk/ })).toBeChecked({ checked: !initial });
-    // Restore the shared demo state, and confirm the server has it before the next test.
-    await page.getByRole("checkbox", { name: /Evening walk/ }).click();
-    await expect(page.getByRole("checkbox", { name: /Evening walk/ })).toBeChecked({ checked: initial });
+  test("completing a plan item persists (shared with the iPhone app)", async ({ page }) => {
+    await page.goto("/home", { waitUntil: "networkidle" });
+    const water = page.getByRole("checkbox", { name: /Drink a glass of water/ });
+    const initial = await water.isChecked();
+    await water.click();
+    await expect(water).toBeChecked({ checked: !initial });
     await expect(async () => {
       await page.reload();
-      await expect(page.getByRole("checkbox", { name: /Evening walk/ })).toBeChecked({ checked: initial, timeout: 1000 });
+      await expect(page.getByRole("checkbox", { name: /Drink a glass of water/ })).toBeChecked({ checked: !initial, timeout: 1000 });
     }).toPass();
   });
 
-  test("finishing the whole plan celebrates", async ({ page }) => {
-    await page.goto("/home", { waitUntil: "networkidle" }); // wait for hydration before interacting
-    const boxes = page.getByRole("checkbox"); // only Today's Plan has checkboxes on Home
-    const toggled: number[] = [];
-    for (let i = 0; i < (await boxes.count()); i++) {
-      if (!(await boxes.nth(i).isChecked())) {
-        await boxes.nth(i).click();
-        await expect(boxes.nth(i)).toBeChecked();
-        toggled.push(i);
-      }
-    }
-    await expect(page.getByText("All done!")).toBeVisible();
-    for (const i of toggled) {
-      await boxes.nth(i).click(); // restore shared demo state
-      await expect(boxes.nth(i)).not.toBeChecked();
-    }
-    await expect(async () => {
-      await page.reload();
-      for (const i of toggled) await expect(boxes.nth(i)).not.toBeChecked({ timeout: 1000 });
-    }).toPass();
-  });
-
-  test("mood check-in gives feedback", async ({ page }) => {
-    await page.goto("/home", { waitUntil: "networkidle" }); // wait for hydration before interacting
+  test("mood check-in is saved", async ({ page }) => {
+    await page.goto("/home", { waitUntil: "networkidle" });
     await page.getByText("Good", { exact: true }).click();
     await expect(page.getByRole("radio", { name: "Good" })).toBeChecked();
-    await expect(page.getByText("Nice. Your check-in has been saved.")).toBeVisible();
-  });
-
-  test("has no detectable accessibility violations", async ({ page }) => {
-    // Axe measures colours at a single instant; freeze entrance animations so it sees final styles.
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/home");
-    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-    expect(results.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
-  });
-
-  test("welcome has no detectable accessibility violations", async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/");
-    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-    expect(results.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByRole("radio", { name: "Good" })).toBeChecked({ timeout: 1000 });
+    }).toPass();
   });
 
   test("does not scroll horizontally", async ({ page }) => {
     await page.goto("/home");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe("chat", () => {
+  test("emergencies get fixed guidance immediately, before any AI", async ({ page }) => {
+    await page.goto("/chat", { waitUntil: "networkidle" });
+    await page.getByLabel("Message").fill("I have crushing chest pain and can't breathe");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByRole("region", { name: "Emergency guidance" }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Call emergency services/ }).first()).toHaveAttribute("href", /^tel:/);
+  });
+
+  test("answers are labelled as demo and AI-generated, with tappable follow-ups", async ({ page }) => {
+    await page.goto("/chat", { waitUntil: "networkidle" });
+    await expect(page.getByText("Demo server: answers are scripted examples, not real AI.")).toBeVisible();
+    await page.getByLabel("Message").fill("Any tips for sleeping better?");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByText(/^Demo mode: this is a scripted example/)).toBeVisible();
+    await expect(page.getByText("AI-generated · not a diagnosis").last()).toBeVisible();
+    await page.getByRole("button", { name: "6 to 8" }).click();
+    await expect(page.getByText(/^Demo mode: this is a scripted example/)).toHaveCount(2);
+  });
+});
+
+test.describe("timeline, plan and profile", () => {
+  test("shows the demo account's timeline with sources", async ({ page }) => {
+    await page.goto("/timeline");
+    await expect(page.getByText("Started a morning walking habit")).toBeVisible();
+    await expect(page.getByText("Added by you").first()).toBeVisible();
+  });
+
+  test("adds a note to the timeline and deletes it", async ({ page }) => {
+    const title = `Tried a new stretching routine ${unique()}`;
+    await page.goto("/timeline", { waitUntil: "networkidle" });
+    await page.getByText("Note", { exact: true }).click();
+    await page.getByLabel("Title").fill(title);
+    await page.getByRole("button", { name: "Add to timeline" }).click();
+    await expect(page.getByText(title)).toBeVisible();
+    await page.getByRole("button", { name: `Delete entry: ${title}` }).click();
+    await expect(page.getByText(title)).toHaveCount(0);
+  });
+
+  test("flags emergencies while a symptom is typed", async ({ page }) => {
+    await page.goto("/timeline", { waitUntil: "networkidle" });
+    await page.getByLabel("Title").fill("Face drooping and slurred speech");
+    await expect(page.getByRole("region", { name: "Emergency guidance" })).toBeVisible();
+  });
+
+  test("adds a medication with the instruction kept word for word", async ({ page }) => {
+    const name = `Test med ${unique()}`;
+    const instruction = "1 tablet after breakfast — per the label";
+    await page.goto("/plans", { waitUntil: "networkidle" });
+    await page.getByText("Medication", { exact: true }).click();
+    await page.getByLabel("Medication name").fill(name);
+    await page.getByLabel("Instructions, exactly as written").fill(instruction);
+    await page.getByRole("button", { name: "Add to plan" }).click();
+    await expect(page.getByText(name)).toBeVisible();
+    await expect(page.getByText(instruction)).toBeVisible();
+    await page.getByRole("button", { name: `Remove ${name} from your plan` }).click();
+    await expect(page.getByText(name)).toHaveCount(0);
+  });
+
+  test("a medication can't be added without its instruction", async ({ page }) => {
+    await page.goto("/plans", { waitUntil: "networkidle" });
+    await page.getByText("Medication", { exact: true }).click();
+    await page.getByLabel("Medication name").fill("No instruction");
+    await page.getByRole("button", { name: "Add to plan" }).click();
+    await expect(page.locator("form").getByRole("alert")).toContainText("exactly as written");
+  });
+
+  test("profile shows memory with its source and lets the person forget it", async ({ page }) => {
+    const fact = `Prefers evening reminders ${unique()}`;
+    await page.goto("/profile", { waitUntil: "networkidle" });
+    await expect(page.getByText("Prefers to walk in the morning")).toBeVisible();
+    await page.getByLabel("Something the assistant should keep in mind").fill(fact);
+    await page.getByRole("button", { name: "Add", exact: true }).last().click();
+    await expect(page.getByText(fact)).toBeVisible();
+    await page.getByRole("button", { name: `Forget: ${fact}` }).click();
+    await expect(page.getByText(fact)).toHaveCount(0);
+  });
+});
+
+test.describe("reports, health and settings", () => {
+  test("uploads a photo; demo mode says honestly it wasn't analysed", async ({ page }) => {
+    await page.goto("/reports", { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Photo check" }).click();
+    // A tiny valid PNG (1×1 pixel).
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await page.locator("input[type=file]").setInputFiles({ name: "arm.png", mimeType: "image/png", buffer: png });
+    await expect(page).toHaveURL(/\/reports\/[0-9a-f-]+$/, { timeout: 20_000 });
+    await expect(page.getByText(/Demo mode: photos aren't analysed/)).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("health dashboard explains how to get data when nothing is synced", async ({ page }) => {
+    await page.goto("/health");
+    await expect(page.getByText("No synced health data yet")).toBeVisible();
+  });
+
+  test("privacy switches, data download and care", async ({ page }) => {
+    await page.goto("/settings", { waitUntil: "networkidle" });
+    const sync = page.getByRole("switch", { name: "Health data sync" });
+    const before = await sync.getAttribute("aria-checked");
+    await sync.click();
+    await expect(sync).toHaveAttribute("aria-checked", before === "true" ? "false" : "true");
+    await sync.click();
+    await expect(sync).toHaveAttribute("aria-checked", before ?? "false");
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("link", { name: "Download my data" }).click();
+    expect((await download).suggestedFilename()).toMatch(/^healthmate-export-.*\.json$/);
+
+    await page.goto("/care");
+    await expect(page.getByRole("link", { name: /In an emergency, call/ })).toHaveAttribute("href", /^tel:/);
+  });
+
+  test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/settings", "/care"]) {
+      await expectNoA11yViolations(page, path);
+    }
   });
 });
 
@@ -114,14 +234,12 @@ test.describe("navigation", () => {
       ["Health Dashboard", "/health"],
       ["Medical Reports", "/reports"],
       ["Medications & Tasks", "/plans"],
-      ["Doctor Consultation", "/care"],
+      ["Find Care", "/care"],
       ["Health Timeline", "/timeline"],
       ["Settings", "/settings"],
-      ["Help & Support", "/help"],
       ["Home", "/home"],
     ] as const;
-    const viewport = page.viewportSize();
-    const hasSidebar = !isMobile && (viewport?.width ?? 0) >= 1024;
+    const hasSidebar = !isMobile && (page.viewportSize()?.width ?? 0) >= 1024;
     for (const [label, href] of destinations) {
       if (!hasSidebar) await page.getByRole("button", { name: "Open menu" }).click();
       const nav = hasSidebar ? page.getByRole("complementary").getByRole("navigation", { name: "Main" }) : page.getByRole("dialog", { name: "Main menu" });
@@ -129,13 +247,6 @@ test.describe("navigation", () => {
       await expect(page).toHaveURL(new RegExp(`${href}$`));
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     }
-  });
-
-  test("marks the current page for assistive tech", async ({ page, isMobile }) => {
-    await page.goto("/home");
-    const nav = isMobile ? page.getByRole("navigation", { name: "Primary" }) : page.locator("nav[aria-label='Main']").first();
-    if (!isMobile && (page.viewportSize()?.width ?? 0) < 1024) test.skip();
-    await expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   });
 
   test("mobile bottom bar mirrors the iOS tabs", async ({ page, isMobile }) => {

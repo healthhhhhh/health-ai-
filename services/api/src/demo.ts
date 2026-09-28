@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { randomUUID } from "node:crypto";
 import { Logger } from "@nestjs/common";
 import { createApp } from "./bootstrap";
 import { loadConfig } from "./config";
@@ -51,6 +52,22 @@ export async function seed(base: string) {
   const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
   await call("timeline", { eventType: "note", title: "Started a morning walking habit", occurredAt: twoDaysAgo }, token);
   await call("conversations", { message: "Tips for sleeping better" }, token);
+  const today = new Date().toISOString().slice(0, 10);
+  const item = (title: string, kind: "task" | "habit", time: string, notes: string | null) => ({
+    id: randomUUID(),
+    title,
+    notes,
+    kind,
+    time,
+    repeat: { type: "daily" },
+    reminderEnabled: false,
+    source: "user_reported",
+    instruction: null,
+    startDay: today,
+    endDay: null,
+    createdAt: new Date().toISOString(),
+  });
+  await call("plan", { baseRevision: 0, items: [item("Morning walk", "habit", "07:30", "20 minutes"), item("Drink a glass of water", "task", "12:00", null)], completions: [] }, token, "PUT");
 }
 
 if (require.main === module) {

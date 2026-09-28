@@ -38,11 +38,8 @@ export function TodaysPlan({ tasks, className }: { tasks: PlanTask[]; className?
     wasComplete.current = nowComplete;
     startTransition(async () => {
       applyOptimistic({ id, completed });
-      try {
-        await setTaskCompletedAction(id, completed);
-      } catch {
-        setError("Couldn't update that task. Please try again.");
-      }
+      const result = await setTaskCompletedAction(id, completed).catch(() => ({ error: "failed" }));
+      if (result.error) setError("Couldn't update that task. Please try again.");
     });
   };
 

@@ -14,7 +14,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: "/health", label: "Health Dashboard", shortLabel: "Health", icon: LayoutDashboard },
   { href: "/reports", label: "Medical Reports", shortLabel: "Reports", icon: FileText },
   { href: "/plans", label: "Medications & Tasks", shortLabel: "Plans", icon: ListChecks },
-  { href: "/care", label: "Doctor Consultation", shortLabel: "Care", icon: Stethoscope },
+  { href: "/care", label: "Find Care", shortLabel: "Care", icon: Stethoscope },
   { href: "/timeline", label: "Health Timeline", shortLabel: "Timeline", icon: History },
   { href: "/profile", label: "Profile", icon: User },
 ];

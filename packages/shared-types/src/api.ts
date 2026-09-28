@@ -230,3 +230,36 @@ export interface ConsentRecord {
 export interface ApiErrorBody {
   error: { code: string; message: string };
 }
+
+export type PlanItemKind = "task" | "medication" | "habit";
+export type PlanRepeat = { type: "daily" } | { type: "weekdays"; days: number[] } | { type: "once"; day: string };
+
+/** For medications, `instruction` is the clinician's or label's wording exactly as entered. */
+export interface PlanItemRecord {
+  id: string;
+  title: string;
+  notes: string | null;
+  kind: PlanItemKind;
+  /** "HH:mm" local time. */
+  time: string;
+  repeat: PlanRepeat;
+  reminderEnabled: boolean;
+  source: "user_reported" | "clinician_provided";
+  instruction: string | null;
+  /** "YYYY-MM-DD" */
+  startDay: string;
+  endDay: string | null;
+  createdAt: ISO;
+}
+
+export interface PlanCompletionRecord {
+  itemId: string;
+  day: string;
+  completedAt: ISO;
+}
+
+export interface PlanRecord {
+  revision: number;
+  items: PlanItemRecord[];
+  completions: PlanCompletionRecord[];
+}

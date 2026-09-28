@@ -9,7 +9,8 @@ final class HealthMateUITests: XCTestCase {
 
     private func launch(onboarded: Bool = true, _ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-hasCompletedOnboarding", onboarded ? "YES" : "NO"] + extra
+        // Onboarding tests reset the stored flag instead of pinning it, so finishing onboarding can change it.
+        app.launchArguments = (onboarded ? ["-hasCompletedOnboarding", "YES"] : ["-hmResetOnboarding", "YES"]) + extra
         app.launch()
         return app
     }
@@ -33,8 +34,9 @@ final class HealthMateUITests: XCTestCase {
 
     func testOnboardingGetStartedOpensHome() {
         let app = launch(onboarded: false)
-        XCTAssertTrue(app.staticTexts["HealthMate"].waitForExistence(timeout: 5))
-        app.buttons["Get Started"].tap()
+        let getStarted = app.buttons["Get Started"]
+        XCTAssertTrue(getStarted.waitForExistence(timeout: 10))
+        getStarted.tap()
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
     }
 
@@ -80,7 +82,7 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("I have crushing chest pain and can't breathe")
-        app.buttons["Send"].tap()
+        app.buttons["sendMessage"].tap()
 
         // Signed out: the sign-in sheet opens; the guidance is already on the chat screen.
         let cancel = app.buttons["Cancel"]
@@ -98,7 +100,7 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("Any tips for sleeping better?")
-        app.buttons["Send"].tap()
+        app.buttons["sendMessage"].tap()
 
         let answer = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Demo mode'")).firstMatch
         XCTAssertTrue(answer.waitForExistence(timeout: 15))

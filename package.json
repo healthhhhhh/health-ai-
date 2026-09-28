@@ -2,7 +2,7 @@
   "name": "healthmate",
   "version": "0.1.0",
   "private": true,
-  "description": "HealthMate — AI Health Companion (iOS + web monorepo)",
+  "description": "HealthMate \u2014 AI Health Companion (iOS + web monorepo)",
   "workspaces": [
     "apps/web",
     "packages/*",
@@ -25,6 +25,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "pretest": "npm run safety:build",
     "test": "npm run tokens:check && npm run safety:check && npm run test --workspaces --if-present",
-    "test:e2e": "npm run test:e2e -w @healthmate/web"
+    "test:e2e": "npm run test:e2e -w @healthmate/web",
+    "prebuild": "npm run safety:build"
   }
 }

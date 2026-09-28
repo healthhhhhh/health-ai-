@@ -1,0 +1,68 @@
+"use server";
+
+import type { ChatMessageRecord, ConsentKind, ConversationDetail, ConversationRecord } from "@healthmate/shared-types";
+import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
+import { api, errorMessage } from "@/lib/api/server";
+
+type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+
+async function attempt<T>(work: () => Promise<T>): Promise<Result<T>> {
+  try {
+    return { ok: true, data: await work() };
+  } catch (error) {
+    unstable_rethrow(error);
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+const clean = (text: unknown) => (typeof text === "string" ? text.trim().slice(0, 4000) : "");
+
+/** Sends a message; starts a conversation when there isn't one yet. */
+export async function sendChatMessage(conversationId: string | null, text: string): Promise<Result<{ conversationId: string; messages: ChatMessageRecord[] }>> {
+  const message = clean(text);
+  if (!message) return { ok: false, error: "Type a message first." };
+  return attempt(async () => {
+    if (conversationId) {
+      const res = await api<{ messages: ChatMessageRecord[] }>(`conversations/${encodeURIComponent(conversationId)}/messages`, { method: "POST", json: { message } });
+      return { conversationId, messages: res.messages };
+    }
+    const res = await api<ConversationDetail>("conversations", { method: "POST", json: { message } });
+    revalidatePath("/chat");
+    return { conversationId: res.conversation.id, messages: res.messages };
+  });
+}
+
+export async function setConsent(kind: ConsentKind, granted: boolean): Promise<Result<null>> {
+  if (!["ai_processing", "document_processing", "health_data_sync", "voice"].includes(kind)) return { ok: false, error: "Unknown setting." };
+  return attempt(async () => {
+    await api("me/consents", { method: "POST", json: { kind, granted } });
+    revalidatePath("/", "layout");
+    return null;
+  });
+}
+
+/** Saves a fact the person explicitly confirmed. Never automatic. */
+export async function rememberFact(fact: string, conversationId: string | null): Promise<Result<null>> {
+  const value = clean(fact).slice(0, 500);
+  if (!value) return { ok: false, error: "Nothing to save." };
+  return attempt(async () => {
+    await api("memories", {
+      method: "POST",
+      json: { fact: value, status: "user_confirmed", source: conversationId ? "user_conversation" : "user_entry", sourceId: conversationId },
+    });
+    return null;
+  });
+}
+
+export async function deleteConversation(id: string): Promise<Result<null>> {
+  return attempt(async () => {
+    await api(`conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+    revalidatePath("/chat");
+    return null;
+  });
+}
+
+export async function listConversations(): Promise<ConversationRecord[]> {
+  return api<ConversationRecord[]>("conversations");
+}

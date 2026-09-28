@@ -37,7 +37,7 @@ export default function WelcomePage() {
           </ul>
 
           <div className="animate-fade-up mt-10 flex w-full flex-col items-center gap-3 [animation-delay:600ms] lg:items-stretch">
-            <ButtonLink href="/home" size="lg" fullWidth>
+            <ButtonLink href="/sign-in?mode=sign-up" size="lg" fullWidth>
               Get Started
             </ButtonLink>
             <ButtonLink href="/sign-in" variant="link" size="md">

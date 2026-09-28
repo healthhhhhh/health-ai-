@@ -25,9 +25,8 @@ export function MoodCheckIn({ initialMood, className }: { initialMood?: Mood; cl
     setMood(next);
     setError(null);
     startTransition(async () => {
-      try {
-        await recordMoodAction(next);
-      } catch {
+      const result = await recordMoodAction(next).catch(() => ({ error: "failed" }));
+      if (result.error) {
         setMood(previous);
         setError("Couldn't save your check-in. Please try again.");
       }

@@ -49,6 +49,8 @@ describe("demo mode", () => {
     expect(profile.medications).toEqual([]);
     const memories = (await (await fetch(`${base}/memories`, { headers: auth })).json()) as unknown[];
     expect(memories).toHaveLength(1);
+    const plan = (await (await fetch(`${base}/plan`, { headers: auth })).json()) as { items: { source: string; kind: string }[] };
+    expect(plan.items.map((i) => i.kind)).not.toContain("medication");
   });
 
   it("labels chat answers as a demo and still applies the safety pipeline", async () => {

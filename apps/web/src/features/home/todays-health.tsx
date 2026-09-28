@@ -12,7 +12,7 @@ export function TodaysHealth({ metrics }: { metrics: HealthMetric[] }) {
       <SectionHeader id="todays-health" title="Today's Health" actionLabel="See All" actionHref="/health" />
       {metrics.length === 0 ? (
         <div className="rounded-lg bg-card shadow-card">
-          <EmptyState icon={<HeartPulse />} title="No health data yet" description="Connect Apple Health on iPhone or add a measurement to see your daily snapshot here." />
+          <EmptyState icon={<HeartPulse />} title="No health data yet" description="Connect Apple Health in the HealthMate iPhone app and turn on sync to see your daily snapshot here." />
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 [&>*]:min-w-0">

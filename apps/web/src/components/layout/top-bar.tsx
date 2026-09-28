@@ -1,15 +1,13 @@
 "use client";
 
-import { Bell } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Logo } from "@/components/illustrations/logo";
 import { Avatar } from "@/components/ui/avatar";
-import { IconButton } from "@/components/ui/icon-button";
 import { SearchBar } from "@/components/ui/search-bar";
 import { MobileNavDrawer } from "./mobile-nav-drawer";
 
-export function TopBar({ userName, unreadNotifications }: { userName: string; unreadNotifications: number }) {
+export function TopBar({ userName }: { userName: string }) {
   const router = useRouter();
   const ask = (q: string) => router.push(`/chat?q=${encodeURIComponent(q)}`);
   return (
@@ -21,11 +19,6 @@ export function TopBar({ userName, unreadNotifications }: { userName: string; un
         </Link>
         <SearchBar onSubmit={ask} shortcutHint="⌘K" className="hidden h-11 max-w-xl flex-1 md:flex" />
         <div className="ml-auto flex items-center gap-1">
-          <IconButton
-            label={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : "Notifications"}
-            icon={<Bell />}
-            indicator={unreadNotifications > 0}
-          />
           <Link href="/profile" aria-label="Your profile" className="rounded-full">
             <Avatar name={userName} />
           </Link>

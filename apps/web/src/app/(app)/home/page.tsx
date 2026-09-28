@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getDataClient } from "@/lib/data";
+import { getHomeSummary } from "@/lib/api/data";
 import { AssistantHeroCard } from "@/features/home/assistant-hero-card";
 import { DailyProgress } from "@/features/home/daily-progress";
 import { Greeting } from "@/features/home/greeting";
@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Home" };
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const summary = await getDataClient().getHomeSummary();
+  const summary = await getHomeSummary();
   const serverNow = new Date().toISOString();
   const { user } = summary;
 
