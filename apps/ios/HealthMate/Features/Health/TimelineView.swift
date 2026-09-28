@@ -22,10 +22,18 @@ final class TimelineViewModel {
     }
 
     /// Events grouped by local day, newest first.
-    var sections: [(day: Date, events: [TimelineEventRecord])] {
+    struct DaySection: Identifiable {
+        let day: Date
+        let events: [TimelineEventRecord]
+        var id: Date { day }
+    }
+
+    var sections: [DaySection] {
         let calendar = Calendar.current
         let groups = Dictionary(grouping: events) { calendar.startOfDay(for: $0.occurredAt) }
-        return groups.keys.sorted(by: >).map { ($0, groups[$0]!.sorted { $0.occurredAt > $1.occurredAt }) }
+        return groups.keys.sorted(by: >).map { day in
+            DaySection(day: day, events: (groups[day] ?? []).sorted { $0.occurredAt > $1.occurredAt })
+        }
     }
 
     func load() async {
@@ -122,7 +130,7 @@ struct HealthTimelineView: View {
                 EmptyStateView(systemImage: "clock", title: "Your timeline is empty", message: "Reports you upload, conversations and anything you add here will appear in order.")
                     .listRowBackground(Color.clear)
             case .loaded:
-                ForEach(model.sections, id: \.day) { section in
+                ForEach(model.sections) { section in
                     Section {
                         ForEach(section.events) { event in
                             let style = TimelineViewModel.style(for: event.eventType)
