@@ -23,7 +23,7 @@ export class AccountService {
   /** Everything we hold about the user, as JSON. Operational logs are excluded (they hold no health content). */
   async export(userId: string) {
     const q = async (sql: string) => (await this.db.query(sql, [userId])).rows;
-    const [account, profile, conditions, allergies, medications, memories, conversations, messages, documents, measurements, timeline, consents] = await Promise.all([
+    const [account, profile, conditions, allergies, medications, memories, conversations, messages, documents, measurements, timeline, consents, moodCheckIns, plan] = await Promise.all([
       q(`SELECT email, created_at FROM users WHERE id = $1`),
       q(`SELECT first_name, last_name, date_of_birth::text AS date_of_birth, sex, height_cm, time_zone FROM profiles WHERE user_id = $1`),
       q(`SELECT name, status, source, notes, created_at FROM health_conditions WHERE user_id = $1`),
@@ -36,6 +36,8 @@ export class AccountService {
       q(`SELECT kind, value, unit, recorded_at, source FROM health_measurements WHERE user_id = $1 ORDER BY recorded_at`),
       q(`SELECT event_type, title, occurred_at, source_type, payload FROM timeline_events WHERE user_id = $1 ORDER BY occurred_at`),
       q(`SELECT kind, granted, version, created_at FROM consents WHERE user_id = $1 ORDER BY created_at`),
+      q(`SELECT mood, recorded_at FROM mood_checkins WHERE user_id = $1 ORDER BY recorded_at`),
+      q(`SELECT revision, document, updated_at FROM plans WHERE user_id = $1`),
     ]);
     await this.audit.log("account.export", userId);
     return {
@@ -53,6 +55,8 @@ export class AccountService {
       measurements,
       timeline,
       consents,
+      moodCheckIns,
+      plan: plan[0] ?? null,
     };
   }
 

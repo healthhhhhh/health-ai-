@@ -10,6 +10,7 @@ export type ErrorCode =
   | "forbidden"
   | "not_found"
   | "conflict"
+  | "plan_conflict"
   | "rate_limited"
   | "payload_too_large"
   | "unsupported_media_type"

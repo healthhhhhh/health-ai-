@@ -54,3 +54,18 @@ describe("cross-user isolation", () => {
     await ctx.http.get(`/v1/conversations/${convo.body.conversation.id}`).set(owner.auth).expect(200);
   });
 });
+
+describe("mood check-ins", () => {
+  it("records, returns the latest, exports, and stays private", async () => {
+    const user = await signUp(ctx);
+    const other = await signUp(ctx);
+    expect((await ctx.http.get("/v1/check-ins/mood/latest").set(user.auth).expect(200)).body.checkIn).toBeNull();
+    await ctx.http.post("/v1/check-ins/mood").set(user.auth).send({ mood: "low" }).expect(201);
+    await ctx.http.post("/v1/check-ins/mood").set(user.auth).send({ mood: "good" }).expect(201);
+    expect((await ctx.http.get("/v1/check-ins/mood/latest").set(user.auth).expect(200)).body.checkIn.mood).toBe("good");
+    expect((await ctx.http.get("/v1/check-ins/mood/latest").set(other.auth).expect(200)).body.checkIn).toBeNull();
+    await ctx.http.post("/v1/check-ins/mood").set(user.auth).send({ mood: "ecstatic" }).expect(400);
+    const exported = await ctx.http.get("/v1/me/export").set(user.auth).expect(200);
+    expect(exported.body.moodCheckIns).toHaveLength(2);
+  });
+});

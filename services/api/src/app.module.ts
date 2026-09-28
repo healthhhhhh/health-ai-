@@ -14,6 +14,8 @@ import { AuthController } from "./modules/auth/auth.controller";
 import { AuthService } from "./modules/auth/auth.service";
 import { TokenService } from "./modules/auth/token.service";
 import { ChatController } from "./modules/chat/chat.controller";
+import { CheckInsController } from "./modules/checkins/checkins.controller";
+import { PlanController } from "./modules/plan/plan.controller";
 import { ChatService } from "./modules/chat/chat.service";
 import { DocumentsController, UploadsController } from "./modules/documents/documents.controller";
 import { DocumentsService } from "./modules/documents/documents.service";
@@ -100,6 +102,8 @@ export class AppModule {
         DocumentsController,
         UploadsController,
         HealthDataController,
+        CheckInsController,
+        PlanController,
       ],
       providers,
     };
