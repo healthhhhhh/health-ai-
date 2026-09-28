@@ -34,16 +34,21 @@ struct AssistantHeroCard: View {
     let onStart: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            MascotView(size: 116, withBackdrop: true)
+        HStack(alignment: .bottom, spacing: 6) {
+            MascotView(size: 136, withBackdrop: true)
+                .frame(width: 112, height: 150, alignment: .bottom)
+                .offset(y: 16)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
-                Text("Hi \(firstName), I'm your AI Health Assistant")
-                    .font(.hmCardTitle)
-                    .foregroundStyle(HM.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("I can help you understand symptoms, explain reports and guide you toward better care.")
-                    .font(.hmCaption)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Hi \(firstName), I'm your")
+                    Text("AI Health Assistant")
+                }
+                .font(.system(.headline, design: .default, weight: .bold))
+                .foregroundStyle(HM.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                Text("I can help you understand symptoms, analyze reports, and guide you toward better care.")
+                    .font(.caption)
                     .foregroundStyle(HM.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(action: onStart) {
@@ -55,10 +60,13 @@ struct AssistantHeroCard: View {
                 .buttonStyle(.hmPrimary(compact: true))
                 .padding(.top, 2)
             }
+            .padding(.vertical, 18)
+            .padding(.trailing, 14)
         }
-        .padding(14)
+        .padding(.leading, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: HM.Radius.lg, style: .continuous).fill(HMGradient.hero))
+        .clipShape(RoundedRectangle(cornerRadius: HM.Radius.lg, style: .continuous))
     }
 }
 
@@ -99,7 +107,7 @@ struct TodaysHealthGrid: View {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
                         Button(action: onSeeAll) {
-                            MetricCard(presentation: MetricPresenter.present(metric), systemImage: metric.kind.systemImage, beats: metric.kind == .heartRate)
+                            MetricCard(presentation: MetricPresenter.present(metric), systemImage: metric.kind.systemImage, beats: metric.kind == .heartRate, showsContext: false)
                         }
                         .buttonStyle(PressableButtonStyle())
                         .appearAnimation(delay: 0.15 + Double(index) * HMMotion.stagger)

@@ -54,13 +54,13 @@ struct HomeView: View {
             AssistantHeroCard(firstName: summary.user.firstName) { onNavigate(.chat) }
                 .appearAnimation(delay: 0.06)
 
+            TodaysHealthGrid(metrics: summary.metrics) { onNavigate(.health) }
+                .id("health")
+
             MoodCheckInCard(mood: model.mood) { mood in
                 Task { await model.selectMood(mood) }
             }
-            .appearAnimation(delay: 0.1)
-
-            TodaysHealthGrid(metrics: summary.metrics) { onNavigate(.health) }
-                .id("health")
+            .appearAnimation(delay: 0.25)
 
             if let insight = summary.insight {
                 InsightCard(message: insight.message, basedOn: insight.basedOn, isSample: insight.source == .sample)

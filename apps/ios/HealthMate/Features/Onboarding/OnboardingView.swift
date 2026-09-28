@@ -30,7 +30,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     ForEach(Array(OnboardingFeature.all.enumerated()), id: \.element.id) { index, feature in
                         HStack(spacing: 14) {
-                            IconBadge(systemName: feature.systemImage, tone: feature.tone, size: .large)
+                            IconBadge(systemName: feature.systemImage, tone: feature.tone, size: .large, filled: true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(feature.title).font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
                                 Text(feature.description).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)

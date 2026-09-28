@@ -7,6 +7,8 @@ struct MetricCard: View {
     let systemImage: String
     /// Heart-rate style gentle "beat" on the icon.
     var beats = false
+    /// Home keeps cards to label + value like the reference; the Health tab shows context.
+    var showsContext = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,7 +30,7 @@ struct MetricCard: View {
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                if let context = presentation.context {
+                if showsContext, let context = presentation.context {
                     Text(context)
                         .font(.hmMicro)
                         .foregroundStyle(HM.Colors.textSecondary)

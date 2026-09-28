@@ -9,9 +9,9 @@ struct OnboardingFeature: Identifiable {
     var id: String { title }
 
     static let all: [OnboardingFeature] = [
-        OnboardingFeature(title: "AI Health Assistant", description: "Plain-language answers to health questions, any time", systemImage: "message", tone: .blue),
-        OnboardingFeature(title: "Track Your Health", description: "Sync with Apple Health & wearables", systemImage: "heart.text.square", tone: .teal),
-        OnboardingFeature(title: "Understand Your Reports", description: "Upload reports for clear, simple explanations", systemImage: "doc.text", tone: .green),
-        OnboardingFeature(title: "Stay on Track", description: "Reminders for your care plan, water, habits & more", systemImage: "checklist", tone: .purple),
+        OnboardingFeature(title: "AI Health Assistant", description: "Plain-language answers to health questions, any time", systemImage: "person.fill", tone: .blue),
+        OnboardingFeature(title: "Track Your Health", description: "Sync with Apple Health & wearables", systemImage: "heart.fill", tone: .teal),
+        OnboardingFeature(title: "Understand Your Reports", description: "Upload reports for clear, simple explanations", systemImage: "doc.text.fill", tone: .green),
+        OnboardingFeature(title: "Stay on Track", description: "Reminders for your care plan, water, habits & more", systemImage: "figure.walk", tone: .green),
     ]
 }

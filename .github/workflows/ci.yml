@@ -7,7 +7,8 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Queue rather than cancel: every commit gets its own iOS screenshots.
+  cancel-in-progress: false
 
 jobs:
   web:

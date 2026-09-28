@@ -12,13 +12,15 @@ struct IconBadge: View {
     let systemName: String
     var tone: Tone = .blue
     var size: Size = .medium
+    /// Solid colour circle with a white glyph (onboarding) instead of the pastel default.
+    var filled = false
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: size.iconSize, weight: .medium))
-            .foregroundStyle(tone.color)
+            .font(.system(size: size.iconSize, weight: filled ? .semibold : .medium))
+            .foregroundStyle(filled ? Color.white : tone.color)
             .frame(width: size.diameter, height: size.diameter)
-            .background(Circle().fill(tone.softColor))
+            .background(Circle().fill(filled ? AnyShapeStyle(tone.color.gradient) : AnyShapeStyle(tone.softColor)))
             .accessibilityHidden(true)
     }
 }
