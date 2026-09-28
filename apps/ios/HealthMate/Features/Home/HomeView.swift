@@ -36,6 +36,10 @@ struct HomeView: View {
             .refreshable { await model.load() }
             .task { await model.loadIfNeeded() }
             .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                // Zero-height inset whose background fills the status-bar area.
+                Color.clear.frame(height: 0).background(.bar, ignoresSafeAreaEdges: .top)
+            }
             .overlay(alignment: .bottom) { toast }
             .animation(HMMotion.spring, value: model.actionError)
         }

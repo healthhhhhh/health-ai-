@@ -26,6 +26,11 @@
   --hm-text-secondary: #5B6474;
   --hm-text-muted: #646D80;
   --hm-on-primary: #FFFFFF;
+  --hm-success-fill: #1F9D55;
+  --hm-teal-fill: #0FA396;
+  --hm-purple-fill: #7C5CF0;
+  --hm-warning-fill: #D97706;
+  --hm-error-fill: #E0453A;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -55,6 +60,11 @@
     --hm-text-secondary: #AAB3C5;
     --hm-text-muted: #7C8699;
     --hm-on-primary: #FFFFFF;
+    --hm-success-fill: #1F9D55;
+    --hm-teal-fill: #0FA396;
+    --hm-purple-fill: #7C5CF0;
+    --hm-warning-fill: #D97706;
+    --hm-error-fill: #E0453A;
   }
 }
 
@@ -84,6 +94,11 @@
   --hm-text-secondary: #AAB3C5;
   --hm-text-muted: #7C8699;
   --hm-on-primary: #FFFFFF;
+  --hm-success-fill: #1F9D55;
+  --hm-teal-fill: #0FA396;
+  --hm-purple-fill: #7C5CF0;
+  --hm-warning-fill: #D97706;
+  --hm-error-fill: #E0453A;
 }
 
 @theme inline {
@@ -112,6 +127,11 @@
   --color-text-secondary: var(--hm-text-secondary);
   --color-text-muted: var(--hm-text-muted);
   --color-on-primary: var(--hm-on-primary);
+  --color-success-fill: var(--hm-success-fill);
+  --color-teal-fill: var(--hm-teal-fill);
+  --color-purple-fill: var(--hm-purple-fill);
+  --color-warning-fill: var(--hm-warning-fill);
+  --color-error-fill: var(--hm-error-fill);
   --radius-sm: 10px;
   --radius-md: 14px;
   --radius-lg: 20px;

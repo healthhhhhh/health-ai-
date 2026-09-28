@@ -9,8 +9,9 @@ struct HMCardModifier: ViewModifier {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(HM.Colors.card))
-            .hmShadow()
+            // Shadow on the shape only — applied to the whole view it would also
+            // blur-shadow every piece of text and nested row inside the card.
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(HM.Colors.card).hmShadow())
     }
 }
 

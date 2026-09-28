@@ -34,6 +34,18 @@ extension Tone {
         }
     }
 
+    /// Brighter solid fill for icon circles with a white glyph.
+    var fillColor: Color {
+        switch self {
+        case .blue: return HM.Colors.primaryFill
+        case .green: return HM.Colors.successFill
+        case .orange: return HM.Colors.warningFill
+        case .red: return HM.Colors.errorFill
+        case .purple: return HM.Colors.purpleFill
+        case .teal: return HM.Colors.tealFill
+        }
+    }
+
     var softColor: Color {
         switch self {
         case .blue: return HM.Colors.primarySoft

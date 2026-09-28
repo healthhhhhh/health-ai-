@@ -67,8 +67,7 @@ struct UploadCard: View {
                     .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(HM.Colors.primary)
                     .frame(width: 52, height: 52)
-                    .background(Circle().fill(HM.Colors.card))
-                    .hmShadow()
+                    .background(Circle().fill(HM.Colors.card).hmShadow())
                 Text(title).font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
                 Text(subtitle).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
             }

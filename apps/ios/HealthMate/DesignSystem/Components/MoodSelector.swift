@@ -4,9 +4,9 @@ import SwiftUI
 extension Mood {
     var systemImage: String {
         switch self {
-        case .great: return "face.smiling.inverse"
-        case .good: return "face.smiling"
-        case .okay: return "minus.circle"
+        case .great: return "sun.max"
+        case .good: return "cloud.sun"
+        case .okay: return "cloud"
         case .low: return "cloud.drizzle"
         case .unwell: return "thermometer.medium"
         }
@@ -37,7 +37,8 @@ struct MoodSelector: View {
                 } label: {
                     VStack(spacing: 6) {
                         Image(systemName: mood.systemImage)
-                            .font(.system(size: 22, weight: .medium))
+                            .symbolVariant(selected ? .fill : .none)
+                            .font(.system(size: 22, weight: .regular))
                             .symbolEffect(.bounce, value: selected)
                         Text(MoodPresenter.label(mood)).font(.hmMicro)
                     }

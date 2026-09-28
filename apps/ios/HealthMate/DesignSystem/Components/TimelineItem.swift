@@ -66,8 +66,8 @@ struct ChatBubble<Footer: View>: View {
                     style: .continuous
                 )
                 .fill(author == .user ? HM.Colors.primaryFill : HM.Colors.card)
+                .hmShadow()
             )
-            .hmShadow()
             if author == .assistant { Spacer(minLength: 40) }
         }
         .accessibilityElement(children: .combine)

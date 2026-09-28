@@ -8,13 +8,12 @@ struct PrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(compact ? .hmBodyEmphasis : .system(.body, design: .default, weight: .semibold))
+            .font(compact ? .system(.footnote, design: .default, weight: .semibold) : .system(.body, design: .default, weight: .semibold))
             .foregroundStyle(HM.Colors.onPrimary)
-            .padding(.horizontal, compact ? 16 : 24)
-            .frame(minHeight: compact ? 40 : 54)
+            .padding(.horizontal, compact ? 14 : 24)
+            .frame(minHeight: compact ? 36 : 54)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .background(Capsule().fill(configuration.isPressed ? HM.Colors.primaryPressed : HM.Colors.primaryFill))
-            .hmShadow(HM.Shadow.raised)
+            .background(Capsule().fill(configuration.isPressed ? HM.Colors.primaryPressed : HM.Colors.primaryFill).hmShadow(HM.Shadow.raised))
             .opacity(isEnabled ? 1 : 0.5)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(HMMotion.bouncy, value: configuration.isPressed)

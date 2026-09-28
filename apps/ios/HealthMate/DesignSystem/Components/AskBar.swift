@@ -36,12 +36,11 @@ struct AskBar: View {
         .padding(.leading, 14)
         .padding(.trailing, 6)
         .frame(minHeight: 50)
-        .background(RoundedRectangle(cornerRadius: HM.Radius.md, style: .continuous).fill(HM.Colors.card))
+        .background(RoundedRectangle(cornerRadius: HM.Radius.md, style: .continuous).fill(HM.Colors.card).hmShadow())
         .overlay(
             RoundedRectangle(cornerRadius: HM.Radius.md, style: .continuous)
                 .strokeBorder(focused ? HM.Colors.primary : HM.Colors.separator.opacity(0.6), lineWidth: focused ? 2 : 1)
         )
-        .hmShadow()
         .animation(HMMotion.spring, value: focused)
     }
 }

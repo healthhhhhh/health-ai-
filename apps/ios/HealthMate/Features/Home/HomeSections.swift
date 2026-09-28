@@ -249,8 +249,7 @@ struct ToastView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Capsule().fill(Color(hex: 0x1B2336)))
-            .hmShadow(HM.Shadow.raised)
+            .background(Capsule().fill(Color(hex: 0x1B2336)).hmShadow(HM.Shadow.raised))
             .accessibilityAddTraits(.isStaticText)
     }
 }

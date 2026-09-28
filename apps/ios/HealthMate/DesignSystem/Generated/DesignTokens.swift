@@ -45,6 +45,12 @@ enum DesignTokens {
         /// Placeholders and tertiary text
         static let textMuted = Color(light: 0x646D80, dark: 0x7C8699)
         static let onPrimary = Color(light: 0xFFFFFF, dark: 0xFFFFFF)
+        /// Solid icon-circle fills (white glyph on top, ≥3:1)
+        static let successFill = Color(light: 0x1F9D55, dark: 0x1F9D55)
+        static let tealFill = Color(light: 0x0FA396, dark: 0x0FA396)
+        static let purpleFill = Color(light: 0x7C5CF0, dark: 0x7C5CF0)
+        static let warningFill = Color(light: 0xD97706, dark: 0xD97706)
+        static let errorFill = Color(light: 0xE0453A, dark: 0xE0453A)
     }
 
     enum Radius {

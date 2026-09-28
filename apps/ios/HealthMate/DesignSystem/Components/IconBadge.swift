@@ -20,7 +20,7 @@ struct IconBadge: View {
             .font(.system(size: size.iconSize, weight: filled ? .semibold : .medium))
             .foregroundStyle(filled ? Color.white : tone.color)
             .frame(width: size.diameter, height: size.diameter)
-            .background(Circle().fill(filled ? AnyShapeStyle(tone.color.gradient) : AnyShapeStyle(tone.softColor)))
+            .background(Circle().fill(filled ? AnyShapeStyle(tone.fillColor.gradient) : AnyShapeStyle(tone.softColor)))
             .accessibilityHidden(true)
     }
 }

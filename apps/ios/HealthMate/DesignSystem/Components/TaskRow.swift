@@ -53,7 +53,7 @@ struct CheckBox: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(checked ? HM.Colors.primaryFill : HM.Colors.separator, lineWidth: 2)
+                .strokeBorder(checked ? HM.Colors.primaryFill : HM.Colors.textMuted.opacity(0.5), lineWidth: 1.5)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(checked ? HM.Colors.primaryFill : HM.Colors.card))
             Image(systemName: "checkmark")
                 .font(.system(size: 13, weight: .bold))
