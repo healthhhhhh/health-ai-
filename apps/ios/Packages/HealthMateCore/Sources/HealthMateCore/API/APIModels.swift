@@ -350,6 +350,15 @@ public struct TimelineEventRecord: Codable, Equatable, Identifiable, Sendable {
     public let occurredAt: Date
     public let sourceType: String
     public let sourceId: String?
+
+    public init(id: String, eventType: String, title: String, occurredAt: Date, sourceType: String, sourceId: String?) {
+        self.id = id
+        self.eventType = eventType
+        self.title = title
+        self.occurredAt = occurredAt
+        self.sourceType = sourceType
+        self.sourceId = sourceId
+    }
 }
 
 public struct TimelinePage: Codable, Sendable {

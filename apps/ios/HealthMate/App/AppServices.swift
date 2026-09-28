@@ -2,8 +2,8 @@ import Foundation
 import HealthMateCore
 
 /// Composition root: picks service implementations from build configuration.
-/// Set `HM_DATA_SOURCE = api` and `HM_API_BASE_URL` in project.yml (or an
-/// .xcconfig) to talk to the shared backend instead of sample data.
+/// `HM_API_BASE_URL` in project.yml points at the HealthMate API.
+/// `HM_DATA_SOURCE = sample` shows labelled demo data on Home instead of the person's own.
 struct AppServices {
     let healthData: any HealthDataService
     let planRepository: any PlanRepository
@@ -27,10 +27,16 @@ struct AppServices {
         }
         let reminders = NotificationReminderScheduler()
         let api = APIClient(baseURL: baseURL, tokens: KeychainTokenStore())
-        let healthData: any HealthDataService = source == "api"
-            ? HTTPHealthDataService(baseURL: baseURL)
-            : MockHealthDataService(latency: .milliseconds(350))
-        return AppServices(healthData: healthData, planRepository: planRepository, reminders: reminders, api: api, healthReader: HealthKitService())
+        let healthReader = HealthKitService()
+        // "sample" shows labelled demo data on Home; anything else uses the person's real data.
+        var useSample = source == "sample"
+        #if DEBUG
+        if let override = UserDefaults.standard.string(forKey: "hmDataSource") { useSample = override == "sample" }
+        #endif
+        let healthData: any HealthDataService = useSample
+            ? MockHealthDataService(latency: .milliseconds(350))
+            : LiveHomeService(reader: healthReader, api: api, moods: UserDefaultsMoodStore())
+        return AppServices(healthData: healthData, planRepository: planRepository, reminders: reminders, api: api, healthReader: healthReader)
     }
 
     static let preview = AppServices(

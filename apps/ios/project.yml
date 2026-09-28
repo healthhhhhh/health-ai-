@@ -39,7 +39,7 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         ITSAppUsesNonExemptEncryption: false
-        # Data source: "mock" (sample data) or "api" (shared backend).
+        # Home data: "live" (Apple Health, account, timeline) or "sample" (labelled demo data).
         HMDataSource: $(HM_DATA_SOURCE)
         HMAPIBaseURL: $(HM_API_BASE_URL)
         NSAppTransportSecurity:
@@ -60,7 +60,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        HM_DATA_SOURCE: mock
+        HM_DATA_SOURCE: live
         HM_API_BASE_URL: http:/$()/localhost:4000/v1
 
   HealthMateTests:

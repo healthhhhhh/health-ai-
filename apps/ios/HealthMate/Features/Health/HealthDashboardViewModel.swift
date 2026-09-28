@@ -17,7 +17,7 @@ final class HealthDashboardViewModel {
     private let api: APIClient
     private let defaults: UserDefaults
     private let now: () -> Date
-    private static let connectedKey = "appleHealthConnected"
+    private static let connectedKey = HealthConnection.defaultsKey
 
     init(reader: any HealthDataReading, api: APIClient, defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init) {
         self.reader = reader

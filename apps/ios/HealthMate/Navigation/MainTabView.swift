@@ -69,6 +69,11 @@ struct MainTabView: View {
         }
         .sensoryFeedback(.selection, trigger: selection)
         .task { await planStore.loadIfNeeded() }
+        // Home reflects the account and Apple Health, so refresh it when either may have changed.
+        .onChange(of: session.state) { _, _ in Task { await homeModel.load() } }
+        .onChange(of: selection) { _, tab in
+            if tab == .home { Task { await homeModel.load() } }
+        }
         .sheet(isPresented: $showCareFinder) {
             CareFinderView()
         }

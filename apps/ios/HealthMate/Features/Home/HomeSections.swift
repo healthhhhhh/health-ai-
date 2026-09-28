@@ -9,7 +9,7 @@ struct HomeHeader: View {
         HStack(alignment: .center, spacing: 8) {
             TimelineView(.everyMinute) { context in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(HealthFormat.greeting(hour: Calendar.current.component(.hour, from: context.date), firstName: user.firstName))
+                    Text(HealthFormat.greeting(hour: Calendar.current.component(.hour, from: context.date), firstName: user.firstName.isEmpty ? nil : user.firstName))
                         .font(.hmPageHeading)
                         .foregroundStyle(HM.Colors.textPrimary)
                         .accessibilityAddTraits(.isHeader)
@@ -19,12 +19,12 @@ struct HomeHeader: View {
                 }
             }
             Spacer()
-            IconButton(
-                systemName: "bell",
-                label: unreadNotifications > 0 ? "Notifications, \(unreadNotifications) unread" : "Notifications",
-                showsBadge: unreadNotifications > 0
-            ) {}
-            AvatarView(name: user.fullName, size: 42)
+            if unreadNotifications > 0 {
+                IconButton(systemName: "bell", label: "Notifications, \(unreadNotifications) unread", showsBadge: true) {}
+            }
+            if !user.firstName.isEmpty {
+                AvatarView(name: user.fullName, size: 42)
+            }
         }
     }
 }
@@ -41,7 +41,7 @@ struct AssistantHeroCard: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Hi \(firstName), I'm your")
+                    Text(firstName.isEmpty ? "Hi, I'm your" : "Hi \(firstName), I'm your")
                     Text("AI Health Assistant")
                 }
                 .font(.system(.headline, design: .default, weight: .bold))
@@ -101,7 +101,7 @@ struct TodaysHealthGrid: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Today's Health", actionTitle: "See All", action: onSeeAll)
             if metrics.isEmpty {
-                EmptyStateView(systemImage: "heart.text.square", title: "No health data yet", message: "Connect Apple Health or add a measurement to see your daily snapshot.")
+                EmptyStateView(systemImage: "heart.text.square", title: "No health data yet", message: "Connect Apple Health in the Health tab to see your daily snapshot.")
                     .hmCard()
             } else {
                 LazyVGrid(columns: columns, spacing: 12) {
@@ -181,24 +181,26 @@ struct AppointmentsCard: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Upcoming Appointments").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
             if appointments.isEmpty {
-                Text("No upcoming appointments.").font(.hmBody).foregroundStyle(HM.Colors.textSecondary)
+                Text("No upcoming appointments. Add one to your timeline in the Health tab.").font(.hmBody).foregroundStyle(HM.Colors.textSecondary)
             }
             ForEach(appointments) { appointment in
                 HStack(spacing: 12) {
                     IconBadge(systemName: "calendar", tone: .blue, size: .small)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(appointment.title).font(.hmBodyEmphasis).foregroundStyle(HM.Colors.textPrimary)
-                        Text("\(appointment.clinicianName) · \(appointment.specialty)")
-                            .font(.hmCaption)
-                            .foregroundStyle(HM.Colors.textSecondary)
-                            .lineLimit(1)
+                        if !appointment.clinicianName.isEmpty {
+                            Text([appointment.clinicianName, appointment.specialty].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.hmCaption)
+                                .foregroundStyle(HM.Colors.textSecondary)
+                                .lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 6)
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(appointment.startsAt, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
                             .font(.hmCaption.weight(.semibold))
                             .foregroundStyle(HM.Colors.textPrimary)
-                        Label(appointment.mode == .video ? "Video" : "In person", systemImage: appointment.mode == .video ? "video" : "mappin")
+                        Text(appointment.startsAt, format: .dateTime.hour().minute())
                             .font(.hmMicro)
                             .foregroundStyle(HM.Colors.textSecondary)
                     }

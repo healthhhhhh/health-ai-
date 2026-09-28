@@ -76,7 +76,7 @@ export interface PlanTask {
   source: DataSource;
 }
 
-export type ActivityKind = "report" | "medication" | "chat" | "sync" | "symptom" | "measurement";
+export type ActivityKind = "report" | "image" | "medication" | "chat" | "sync" | "symptom" | "measurement" | "note" | "appointment";
 
 export interface ActivityEvent {
   id: string;

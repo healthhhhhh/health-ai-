@@ -13,7 +13,7 @@ HealthMateTests/           view-model tests (optimistic update, rollback, celebr
 ```
 
 - Generate the project: `xcodegen generate` (the `.xcodeproj` is git-ignored).
-- Data source: `HM_DATA_SOURCE` = `mock` (default) or `api` with `HM_API_BASE_URL` in `project.yml`.
+- Home data: `HM_DATA_SOURCE` = `live` (default: Apple Health, your account and timeline, on-device mood) or `sample` (labelled demo data). The API address is `HM_API_BASE_URL` in `project.yml`.
 - Final mascot artwork: add an image set named `Mascot` to `Assets.xcassets`.
 - Design catalogue: run the app → Profile → Design system.
 - HealthKit, notifications, camera and microphone entitlements are added in their phases (7–10);

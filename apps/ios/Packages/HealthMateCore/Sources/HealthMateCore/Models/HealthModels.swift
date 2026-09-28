@@ -121,7 +121,7 @@ public struct PlanTask: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum ActivityKind: String, Codable, Sendable {
-    case report, medication, chat, sync, symptom, measurement
+    case report, image, medication, chat, sync, symptom, measurement, note, appointment
 }
 
 public struct ActivityEvent: Codable, Sendable, Equatable, Identifiable {

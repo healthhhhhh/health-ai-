@@ -196,7 +196,11 @@ private struct AddTimelineEntryView: View {
                 .pickerStyle(.segmented)
                 TextField(type == "symptom" ? "e.g. Headache, mild" : "Title", text: $title)
                 TextField("Details (optional)", text: $details, axis: .vertical).lineLimit(2...5)
-                DatePicker("When", selection: $occurredAt, in: ...Date())
+                if type == "appointment" {
+                    DatePicker("When", selection: $occurredAt)
+                } else {
+                    DatePicker("When", selection: $occurredAt, in: ...Date())
+                }
             }
             .navigationTitle("Add to timeline")
             .navigationBarTitleDisplayMode(.inline)
