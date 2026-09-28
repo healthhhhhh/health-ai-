@@ -66,18 +66,17 @@ struct InsightCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "lightbulb.fill")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(HM.Colors.purple)
                     .frame(width: 28, height: 28)
                     .background(Circle().fill(HM.Colors.card))
-                    .symbolEffect(.pulse, options: .repeating)
-                Text("AI Insight").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
+                Text("Insight").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
                 if isSample { StatusBadge(status: .neutral, text: "Sample") }
                 Spacer()
             }
             Text(message).font(.hmBody).foregroundStyle(HM.Colors.textPrimary)
-            Text("AI-generated from \(basedOn). Not a diagnosis.")
+            Text("AI-generated from \(basedOn) · not a diagnosis")
                 .font(.hmCaption)
                 .foregroundStyle(HM.Colors.textSecondary)
         }
