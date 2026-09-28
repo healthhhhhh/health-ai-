@@ -6,20 +6,29 @@ struct MainTabView: View {
     let services: AppServices
     var onSignOut: () -> Void
 
-    @State private var selection: AppTab = .home
+    @State private var selection: AppTab
     @State private var homeModel: HomeViewModel
+    @State private var planStore: PlanStore
     @State private var pendingQuestion: String?
 
     init(services: AppServices, onSignOut: @escaping () -> Void) {
         self.services = services
         self.onSignOut = onSignOut
         _homeModel = State(initialValue: HomeViewModel(service: services.healthData))
+        _planStore = State(initialValue: PlanStore(repository: services.planRepository, reminders: services.reminders))
+        var initial = AppTab.home
+        #if DEBUG
+        // `-hmInitialTab plans` lets CI screenshot a specific tab.
+        if let raw = UserDefaults.standard.string(forKey: "hmInitialTab"), let tab = AppTab(rawValue: raw) { initial = tab }
+        #endif
+        _selection = State(initialValue: initial)
     }
 
     var body: some View {
         TabView(selection: $selection) {
             HomeView(
                 model: homeModel,
+                plan: planStore,
                 onAsk: { question in
                     pendingQuestion = question
                     selection = .chat
@@ -43,13 +52,7 @@ struct MainTabView: View {
             .tabItem { Label(AppTab.health.title, systemImage: AppTab.health.systemImage) }
             .tag(AppTab.health)
 
-            PlannedFeatureView(
-                title: "My Plan",
-                systemImage: "checklist",
-                tone: .green,
-                phase: "Phase 7",
-                summary: "Tasks, medications from your clinician, habits and reminders. HealthMate never invents or changes medical instructions."
-            )
+            PlanView(store: planStore)
             .tabItem { Label(AppTab.plans.title, systemImage: AppTab.plans.systemImage) }
             .tag(AppTab.plans)
 
@@ -58,5 +61,6 @@ struct MainTabView: View {
                 .tag(AppTab.profile)
         }
         .sensoryFeedback(.selection, trigger: selection)
+        .task { await planStore.loadIfNeeded() }
     }
 }

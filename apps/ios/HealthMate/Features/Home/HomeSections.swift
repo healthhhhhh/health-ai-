@@ -119,10 +119,10 @@ struct TodaysHealthGrid: View {
 }
 
 struct TodaysPlanCard: View {
-    let tasks: [PlanTask]
+    let occurrences: [PlanOccurrence]
     let progress: PlanPresenter.Progress
     let celebrationCount: Int
-    let onToggle: (String) -> Void
+    let onToggle: (PlanOccurrence) -> Void
     let onViewPlan: () -> Void
 
     var body: some View {
@@ -147,19 +147,19 @@ struct TodaysPlanCard: View {
             }
             HMProgressBar(value: progress.ratio, label: "Today's plan progress")
                 .accessibilityHidden(true)
-            if tasks.isEmpty {
-                EmptyStateView(systemImage: "checklist", tone: .green, title: "Nothing planned today", message: "Tasks from your care plan and habits you add will show up here.")
+            if occurrences.isEmpty {
+                EmptyStateView(systemImage: "checklist", tone: .green, title: "Nothing planned today", message: "Add tasks, medications and habits in My Plan to see them here.")
             } else {
                 VStack(spacing: 0) {
-                    ForEach(tasks) { task in
+                    ForEach(occurrences) { occurrence in
                         TaskRow(
-                            title: task.title,
-                            detail: task.detail,
-                            sourceLabel: PlanPresenter.sourceLabel(task),
-                            time: HealthFormat.clockTime(task.scheduledTime, locale: .current),
-                            completed: task.completed
-                        ) { onToggle(task.id) }
-                        if task.id != tasks.last?.id { Divider().overlay(HM.Colors.separator) }
+                            title: occurrence.item.title,
+                            detail: PlanPresenter.detail(occurrence.item),
+                            sourceLabel: PlanPresenter.sourceLabel(occurrence.item),
+                            time: HealthFormat.clockTime(occurrence.item.time.hhmm, locale: .current),
+                            completed: occurrence.completed
+                        ) { onToggle(occurrence) }
+                        if occurrence.id != occurrences.last?.id { Divider().overlay(HM.Colors.separator) }
                     }
                 }
             }

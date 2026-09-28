@@ -6,17 +6,27 @@ import HealthMateCore
 /// .xcconfig) to talk to the shared backend instead of sample data.
 struct AppServices {
     let healthData: any HealthDataService
+    let planRepository: any PlanRepository
+    let reminders: any ReminderScheduling
 
     static func live(bundle: Bundle = .main) -> AppServices {
         let source = bundle.object(forInfoDictionaryKey: "HMDataSource") as? String
         let baseURLString = bundle.object(forInfoDictionaryKey: "HMAPIBaseURL") as? String
-        if source == "api", let baseURLString, let url = URL(string: baseURLString) {
-            return AppServices(healthData: HTTPHealthDataService(baseURL: url))
+        // The plan is stored on this device only (local-first).
+        let planRepository: any PlanRepository
+        if let url = try? FilePlanRepository.defaultFileURL() {
+            planRepository = FilePlanRepository(fileURL: url)
+        } else {
+            planRepository = InMemoryPlanRepository()
         }
-        return AppServices(healthData: MockHealthDataService(latency: .milliseconds(350)))
+        let reminders = NotificationReminderScheduler()
+        if source == "api", let baseURLString, let url = URL(string: baseURLString) {
+            return AppServices(healthData: HTTPHealthDataService(baseURL: url), planRepository: planRepository, reminders: reminders)
+        }
+        return AppServices(healthData: MockHealthDataService(latency: .milliseconds(350)), planRepository: planRepository, reminders: reminders)
     }
 
-    static let preview = AppServices(healthData: MockHealthDataService())
+    static let preview = AppServices(healthData: MockHealthDataService(), planRepository: InMemoryPlanRepository(), reminders: RecordingReminderScheduler())
 }
 
 enum AppLinks {

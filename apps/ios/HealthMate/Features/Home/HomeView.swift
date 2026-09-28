@@ -4,6 +4,7 @@ import SwiftUI
 /// Home dashboard (reference: second iOS screen).
 struct HomeView: View {
     let model: HomeViewModel
+    let plan: PlanStore
     var onAsk: (String) -> Void
     var onNavigate: (AppTab) -> Void
 
@@ -41,7 +42,7 @@ struct HomeView: View {
                 Color.clear.frame(height: 0).background(.bar, ignoresSafeAreaEdges: .top)
             }
             .overlay(alignment: .bottom) { toast }
-            .animation(HMMotion.spring, value: model.actionError)
+            .animation(HMMotion.spring, value: model.actionError ?? plan.actionError)
         }
     }
 
@@ -72,10 +73,10 @@ struct HomeView: View {
             }
 
             TodaysPlanCard(
-                tasks: model.tasks,
-                progress: model.progress,
-                celebrationCount: model.celebrationCount,
-                onToggle: { id in Task { await model.toggleTask(id: id) } },
+                occurrences: plan.occurrences(on: plan.today),
+                progress: plan.progress(on: plan.today),
+                celebrationCount: plan.celebrationCount,
+                onToggle: { occurrence in Task { await plan.toggle(occurrence) } },
                 onViewPlan: { onNavigate(.plans) }
             )
             .appearAnimation(delay: 0.35)
@@ -113,18 +114,26 @@ struct HomeView: View {
     }
 
     @ViewBuilder private var toast: some View {
-        if let message = model.actionError {
+        if let message = model.actionError ?? plan.actionError {
             ToastView(message: message)
                 .padding(.bottom, 16)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: message) {
                     try? await Task.sleep(for: .seconds(3))
-                    withAnimation(HMMotion.spring) { model.actionError = nil }
+                    withAnimation(HMMotion.spring) {
+                        model.actionError = nil
+                        plan.actionError = nil
+                    }
                 }
         }
     }
 }
 
 #Preview("Home") {
-    HomeView(model: HomeViewModel(service: MockHealthDataService()), onAsk: { _ in }, onNavigate: { _ in })
+    HomeView(
+        model: HomeViewModel(service: MockHealthDataService()),
+        plan: PlanStore(repository: InMemoryPlanRepository(), reminders: RecordingReminderScheduler()),
+        onAsk: { _ in },
+        onNavigate: { _ in }
+    )
 }

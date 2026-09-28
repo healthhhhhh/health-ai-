@@ -16,8 +16,6 @@ final class HomeViewModel {
     private(set) var mood: Mood?
     /// Transient, user-facing error for a failed action (shown as a toast).
     var actionError: String?
-    /// Increments when every task in today's plan becomes complete.
-    private(set) var celebrationCount = 0
 
     private let service: any HealthDataService
 
@@ -26,8 +24,6 @@ final class HomeViewModel {
     }
 
     var isSampleData: Bool { service.isSampleData }
-    var tasks: [PlanTask] { summary?.tasks ?? [] }
-    var progress: PlanPresenter.Progress { PlanPresenter.progress(tasks) }
 
     func loadIfNeeded() async {
         guard state == .idle else { return }
@@ -48,23 +44,6 @@ final class HomeViewModel {
             } else {
                 actionError = message
             }
-        }
-    }
-
-    /// Optimistically toggles a task, rolling back if the service rejects it.
-    func toggleTask(id: String) async {
-        guard let index = summary?.tasks.firstIndex(where: { $0.id == id }), let current = summary?.tasks[index].completed else { return }
-        let newValue = !current
-        let wasComplete = progress.total > 0 && progress.done == progress.total
-        summary?.tasks[index].completed = newValue
-        if !wasComplete, progress.total > 0, progress.done == progress.total { celebrationCount += 1 }
-        do {
-            _ = try await service.setTask(id: id, completed: newValue)
-        } catch {
-            if let rollback = summary?.tasks.firstIndex(where: { $0.id == id }) {
-                summary?.tasks[rollback].completed = current
-            }
-            actionError = "Couldn't update that task. Please try again."
         }
     }
 

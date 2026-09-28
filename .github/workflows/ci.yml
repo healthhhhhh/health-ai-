@@ -126,11 +126,12 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
           mkdir -p screenshots
-          shoot() { # name, onboarding-done, scroll-target
+          shoot() { # name, onboarding-done, scroll-target, [extra launch args...]
+            local name=$1 onboarded=$2 scroll=$3; shift 3
             xcrun simctl terminate "$UDID" com.healthmate.app 2>/dev/null || true
-            xcrun simctl launch "$UDID" com.healthmate.app -hasCompletedOnboarding "$2" -hmScrollTarget "$3"
+            xcrun simctl launch "$UDID" com.healthmate.app -hasCompletedOnboarding "$onboarded" -hmScrollTarget "$scroll" "$@"
             sleep 6
-            xcrun simctl io "$UDID" screenshot "screenshots/$1.png"
+            xcrun simctl io "$UDID" screenshot "screenshots/$name.png"
           }
           for appearance in light dark; do
             xcrun simctl ui "$UDID" appearance "$appearance"
@@ -138,6 +139,8 @@ jobs:
             shoot "home-$appearance" YES ""
             shoot "home-plan-$appearance" YES plan
             shoot "home-activity-$appearance" YES activity
+            shoot "plan-$appearance" YES "" -hmInitialTab plans
+            shoot "plan-add-$appearance" YES "" -hmInitialTab plans -hmShowAddPlan YES
           done
 
       # Artifact storage isn't reachable from every review environment, so the

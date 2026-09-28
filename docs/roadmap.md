@@ -8,7 +8,7 @@
 | 4 | AI chat | ⬜ (route/tab + chat bubble component exist) |
 | 5 | Health dashboard + timeline | ⬜ (timeline item, chart card components exist) |
 | 6 | Reports / document upload | ⬜ (upload + report card components exist) |
-| 7 | Plans / tasks / reminders | ⬜ (task + medication rows exist) |
+| 7 | Plans / tasks / reminders | 🟡 iOS My Plan: tasks, medications (verbatim clinician instructions), habits, week view, on-device storage, local reminders (private by default) |
 | 8 | Image analysis | ⬜ |
 | 9 | Voice | ⬜ |
 | 10 | HealthKit | ⬜ |

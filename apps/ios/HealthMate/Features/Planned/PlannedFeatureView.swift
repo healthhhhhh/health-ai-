@@ -54,6 +54,7 @@ struct ChatPlaceholderView: View {
 
 struct ProfileView: View {
     var onSignOut: () -> Void
+    @AppStorage("showReminderDetails") private var showReminderDetails = false
 
     var body: some View {
         NavigationStack {
@@ -62,6 +63,13 @@ struct ProfileView: View {
                     Label("Health profile, conditions and allergies arrive with authentication in Phase 2.", systemImage: "person.text.rectangle")
                         .font(.hmBody)
                         .foregroundStyle(HM.Colors.textSecondary)
+                }
+                Section {
+                    Toggle("Show names in reminders", isOn: $showReminderDetails)
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    Text("Off: reminders only say something is due, so nothing about your health appears on the lock screen. Takes effect the next time your plan changes.")
                 }
                 Section("App") {
                     NavigationLink {

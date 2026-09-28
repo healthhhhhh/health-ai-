@@ -46,31 +46,6 @@ final class HomeViewModelTests: XCTestCase {
         guard case .failed = model.state else { return XCTFail("expected failure state") }
     }
 
-    func testToggleTaskUpdatesProgress() async {
-        let model = HomeViewModel(service: MockHealthDataService())
-        await model.load()
-        let before = model.progress.done
-        await model.toggleTask(id: "t2")
-        XCTAssertEqual(model.progress.done, before + 1)
-    }
-
-    func testToggleRollsBackOnFailure() async {
-        let service = FlakyService()
-        let model = HomeViewModel(service: service)
-        await model.load()
-        await service.setFailWrites(true)
-        await model.toggleTask(id: "t2")
-        XCTAssertEqual(model.tasks.first { $0.id == "t2" }?.completed, false)
-        XCTAssertNotNil(model.actionError)
-    }
-
-    func testCompletingEveryTaskCelebrates() async {
-        let model = HomeViewModel(service: MockHealthDataService())
-        await model.load()
-        for task in model.tasks where !task.completed { await model.toggleTask(id: task.id) }
-        XCTAssertEqual(model.celebrationCount, 1)
-    }
-
     func testMoodRollsBackOnFailure() async {
         let service = FlakyService()
         let model = HomeViewModel(service: service)
