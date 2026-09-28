@@ -10,6 +10,9 @@ concurrency:
   # Queue rather than cancel: every commit gets its own iOS screenshots.
   cancel-in-progress: false
 
+permissions:
+  contents: write # the iOS job commits screenshots back to claude/* branches
+
 jobs:
   web:
     name: Web (lint, types, unit, e2e)
@@ -65,8 +68,7 @@ jobs:
           sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
           echo "version=$(xcodebuild -version | tr '\n' ' ' | tr -cs 'A-Za-z0-9.' '-')" >> "$GITHUB_OUTPUT"
 
-      # Boot the simulator early so it starts up while the package tests run.
-      - name: Boot simulator
+      - name: Pick simulator
         id: sim
         run: |
           SDK_MAJOR=$(xcrun --sdk iphonesimulator --show-sdk-version | cut -d. -f1)
@@ -82,14 +84,6 @@ jobs:
           ')
           echo "Using simulator $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-          xcrun simctl boot "$UDID" || true
-
-      - name: Cache SwiftPM build
-        uses: actions/cache@v4
-        with:
-          path: apps/ios/Packages/HealthMateCore/.build
-          key: spm-${{ steps.xcode.outputs.version }}-${{ hashFiles('apps/ios/Packages/HealthMateCore/**/*.swift') }}
-          restore-keys: spm-${{ steps.xcode.outputs.version }}-
 
       - name: HealthMateCore tests
         run: swift test
@@ -127,6 +121,7 @@ jobs:
         run: |
           UDID=${{ steps.sim.outputs.udid }}
           APP=$(find DerivedData/Build/Products -path "*iphonesimulator*" -name "HealthMate.app" -maxdepth 3 | head -1)
+          xcrun simctl boot "$UDID" 2>/dev/null || true
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
@@ -145,9 +140,28 @@ jobs:
             shoot "home-activity-$appearance" YES activity
           done
 
+      # Artifact storage isn't reachable from every review environment, so the
+      # screenshots are also committed to docs/design/ios-screenshots on the
+      # same branch ([skip ci] prevents a loop).
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
           name: ios-screenshots
           path: apps/ios/screenshots
           retention-days: 14
+
+      - name: Commit screenshots to branch
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/claude/')
+        run: |
+          DEST=docs/design/ios-screenshots
+          rm -rf "$DEST" && mkdir -p "$DEST"
+          for f in apps/ios/screenshots/*.png; do
+            # Half-resolution JPEGs keep the repository small.
+            sips -Z 1300 -s format jpeg -s formatOptions 75 "$f" --out "$DEST/$(basename "${f%.png}").jpg" >/dev/null
+          done
+          echo "${{ github.sha }}" > "$DEST/SOURCE_COMMIT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add "$DEST"
+          git commit -m "iOS screenshots for ${GITHUB_SHA::7} [skip ci]" || exit 0
+          for i in 1 2 3; do git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break; sleep 5; done
