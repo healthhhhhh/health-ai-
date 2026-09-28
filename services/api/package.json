@@ -6,13 +6,13 @@
   "description": "HealthMate shared API (NestJS) \u2014 auth, health profile, AI gateway, safety, documents, health data",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/main.js",
-    "dev": "tsc -p tsconfig.build.json --watch & node --watch dist/main.js",
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
+    "dev": "tsc -p tsconfig.build.json --watch & node --env-file-if-exists=../../.env --watch dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "demo": "node dist/demo.js",
-    "worker": "node dist/worker.js",
-    "db:migrate": "node dist/migrate.js"
+    "worker": "node --env-file-if-exists=../../.env dist/worker.js",
+    "db:migrate": "node --env-file-if-exists=../../.env dist/migrate.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

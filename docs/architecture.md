@@ -16,8 +16,14 @@ HealthMate ships a native iOS app and a web app on **one shared backend and data
                           │         prompt management, safety checks, vision,
                           │         documents, speech, usage & cost tracking
                           │
-      PostgreSQL + pgvector · Redis/BullMQ · S3-compatible object storage
+   Supabase: Postgres (RLS, pgvector) · Auth · Storage (private buckets)
+             · Edge Function `embed` (gte-small)      Redis: rate limits · BullMQ jobs
 ```
+
+Adapters keep the business logic independent of the infrastructure: identity (local | Supabase
+Auth), object storage (local disk | Supabase Storage), embeddings (Supabase | dev hash | none),
+job queue (in-process | BullMQ), rate-limit store (memory | Redis) — chosen by configuration in
+`services/api/src/adapters.ts`. Details and rationale: [`backend-supabase-migration.md`](backend-supabase-migration.md).
 
 ## Repository layout
 
@@ -51,15 +57,18 @@ told to ignore embedded instructions, and detected injection attempts are flagge
 
 ## API (services/api)
 
-- `npm run api:dev` runs it on `http://localhost:4000` with an embedded in-memory PGlite database.
-  Set `PGLITE_DIR` to keep data between restarts, or `DATABASE_URL` for PostgreSQL. Set
-  `JWT_SECRET` (32+ characters) too, or sessions reset on every restart. Migrations are applied at
-  start-up (`services/api/migrations`).
+- `npm run api:dev` runs it on `http://localhost:4000`; with no configuration it uses an embedded
+  PGlite database (with pgvector and local stand-ins for Supabase's `auth`/`storage` schemas), local
+  files, local accounts and in-process jobs. `.env` at the repo root configures Supabase, Redis and
+  the AI key (see `.env.example`).
+- Migrations: `services/api/migrations` (mirrored to `supabase/migrations`). Production applies them
+  in the deploy step (`npm run db:migrate`), not at start-up.
 - `ANTHROPIC_API_KEY` enables the AI features. Without it `/v1/meta` reports `ai.available: false` and
   AI routes return `ai_unavailable`. The apps show this state; nothing is faked.
-- Access tokens last 15 minutes. Refresh tokens rotate, and reusing one revokes its whole family.
-- Every health route requires a bearer token and filters by the caller's user ID. Rate limits
-  cover auth, chat and uploads. Audit logs record actions, never health content.
+- Every route except `auth/*` requires a session; every query filters by the caller's user ID, and
+  Postgres Row Level Security enforces the same isolation independently. Every route is
+  rate-limited. Audit logs record actions, never health content.
+- `npm run worker` processes reports/photos and embeddings from Redis and runs housekeeping.
 
 ## Client data layer
 
@@ -67,12 +76,13 @@ Both clients depend on an interface, never on a concrete backend:
 
 | | Interface | Sample-data impl | Backend impl |
 |---|---|---|---|
-| Web | `HealthMateClient` (`src/lib/data/client.ts`) | `MockHealthMateClient` | `HttpHealthMateClient` |
+| Web | server-only API layer (`src/lib/api/server.ts`, `data.ts`) | the API's demo server (`npm run demo -w @healthmate/api`, labelled) | the HealthMate API |
 | iOS | `HealthDataService` (`HealthMateCore/Services`) | `MockHealthDataService` (actor) | `HTTPHealthDataService` |
 
-Selection is configuration, not code: `NEXT_PUBLIC_DATA_SOURCE=mock|api` (web) and
+Selection is configuration, not code: `HEALTHMATE_API_URL` (web, server-side only) and the
 `HM_DATA_SOURCE` build setting (iOS, `project.yml`). Every sample record is tagged
-`source: "sample"` and both apps show a *Demo mode* notice while using it.
+`source: "sample"` and both apps show a *Demo mode* notice while using it (the API reports
+`ai.demo` in `/v1/meta`).
 
 Web mutations (task completion, mood check-in) go through **Next.js server actions** that call the
 data client and revalidate the page, so state survives navigation and reload; the UI updates
@@ -98,5 +108,7 @@ optimistically and rolls back with an inline error if the call fails. iOS does t
 10. **Motion respects Reduce Motion** — CSS media query on web, `accessibilityReduceMotion` on iOS.
 
 ## Security baseline
-No model keys in clients; auth tokens in Keychain (iOS) / httpOnly cookies (web); server-side
-authorization on every health route; signed URLs for uploads; audit logs without health content.
+No model keys, Supabase secret key or database URL in clients; auth tokens in Keychain (iOS) /
+httpOnly cookies (web); server-side authorization on every health route plus RLS on every table;
+private buckets with short-lived signed URLs for uploads and downloads; audit logs without health
+content.
