@@ -118,6 +118,11 @@ public struct EscalationAction: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable { case callEmergency = "call_emergency", crisisSupport = "crisis_support", contactClinician = "contact_clinician", findCare = "find_care" }
     public let kind: Kind
     public let label: String
+
+    public init(kind: Kind, label: String) {
+        self.kind = kind
+        self.label = label
+    }
 }
 
 public struct Escalation: Codable, Equatable, Sendable {
@@ -125,6 +130,13 @@ public struct Escalation: Codable, Equatable, Sendable {
     public let title: String
     public let body: String
     public let actions: [EscalationAction]
+
+    public init(level: TriageLevel, title: String, body: String, actions: [EscalationAction]) {
+        self.level = level
+        self.title = title
+        self.body = body
+        self.actions = actions
+    }
 }
 
 public struct FollowUpQuestion: Codable, Equatable, Sendable {

@@ -81,7 +81,7 @@ public actor APIClient {
     private let now: @Sendable () -> Date
     private var refreshTask: Task<SessionTokens?, Never>?
 
-    public init(baseURL: URL, tokens: any TokenStore, session: URLSession = .shared, now: @escaping @Sendable () -> Date = Date.init) {
+    public init(baseURL: URL, tokens: any TokenStore, session: URLSession = .shared, now: @escaping @Sendable () -> Date = { Date() }) {
         self.baseURL = baseURL
         self.session = session
         self.tokens = tokens

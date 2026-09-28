@@ -54,19 +54,3 @@ extension SafetyEngine {
         }
     }
 }
-
-extension Escalation {
-    public init(level: TriageLevel, title: String, body: String, actions: [EscalationAction]) {
-        self.level = level
-        self.title = title
-        self.body = body
-        self.actions = actions
-    }
-}
-
-extension EscalationAction {
-    public init(kind: Kind, label: String) {
-        self.kind = kind
-        self.label = label
-    }
-}
