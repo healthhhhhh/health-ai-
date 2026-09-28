@@ -117,3 +117,36 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO \
             | (command -v xcbeautify >/dev/null && xcbeautify || cat)
+
+      # Visual review: install the built app and capture key screens in light
+      # and dark mode. Launch arguments override UserDefaults (NSArgumentDomain),
+      # which is how each run picks a screen.
+      - name: Capture screenshots
+        working-directory: apps/ios
+        run: |
+          UDID=${{ steps.sim.outputs.udid }}
+          APP=$(find DerivedData/Build/Products -path "*iphonesimulator*" -name "HealthMate.app" -maxdepth 3 | head -1)
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
+          mkdir -p screenshots
+          shoot() { # name, onboarding-done, scroll-target
+            xcrun simctl terminate "$UDID" com.healthmate.app 2>/dev/null || true
+            xcrun simctl launch "$UDID" com.healthmate.app -hasCompletedOnboarding "$2" -hmScrollTarget "$3"
+            sleep 6
+            xcrun simctl io "$UDID" screenshot "screenshots/$1.png"
+          }
+          for appearance in light dark; do
+            xcrun simctl ui "$UDID" appearance "$appearance"
+            shoot "onboarding-$appearance" NO ""
+            shoot "home-$appearance" YES ""
+            shoot "home-plan-$appearance" YES plan
+            shoot "home-activity-$appearance" YES activity
+          done
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
+          path: apps/ios/screenshots
+          retention-days: 14

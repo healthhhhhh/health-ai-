@@ -11,6 +11,7 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 Group {
                     switch model.state {
@@ -30,6 +31,8 @@ struct HomeView: View {
                 .padding(.bottom, HM.Spacing.xxl)
             }
             .background(HM.Colors.background.ignoresSafeArea())
+            .task(id: model.state) { await debugScroll(proxy) }
+            }
             .refreshable { await model.load() }
             .task { await model.loadIfNeeded() }
             .toolbar(.hidden, for: .navigationBar)
@@ -57,6 +60,7 @@ struct HomeView: View {
             .appearAnimation(delay: 0.1)
 
             TodaysHealthGrid(metrics: summary.metrics) { onNavigate(.health) }
+                .id("health")
 
             if let insight = summary.insight {
                 InsightCard(message: insight.message, basedOn: insight.basedOn, isSample: insight.source == .sample)
@@ -71,12 +75,26 @@ struct HomeView: View {
                 onViewPlan: { onNavigate(.plans) }
             )
             .appearAnimation(delay: 0.35)
+            .id("plan")
 
             AppointmentsCard(appointments: summary.upcomingAppointments)
             RecentActivityCard(events: summary.recentActivity)
+                .id("activity")
             DisclaimerView()
         }
         .padding(.top, HM.Spacing.xs)
+    }
+
+    /// Debug builds only: `-hmScrollTarget plan` scrolls to a section after
+    /// loading, so CI can screenshot every part of Home.
+    private func debugScroll(_ proxy: ScrollViewProxy) async {
+        #if DEBUG
+        guard model.state == .loaded,
+              let target = UserDefaults.standard.string(forKey: "hmScrollTarget"),
+              !target.isEmpty else { return }
+        try? await Task.sleep(for: .seconds(1.5))
+        proxy.scrollTo(target, anchor: .top)
+        #endif
     }
 
     /// Skeleton that mirrors the real layout while data loads.
