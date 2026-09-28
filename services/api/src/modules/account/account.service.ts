@@ -2,8 +2,7 @@ import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { AuditService } from "../../common/audit";
 import { ApiError } from "../../common/errors";
 import { DATABASE, type Database } from "../../db/database";
-import { AuthService } from "../auth/auth.service";
-import { TokenService } from "../auth/token.service";
+import { IDENTITY, type IdentityProvider } from "../auth/identity";
 import { STORAGE, type ObjectStorage } from "../documents/storage";
 
 export type ConsentKind = "ai_processing" | "document_processing" | "health_data_sync" | "voice";
@@ -15,64 +14,108 @@ export class AccountService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(AuditService) private readonly audit: AuditService,
-    @Inject(AuthService) private readonly auth: AuthService,
-    @Inject(TokenService) private readonly tokens: TokenService,
+    @Inject(IDENTITY) private readonly identity: IdentityProvider,
     @Inject(STORAGE) private readonly storage: ObjectStorage,
   ) {}
 
   /** Everything we hold about the user, as JSON. Operational logs are excluded (they hold no health content). */
   async export(userId: string) {
     const q = async (sql: string) => (await this.db.query(sql, [userId])).rows;
-    const [account, profile, conditions, allergies, medications, memories, conversations, messages, documents, measurements, timeline, consents, moodCheckIns, plan] = await Promise.all([
-      q(`SELECT email, created_at FROM users WHERE id = $1`),
-      q(`SELECT first_name, last_name, date_of_birth::text AS date_of_birth, sex, height_cm, time_zone FROM profiles WHERE user_id = $1`),
-      q(`SELECT name, status, source, notes, created_at FROM health_conditions WHERE user_id = $1`),
-      q(`SELECT substance, reaction, severity, source, created_at FROM allergies WHERE user_id = $1`),
-      q(`SELECT name, instruction, source, active, created_at FROM medications WHERE user_id = $1`),
-      q(`SELECT fact, source, status, confidence, occurred_on::text AS occurred_on, created_at FROM health_memories WHERE user_id = $1`),
-      q(`SELECT id, title, created_at FROM conversations WHERE user_id = $1`),
-      q(`SELECT conversation_id, role, content, triage_level, created_at FROM messages WHERE user_id = $1 ORDER BY created_at`),
-      q(`SELECT kind, purpose, filename, content_type, byte_size, status, result, created_at FROM documents WHERE user_id = $1`),
-      q(`SELECT kind, value, unit, recorded_at, source FROM health_measurements WHERE user_id = $1 ORDER BY recorded_at`),
-      q(`SELECT event_type, title, occurred_at, source_type, payload FROM timeline_events WHERE user_id = $1 ORDER BY occurred_at`),
-      q(`SELECT kind, granted, version, created_at FROM consents WHERE user_id = $1 ORDER BY created_at`),
-      q(`SELECT mood, recorded_at FROM mood_checkins WHERE user_id = $1 ORDER BY recorded_at`),
-      q(`SELECT revision, document, updated_at FROM plans WHERE user_id = $1`),
-    ]);
+    const sections = {
+      account: q(`SELECT email, created_at FROM users WHERE id = $1`),
+      profile: q(`SELECT first_name, last_name, date_of_birth::text AS date_of_birth, sex, height_cm, time_zone FROM profiles WHERE user_id = $1`),
+      conditions: q(`SELECT name, status, source, notes, created_at FROM health_conditions WHERE user_id = $1 ORDER BY created_at`),
+      allergies: q(`SELECT substance, reaction, severity, source, created_at FROM allergies WHERE user_id = $1 ORDER BY created_at`),
+      medications: q(`SELECT name, instruction, source, active, created_at FROM medications WHERE user_id = $1 ORDER BY created_at`),
+      symptoms: q(
+        `SELECT s.name, s.body_area, s.status, s.notes, s.first_noted_on::text AS first_noted_on, s.created_at,
+                COALESCE((SELECT json_agg(json_build_object('severity', e.severity, 'occurredAt', e.occurred_at, 'notes', e.notes, 'triageLevel', e.triage_level) ORDER BY e.occurred_at)
+                          FROM symptom_events e WHERE e.symptom_id = s.id), '[]') AS events
+           FROM symptoms s WHERE s.user_id = $1 ORDER BY s.created_at`,
+      ),
+      memories: q(`SELECT fact, source, status, confidence, occurred_on::text AS occurred_on, confirmed_at, created_at FROM health_memories WHERE user_id = $1 ORDER BY created_at`),
+      conversations: q(`SELECT id, title, created_at FROM conversations WHERE user_id = $1 ORDER BY created_at`),
+      messages: q(`SELECT conversation_id, role, content, triage_level, created_at FROM messages WHERE user_id = $1 ORDER BY created_at`),
+      documents: q(
+        `SELECT 'report' AS kind, NULL AS purpose, d.filename, d.content_type, d.byte_size, d.status, d.document_type, d.created_at,
+                (SELECT a.result FROM document_analysis a WHERE a.document_id = d.id ORDER BY a.created_at DESC LIMIT 1) AS result
+           FROM medical_documents d WHERE d.user_id = $1
+         UNION ALL
+         SELECT 'image', i.purpose, i.filename, i.content_type, i.byte_size, i.status, NULL, i.created_at,
+                (SELECT a.result FROM image_analysis a WHERE a.image_id = i.id ORDER BY a.created_at DESC LIMIT 1)
+           FROM health_images i WHERE i.user_id = $1
+         ORDER BY created_at`,
+      ),
+      measurements: q(`SELECT kind, value, unit, recorded_at, source FROM health_measurements WHERE user_id = $1 ORDER BY recorded_at`),
+      healthKit: q(`SELECT status, device_name, scopes, connected_at, disconnected_at, last_sync_at FROM healthkit_connections WHERE user_id = $1`),
+      timeline: q(`SELECT event_type, title, occurred_at, source_type, payload FROM timeline_events WHERE user_id = $1 ORDER BY occurred_at`),
+      consents: q(`SELECT kind, granted, version, created_at FROM consents WHERE user_id = $1 ORDER BY created_at`),
+      moodCheckIns: q(`SELECT mood, recorded_at FROM mood_checkins WHERE user_id = $1 ORDER BY recorded_at`),
+      plan: q(`SELECT revision, updated_at FROM plans WHERE user_id = $1`),
+      planItems: q(
+        `SELECT title, notes, kind, time_of_day::text AS time_of_day, repeat_type, repeat_days, repeat_day::text AS repeat_day, reminder_enabled, source, instruction,
+                start_day::text AS start_day, end_day::text AS end_day, created_at
+           FROM plan_items WHERE user_id = $1 ORDER BY position`,
+      ),
+      taskCompletions: q(`SELECT plan_item_id, day::text AS day, completed_at FROM task_completions WHERE user_id = $1 ORDER BY day`),
+      careProviders: q(`SELECT name, specialty, phone, address, website, notes, created_at FROM care_providers WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at`),
+      appointments: q(`SELECT title, starts_at, ends_at, location, mode, status, notes, created_at FROM appointments WHERE user_id = $1 AND deleted_at IS NULL ORDER BY starts_at`),
+    };
+    const entries = await Promise.all(Object.entries(sections).map(async ([key, rows]) => [key, await rows] as const));
+    const data = Object.fromEntries(entries) as Record<keyof typeof sections, Record<string, unknown>[]>;
     await this.audit.log("account.export", userId);
     return {
       exportedAt: new Date().toISOString(),
       format: "healthmate-export-v1",
-      account: account[0] ?? null,
-      profile: profile[0] ?? null,
-      conditions,
-      allergies,
-      medications,
-      memories,
-      conversations,
-      messages,
-      documents,
-      measurements,
-      timeline,
-      consents,
-      moodCheckIns,
-      plan: plan[0] ?? null,
+      ...data,
+      account: data.account[0] ?? null,
+      profile: data.profile[0] ?? null,
+      plan: data.plan[0] ? { ...data.plan[0], items: data.planItems, completions: data.taskCompletions } : null,
     };
   }
 
-  /** Permanently deletes the account, its records and stored files. Requires the password. */
+  /**
+   * Permanently deletes the account: stored files, then every database row
+   * (cascade from the identity). Requires the password. Safe to repeat: the
+   * account is marked first, and `finishPendingDeletions` completes any
+   * deletion interrupted part-way (e.g. Storage unavailable).
+   */
   async delete(userId: string, password: string) {
-    if (!(await this.auth.verifyPassword(userId, password))) {
+    if (!(await this.identity.verifyPassword(userId, password))) {
       throw new ApiError("forbidden", "Password is incorrect.", HttpStatus.FORBIDDEN);
     }
-    const { rows: files } = await this.db.query<{ storage_key: string }>(`SELECT storage_key FROM documents WHERE user_id = $1`, [userId]);
-    await this.db.transaction(async (tx) => {
-      await this.tokens.revokeAll(userId, tx);
-      // ON DELETE CASCADE removes every health table's rows.
-      await tx.query(`DELETE FROM users WHERE id = $1`, [userId]);
-      await this.audit.log("account.delete", userId, { files: files.length }, tx);
-    });
-    await Promise.all(files.map((f) => this.storage.delete(f.storage_key).catch(() => undefined)));
+    await this.db.query(`UPDATE users SET deletion_requested_at = COALESCE(deletion_requested_at, now()) WHERE id = $1`, [userId]);
+    await this.audit.log("account.delete_requested", userId);
+    await this.purge(userId);
+  }
+
+  /** Completes deletions that were requested but interrupted. Returns how many finished. */
+  async finishPendingDeletions(olderThanMinutes = 10): Promise<number> {
+    const { rows } = await this.db.query<{ id: string }>(
+      `SELECT id FROM users WHERE deletion_requested_at < now() - make_interval(mins => $1) LIMIT 50`,
+      [olderThanMinutes],
+    );
+    let done = 0;
+    for (const { id } of rows) {
+      try {
+        await this.purge(id);
+        done += 1;
+      } catch {
+        // Retried on the next sweep.
+      }
+    }
+    return done;
+  }
+
+  private async purge(userId: string) {
+    const { rows } = await this.db.query<{ n: number }>(
+      `SELECT ((SELECT count(*) FROM medical_documents WHERE user_id = $1) + (SELECT count(*) FROM health_images WHERE user_id = $1))::int AS n`,
+      [userId],
+    );
+    // Files first: if Storage fails the account still exists and the deletion can be retried.
+    await this.storage.deleteUserFiles(userId);
+    await this.identity.deleteIdentity(userId);
+    await this.audit.log("account.delete", userId, { files: rows[0]?.n ?? 0 });
   }
 
   async consents(userId: string) {

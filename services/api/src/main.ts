@@ -3,20 +3,26 @@ import { Logger } from "@nestjs/common";
 import { createApp } from "./bootstrap";
 import { loadConfig } from "./config";
 import { createDatabase, migrate } from "./db/database";
-import { AnthropicProvider, UnavailableProvider } from "./modules/ai/anthropic.provider";
-import { LocalObjectStorage } from "./modules/documents/storage";
+import { aiProviderFor, jobQueueFor, rateLimitStoreFor, storageFor } from "./adapters";
 
 async function main() {
   const config = loadConfig();
   const logger = new Logger("Main");
-  const database = await createDatabase({ url: config.DATABASE_URL, pgliteDir: config.PGLITE_DIR });
-  const applied = await migrate(database);
-  if (applied.length) logger.log(`applied migrations: ${applied.join(", ")}`);
-  const aiProvider = config.ANTHROPIC_API_KEY ? new AnthropicProvider(config.ANTHROPIC_API_KEY, config.AI_MODEL) : new UnavailableProvider();
-  const storage = new LocalObjectStorage(config.STORAGE_DIR, config.PUBLIC_BASE_URL, config.jwtSecret);
-  const app = await createApp({ config, database, aiProvider, storage });
+  const database = await createDatabase({ url: config.DATABASE_URL, pgliteDir: config.PGLITE_DIR, caCert: config.DATABASE_CA_CERT });
+  if (config.migrateOnStart) {
+    const applied = await migrate(database);
+    if (applied.length) logger.log(`applied migrations: ${applied.join(", ")}`);
+  }
+  const aiProvider = aiProviderFor(config);
+  const app = await createApp({
+    config, database, aiProvider, storage: storageFor(config), jobQueue: await jobQueueFor(config),
+    rateLimitStore: await rateLimitStoreFor(config),
+  });
   await app.listen(config.PORT);
-  logger.log(`HealthMate API listening on :${config.PORT} (database: ${config.DATABASE_URL ? "postgres" : "embedded"}, ai: ${aiProvider.name})`);
+  logger.log(
+    `HealthMate API listening on :${config.PORT} (database: ${config.DATABASE_URL ? "postgres" : "embedded"}, auth: ${config.authProvider}, storage: ${config.storageProvider}, ` +
+      `embeddings: ${config.embeddingsProvider}, jobs: ${config.REDIS_URL ? "redis" : "in-process"}, ai: ${aiProvider.name})`,
+  );
 }
 
 main().catch((error) => {

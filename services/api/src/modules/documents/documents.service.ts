@@ -1,5 +1,5 @@
 import { detectPromptInjection, reviewAssistantText, triage } from "@healthmate/safety";
-import { HttpStatus, Inject, Injectable, Logger } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { AuditService } from "../../common/audit";
 import { ApiError, notFound } from "../../common/errors";
@@ -9,12 +9,13 @@ import { AiDeclinedError, AiUnavailableError } from "../ai/ai.types";
 import { TimelineService } from "../timeline/timeline.service";
 import { IMAGE_SYSTEM_PROMPT, ImageAnalysisSchema, REPORT_SYSTEM_PROMPT, ReportExtractionSchema, type ImageAnalysis, type ReportExtraction } from "./document.prompts";
 import { JobQueue } from "./job-queue";
-import { MAX_UPLOAD_BYTES, sniffContentType, STORAGE, type ObjectStorage, type SupportedContentType } from "./storage";
+import { MAX_UPLOAD_BYTES, sniffContentType, STORAGE, type Bucket, type ObjectRef, type ObjectStorage, type SupportedContentType } from "./storage";
 
 export type DocumentKind = "report" | "image";
 export type DocumentStatus = "awaiting_upload" | "processing" | "ready" | "failed";
 export type ImagePurpose = "skin" | "wound" | "swelling" | "other";
 
+/** API contract (unchanged): one shape for reports and photos. */
 export interface DocumentRecord {
   id: string;
   kind: DocumentKind;
@@ -38,10 +39,12 @@ type Row = {
   id: string;
   kind: DocumentKind;
   purpose: ImagePurpose | null;
+  note: string | null;
   filename: string;
   content_type: string;
   byte_size: number;
-  storage_key: string;
+  storage_bucket: Bucket;
+  storage_path: string;
   status: DocumentStatus;
   failure_reason: string | null;
   result: StoredResult | null;
@@ -63,12 +66,27 @@ const toRecord = (r: Row): DocumentRecord => ({
   processedAt: r.processed_at?.toISOString() ?? null,
 });
 
-const COLUMNS = "id, kind, purpose, filename, content_type, byte_size, storage_key, status, failure_reason, result, created_at, processed_at";
+/** Reports and photos live in separate tables; this reads both with one shape (latest analysis result). */
+const SELECT_FILES = `
+  SELECT d.id, 'report'::text AS kind, NULL::text AS purpose, NULL::text AS note, d.filename, d.content_type, d.byte_size, d.storage_bucket, d.storage_path,
+         d.status, d.failure_reason, d.created_at, d.processed_at, d.user_id,
+         (SELECT a.result FROM document_analysis a WHERE a.document_id = d.id ORDER BY a.created_at DESC LIMIT 1) AS result
+  FROM medical_documents d
+  UNION ALL
+  SELECT i.id, 'image', i.purpose, i.note, i.filename, i.content_type, i.byte_size, i.storage_bucket, i.storage_path,
+         i.status, i.failure_reason, i.created_at, i.processed_at, i.user_id,
+         (SELECT a.result FROM image_analysis a WHERE a.image_id = i.id ORDER BY a.created_at DESC LIMIT 1)
+  FROM health_images i`;
+
+const TABLE: Record<DocumentKind, string> = { report: "medical_documents", image: "health_images" };
+const BUCKET: Record<DocumentKind, Bucket> = { report: "medical-reports", image: "health-images" };
 const REPORT_TYPES: SupportedContentType[] = ["application/pdf", "image/jpeg", "image/png"];
 const IMAGE_TYPES: SupportedContentType[] = ["image/jpeg", "image/png"];
+/** Processing that hasn't finished after this long is treated as interrupted. */
+export const STUCK_AFTER_MINUTES = 15;
 
 @Injectable()
-export class DocumentsService {
+export class DocumentsService implements OnModuleInit {
   private readonly logger = new Logger("Documents");
 
   constructor(
@@ -80,7 +98,11 @@ export class DocumentsService {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  /** Step 1: validate metadata, create the record and a short-lived upload URL. */
+  onModuleInit() {
+    this.queue.register("process-document", (job) => this.run(job.userId, job.kind, job.id));
+  }
+
+  /** Step 1: validate metadata, create the record and a short-lived signed upload URL. */
   async create(userId: string, input: { kind: DocumentKind; filename: string; contentType: string; byteSize: number; purpose?: ImagePurpose | null }) {
     const allowed = input.kind === "report" ? REPORT_TYPES : IMAGE_TYPES;
     if (!allowed.includes(input.contentType as SupportedContentType)) {
@@ -90,34 +112,46 @@ export class DocumentsService {
       throw new ApiError("payload_too_large", "Files can be up to 20 MB.", HttpStatus.PAYLOAD_TOO_LARGE);
     }
     const id = randomUUID();
-    const storageKey = `${userId}/${id}`;
-    const { rows } = await this.db.query<Row>(
-      `INSERT INTO documents (id, user_id, kind, purpose, filename, content_type, byte_size, storage_key, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'awaiting_upload') RETURNING ${COLUMNS}`,
-      [id, userId, input.kind, input.kind === "image" ? (input.purpose ?? "other") : null, sanitizeFilename(input.filename), input.contentType, input.byteSize, storageKey],
-    );
-    const upload = await this.storage.createUploadUrl(storageKey, input.contentType, input.byteSize, 15 * 60);
-    return { document: toRecord(rows[0]!), upload: { method: "PUT", ...upload } };
+    const ref: ObjectRef = { bucket: BUCKET[input.kind], path: `${userId}/${id}` };
+    const filename = sanitizeFilename(input.filename);
+    if (input.kind === "report") {
+      await this.db.query(
+        `INSERT INTO medical_documents (id, user_id, filename, content_type, byte_size, storage_bucket, storage_path) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, userId, filename, input.contentType, input.byteSize, ref.bucket, ref.path],
+      );
+    } else {
+      await this.db.query(
+        `INSERT INTO health_images (id, user_id, purpose, filename, content_type, byte_size, storage_bucket, storage_path) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, userId, input.purpose ?? "other", filename, input.contentType, input.byteSize, ref.bucket, ref.path],
+      );
+    }
+    const upload = await this.storage.createUploadUrl(ref, input.contentType, input.byteSize, 15 * 60);
+    return { document: toRecord(await this.find(userId, id)), upload: { method: "PUT", ...upload } };
   }
 
-  /** Step 2 (after upload): verify the stored bytes, then process in the background. */
+  /** Step 2 (after upload): verify the stored bytes, then analyse in the background. */
   async process(userId: string, id: string, note?: string) {
     const row = await this.find(userId, id);
     if (row.status === "processing") return toRecord(row);
-    const data = await this.storage.read(row.storage_key);
+    const data = await this.storage.read(refOf(row));
     if (!data) throw new ApiError("bad_request", "The file hasn't finished uploading yet.", HttpStatus.CONFLICT);
     const sniffed = sniffContentType(data);
-    if (!sniffed || sniffed !== row.content_type || data.length > MAX_UPLOAD_BYTES) {
-      await this.fail(row.id, "The file doesn't match its type or is damaged.");
+    if (!sniffed || sniffed !== row.content_type || data.length !== row.byte_size || data.length > MAX_UPLOAD_BYTES) {
+      await this.fail(row.kind, row.id, "The file doesn't match its type or is damaged.");
       throw new ApiError("unsupported_media_type", "The file doesn't look like a valid PDF, JPG or PNG.", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
     }
-    await this.db.query(`UPDATE documents SET status = 'processing', failure_reason = NULL WHERE id = $1`, [row.id]);
-    this.queue.enqueue(() => this.run(userId, row, data, sniffed, note));
+    if (row.kind === "image") {
+      await this.db.query(`UPDATE health_images SET status = 'processing', failure_reason = NULL, note = $3 WHERE id = $1 AND user_id = $2`, [row.id, userId, note ?? null]);
+    } else {
+      await this.db.query(`UPDATE medical_documents SET status = 'processing', failure_reason = NULL WHERE id = $1 AND user_id = $2`, [row.id, userId]);
+    }
+    await this.queue.enqueue("process-document", { userId, kind: row.kind, id: row.id }, { jobId: `document-${row.id}` });
     return toRecord({ ...row, status: "processing", failure_reason: null });
   }
 
   async list(userId: string, kind?: DocumentKind): Promise<DocumentRecord[]> {
     const { rows } = await this.db.query<Row>(
-      `SELECT ${COLUMNS} FROM documents WHERE user_id = $1 AND ($2::text IS NULL OR kind = $2) ORDER BY created_at DESC LIMIT 100`,
+      `SELECT * FROM (${SELECT_FILES}) f WHERE user_id = $1 AND ($2::text IS NULL OR kind = $2) ORDER BY created_at DESC LIMIT 100`,
       [userId, kind ?? null],
     );
     return rows.map(toRecord);
@@ -127,22 +161,59 @@ export class DocumentsService {
     return toRecord(await this.find(userId, id));
   }
 
+  /** A short-lived signed link to the person's own file (never public). */
+  async fileUrl(userId: string, id: string): Promise<{ url: string; expiresIn: number }> {
+    const row = await this.find(userId, id);
+    if (row.status === "awaiting_upload") throw new ApiError("bad_request", "The file hasn't been uploaded yet.", HttpStatus.CONFLICT);
+    const expiresIn = 5 * 60;
+    await this.audit.log("document.download", userId, { kind: row.kind });
+    return { url: await this.storage.createDownloadUrl(refOf(row), expiresIn), expiresIn };
+  }
+
   async remove(userId: string, id: string) {
     const row = await this.find(userId, id);
-    await this.db.query(`DELETE FROM documents WHERE id = $1 AND user_id = $2`, [row.id, userId]);
-    await this.storage.delete(row.storage_key);
+    await this.db.query(`DELETE FROM ${TABLE[row.kind]} WHERE id = $1 AND user_id = $2`, [row.id, userId]);
+    await this.storage.delete(refOf(row));
     await this.audit.log("document.delete", userId);
   }
 
-  private async run(userId: string, row: Row, data: Buffer, contentType: SupportedContentType, note?: string) {
+  /** Marks processing that was interrupted (crash, deploy) as failed so nothing waits forever. */
+  async recoverStuck(olderThanMinutes = STUCK_AFTER_MINUTES): Promise<number> {
+    let count = 0;
+    for (const table of Object.values(TABLE)) {
+      const { rows } = await this.db.query(
+        `UPDATE ${table} SET status = 'failed', failure_reason = 'The analysis was interrupted. Please try again.', processed_at = now()
+         WHERE status = 'processing' AND updated_at < now() - ($1::int * interval '1 minute') RETURNING id`,
+        [olderThanMinutes],
+      );
+      count += rows.length;
+    }
+    return count;
+  }
+
+  /** Background job: analyse one uploaded file. Idempotent — finished work is skipped. */
+  private async run(userId: string, kind: DocumentKind, id: string) {
+    const row = await this.find(userId, id).catch(() => null);
+    if (!row || row.status !== "processing") return; // deleted, or already finished
     try {
-      const result = row.kind === "report" ? await this.extractReport(userId, data, contentType) : await this.analyseImage(userId, data, contentType, row.purpose, note);
-      await this.db.query(`UPDATE documents SET status = 'ready', result = $2::jsonb, model = $3, processed_at = now() WHERE id = $1`, [row.id, JSON.stringify(result), result.model]);
+      const data = await this.storage.read(refOf(row));
+      const contentType = data ? sniffContentType(data) : null;
+      if (!data || !contentType || contentType !== row.content_type) {
+        await this.fail(kind, id, "The file doesn't match its type or is damaged.");
+        return;
+      }
+      if (kind === "report") {
+        const result = await this.extractReport(userId, data, contentType);
+        await this.saveReport(userId, id, result);
+      } else {
+        const result = await this.analyseImage(userId, data, contentType, row.purpose, row.note ?? undefined);
+        await this.saveImage(userId, id, result);
+      }
       await this.timeline.add(userId, {
-        eventType: row.kind === "report" ? "report" : "image",
-        title: row.kind === "report" ? "Report analysed" : "Photo analysed",
+        eventType: kind === "report" ? "report" : "image",
+        title: kind === "report" ? "Report analysed" : "Photo analysed",
         sourceType: "document",
-        sourceId: row.id,
+        sourceId: id,
         payload: null,
       });
     } catch (error) {
@@ -152,12 +223,43 @@ export class DocumentsService {
           : error instanceof AiDeclinedError
             ? "This file couldn't be analysed."
             : "The analysis couldn't be completed. Please try again.";
-      this.logger.warn(`processing failed for document (${error instanceof Error ? error.name : "unknown"})`);
-      await this.fail(row.id, reason);
+      this.logger.warn(`processing failed for ${kind} (${error instanceof Error ? error.name : "unknown"})`);
+      await this.fail(kind, id, reason);
     }
   }
 
-  private async extractReport(userId: string, data: Buffer, contentType: SupportedContentType): Promise<StoredResult> {
+  private async saveReport(userId: string, id: string, result: Extract<StoredResult, { type: "report" }>) {
+    await this.db.transaction(async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        `INSERT INTO document_analysis (user_id, document_id, model, readable, summary, suggested_questions, injection_detected, result)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb) RETURNING id`,
+        [userId, id, result.model, result.readable, result.summary, JSON.stringify(result.suggestedQuestions), result.injectionDetected, JSON.stringify(result)],
+      );
+      const analysisId = rows[0]!.id;
+      for (const [position, f] of result.findings.entries()) {
+        await tx.query(
+          `INSERT INTO document_extractions (user_id, document_id, analysis_id, position, name, value, unit, reference_range, flag, page, explanation)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [userId, id, analysisId, position, f.name, f.value, f.unit, f.referenceRange, f.flag, f.page, f.explanation],
+        );
+      }
+      await tx.query(`UPDATE medical_documents SET status = 'ready', document_type = $3, processed_at = now() WHERE id = $1 AND user_id = $2`, [id, userId, result.documentType]);
+    });
+  }
+
+  private async saveImage(userId: string, id: string, result: Extract<StoredResult, { type: "image" }>) {
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `INSERT INTO image_analysis (user_id, image_id, model, quality, supported, care_urgency, injection_detected, note_triage_level, result)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+        [userId, id, result.model, result.quality, result.supported, result.careUrgency, result.injectionDetected, result.noteTriageLevel, JSON.stringify(result)],
+      );
+      // The note has served its purpose; don't keep it longer than needed.
+      await tx.query(`UPDATE health_images SET status = 'ready', note = NULL, processed_at = now() WHERE id = $1 AND user_id = $2`, [id, userId]);
+    });
+  }
+
+  private async extractReport(userId: string, data: Buffer, contentType: SupportedContentType): Promise<Extract<StoredResult, { type: "report" }>> {
     const part = contentType === "application/pdf" ? ({ type: "pdf", base64: data.toString("base64") } as const) : ({ type: "image", mediaType: contentType, base64: data.toString("base64") } as const);
     const { data: extraction, model } = await this.ai.generate({
       feature: "document_extraction",
@@ -181,7 +283,7 @@ export class DocumentsService {
     };
   }
 
-  private async analyseImage(userId: string, data: Buffer, contentType: SupportedContentType, purpose: ImagePurpose | null, note?: string): Promise<StoredResult> {
+  private async analyseImage(userId: string, data: Buffer, contentType: SupportedContentType, purpose: ImagePurpose | null, note?: string): Promise<Extract<StoredResult, { type: "image" }>> {
     const noteTriage = note ? triage(note) : null;
     const mediaType = contentType === "image/png" ? "image/png" : "image/jpeg";
     const { data: analysis, model } = await this.ai.generate({
@@ -219,16 +321,18 @@ export class DocumentsService {
     };
   }
 
-  private async fail(id: string, reason: string) {
-    await this.db.query(`UPDATE documents SET status = 'failed', failure_reason = $2, processed_at = now() WHERE id = $1`, [id, reason]);
+  private async fail(kind: DocumentKind, id: string, reason: string) {
+    await this.db.query(`UPDATE ${TABLE[kind]} SET status = 'failed', failure_reason = $2, processed_at = now() WHERE id = $1`, [id, reason]);
   }
 
   private async find(userId: string, id: string): Promise<Row> {
-    const { rows } = await this.db.query<Row>(`SELECT ${COLUMNS} FROM documents WHERE id = $2 AND user_id = $1`, [userId, id]);
+    const { rows } = await this.db.query<Row>(`SELECT * FROM (${SELECT_FILES}) f WHERE id = $2 AND user_id = $1`, [userId, id]);
     if (!rows[0]) throw notFound("Document");
     return rows[0];
   }
 }
+
+const refOf = (row: Pick<Row, "storage_bucket" | "storage_path">): ObjectRef => ({ bucket: row.storage_bucket, path: row.storage_path });
 
 /** Keeps a readable name but strips paths and control characters. */
 export function sanitizeFilename(name: string): string {

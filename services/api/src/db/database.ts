@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Pool, types } from "pg";
@@ -79,25 +80,48 @@ class PgliteDatabase implements Database {
   }
 }
 
-export async function createDatabase(options: { url?: string; pgliteDir?: string }): Promise<Database> {
+export async function createDatabase(options: { url?: string; pgliteDir?: string; caCert?: string; poolSize?: number }): Promise<Database> {
   if (options.url) {
-    return new PgDatabase(new Pool({ connectionString: options.url, max: 10 }));
+    // Supabase: use the pooler URL; pass its CA certificate to verify TLS.
+    const ssl = options.caCert ? { ca: options.caCert, rejectUnauthorized: true } : undefined;
+    return new PgDatabase(new Pool({ connectionString: options.url, max: options.poolSize ?? 10, ...(ssl ? { ssl } : {}) }));
   }
-  const db = new PGlite(options.pgliteDir);
-  await db.waitReady;
+  const db = await PGlite.create({ dataDir: options.pgliteDir, extensions: { vector } });
   return new PgliteDatabase(db);
 }
 
-/** Applies migrations/*.sql in order, once each, inside a transaction per file. */
+const SQL_DIR = join(__dirname, "..", "..", "sql");
+
+/** "0004_complete_schema.sql" ⇄ Supabase CLI version "20260901000004" + name "complete_schema". */
+export function supabaseVersion(file: string): { version: string; name: string } | null {
+  const match = /^(\d{4})_(.+)\.sql$/.exec(file);
+  return match ? { version: `2026090100${match[1]}`, name: match[2]! } : null;
+}
+
+/**
+ * Applies migrations/*.sql in order, once each, inside a transaction per file.
+ * On plain PostgreSQL/PGlite it first installs local stand-ins for Supabase's
+ * `auth` and `storage` schemas. Migrations already applied by the Supabase CLI
+ * (`supabase db push` / `supabase start`) are recognised and skipped.
+ */
 export async function migrate(db: Database, directory = join(__dirname, "..", "..", "migrations")): Promise<string[]> {
+  const isSupabase = (await db.query<{ ok: boolean }>("SELECT to_regnamespace('auth') IS NOT NULL AS ok")).rows[0]?.ok;
+  if (!isSupabase) await db.exec(readFileSync(join(SQL_DIR, "supabase-compat.sql"), "utf8"));
   await db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
   const applied = new Set((await db.query<{ name: string }>("SELECT name FROM schema_migrations")).rows.map((r) => r.name));
+  const cli = (await db.query<{ ok: boolean }>("SELECT to_regclass('supabase_migrations.schema_migrations') IS NOT NULL AS ok")).rows[0]?.ok;
+  const cliVersions = cli ? new Set((await db.query<{ version: string }>("SELECT version FROM supabase_migrations.schema_migrations")).rows.map((r) => r.version)) : new Set<string>();
   const files = readdirSync(directory).filter((f) => f.endsWith(".sql")).sort();
   const ran: string[] = [];
   for (const file of files) {
     if (applied.has(file)) continue;
+    const quoted = file.replace(/'/g, "''");
+    if (cliVersions.has(supabaseVersion(file)?.version ?? "")) {
+      await db.query(`INSERT INTO schema_migrations (name) VALUES ('${quoted}') ON CONFLICT DO NOTHING`);
+      continue;
+    }
     const sql = readFileSync(join(directory, file), "utf8");
-    await db.exec(`BEGIN;\n${sql}\nINSERT INTO schema_migrations (name) VALUES ('${file.replace(/'/g, "''")}');\nCOMMIT;`);
+    await db.exec(`BEGIN;\n${sql}\nINSERT INTO schema_migrations (name) VALUES ('${quoted}');\nCOMMIT;`);
     ran.push(file);
   }
   return ran;

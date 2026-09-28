@@ -9,3 +9,8 @@ apps/ios/DerivedData/
 *.xcworkspace/xcuserdata/
 dist/
 .data/
+# Secrets never go in git
+.env
+.env.*
+!.env.example
+supabase/.temp/

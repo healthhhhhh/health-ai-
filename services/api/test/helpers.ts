@@ -47,7 +47,7 @@ let counter = 0;
 /** Registers a new user (and grants consents) and returns an authorised request helper. */
 export async function signUp(ctx: TestContext, consents: string[] = ["ai_processing", "document_processing", "health_data_sync"]) {
   counter += 1;
-  ctx.app.get(RateLimiter).reset(); // tests register many users from one address
+  await ctx.app.get(RateLimiter).reset(); // tests register many users from one address
   const email = `user${counter}-${Date.now()}@example.com`;
   const res = await ctx.http.post("/v1/auth/register").send({ email, password: "correct horse battery", firstName: "Alex", timeZone: "UTC" }).expect(201);
   const token = res.body.accessToken as string;

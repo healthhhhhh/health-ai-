@@ -10,7 +10,10 @@ export type AuditAction =
   | "account.export"
   | "account.delete"
   | "consent.update"
-  | "document.delete";
+  | "document.delete"
+  | "document.download"
+  | "account.delete_requested"
+  | "auth.password_reset_requested";
 
 /**
  * Security audit trail. Metadata must never contain health content — only

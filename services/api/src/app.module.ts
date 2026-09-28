@@ -3,7 +3,7 @@ import { APP_FILTER } from "@nestjs/core";
 import { AuditService } from "./common/audit";
 import { AuthGuard } from "./common/auth";
 import { ErrorFilter } from "./common/errors";
-import { RateLimiter, RateLimitGuard } from "./common/rate-limit";
+import { MemoryRateLimitStore, RATE_LIMIT_STORE, RateLimiter, RateLimitGuard, type RateLimitStore } from "./common/rate-limit";
 import { CONFIG, type AppConfig } from "./config";
 import { DATABASE, type Database } from "./db/database";
 import { AccountController } from "./modules/account/account.controller";
@@ -13,13 +13,16 @@ import { AI_PROVIDER, type AiProvider } from "./modules/ai/ai.types";
 import { AuthController } from "./modules/auth/auth.controller";
 import { AuthService } from "./modules/auth/auth.service";
 import { TokenService } from "./modules/auth/token.service";
+import { IDENTITY, LocalIdentityProvider, SupabaseIdentityProvider, type IdentityProvider } from "./modules/auth/identity";
+import { EMBEDDINGS, type EmbeddingProvider } from "./modules/memory/embeddings";
+import { embeddingsFor } from "./adapters";
 import { ChatController } from "./modules/chat/chat.controller";
 import { CheckInsController } from "./modules/checkins/checkins.controller";
 import { PlanController } from "./modules/plan/plan.controller";
 import { ChatService } from "./modules/chat/chat.service";
 import { DocumentsController, UploadsController } from "./modules/documents/documents.controller";
 import { DocumentsService } from "./modules/documents/documents.service";
-import { JobQueue } from "./modules/documents/job-queue";
+import { InProcessJobQueue, JobQueue } from "./modules/documents/job-queue";
 import { STORAGE, type ObjectStorage } from "./modules/documents/storage";
 import { HealthDataController } from "./modules/health-data/health-data.controller";
 import { HealthDataService } from "./modules/health-data/health-data.service";
@@ -60,6 +63,12 @@ export interface AppDependencies {
   database: Database;
   aiProvider: AiProvider;
   storage: ObjectStorage;
+  /** Defaults from config: in-process queue, embeddings per EMBEDDINGS_PROVIDER, identity per AUTH_PROVIDER. */
+  jobQueue?: JobQueue;
+  embeddings?: EmbeddingProvider;
+  identity?: IdentityProvider;
+  /** Defaults to in-memory counters (single instance). */
+  rateLimitStore?: RateLimitStore;
 }
 
 /** Built from explicit dependencies so tests can swap the database, AI provider and storage. */
@@ -74,6 +83,7 @@ export class AppModule {
       { provide: APP_FILTER, useClass: ErrorFilter },
       DatabaseCloser,
       AuditService,
+      { provide: RATE_LIMIT_STORE, useFactory: () => deps.rateLimitStore ?? new MemoryRateLimitStore() },
       RateLimiter,
       RateLimitGuard,
       TokenService,
@@ -85,7 +95,19 @@ export class AppModule {
       MemoryService,
       TimelineService,
       ChatService,
-      JobQueue,
+      { provide: JobQueue, useFactory: () => deps.jobQueue ?? new InProcessJobQueue() },
+      { provide: EMBEDDINGS, useFactory: () => deps.embeddings ?? embeddingsFor(deps.config) },
+      {
+        provide: IDENTITY,
+        inject: [AuthService, TokenService],
+        useFactory: (auth: AuthService, tokens: TokenService): IdentityProvider =>
+          deps.identity ??
+          (deps.config.authProvider === "supabase"
+            ? new SupabaseIdentityProvider(deps.config.SUPABASE_URL!, deps.config.SUPABASE_PUBLISHABLE_KEY!, deps.config.SUPABASE_SECRET_KEY!, deps.database, {
+                legacyJwtSecret: deps.config.SUPABASE_JWT_SECRET,
+              })
+            : new LocalIdentityProvider(auth, tokens, deps.database)),
+      },
       DocumentsService,
       HealthDataService,
     ];

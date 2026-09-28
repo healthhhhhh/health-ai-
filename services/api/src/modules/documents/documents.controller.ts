@@ -1,12 +1,12 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Param, ParseUUIDPipe, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
-import type { Request } from "express";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, UseGuards } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
 import { ApiError, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { AccountService } from "../account/account.service";
 import { DocumentsService } from "./documents.service";
-import { LocalObjectStorage, MAX_UPLOAD_BYTES, STORAGE, type ObjectStorage } from "./storage";
+import { LocalObjectStorage, MAX_UPLOAD_BYTES, STORAGE, sniffContentType, type ObjectStorage } from "./storage";
 
 const CreateBody = z.object({
   kind: z.enum(["report", "image"]),
@@ -51,6 +51,13 @@ export class DocumentsController {
     return this.documents.get(userId, id);
   }
 
+  /** A 5-minute signed link to download the original file. */
+  @Get(":id/file")
+  @RateLimit("documents-file", 60, 60_000)
+  file(@UserId() userId: string, @Param("id", ParseUUIDPipe) id: string) {
+    return this.documents.fileUrl(userId, id);
+  }
+
   @Delete(":id")
   @HttpCode(204)
   remove(@UserId() userId: string, @Param("id", ParseUUIDPipe) id: string) {
@@ -71,7 +78,7 @@ export class UploadsController {
   @HttpCode(200)
   async upload(@Param("token") token: string, @Req() req: Request) {
     if (!(this.storage instanceof LocalObjectStorage)) throw new ApiError("not_found", "Not found.", HttpStatus.NOT_FOUND);
-    const grant = this.storage.verifyUploadToken(token);
+    const grant = this.storage.verifyToken(token, "put");
     if (!grant) throw new ApiError("forbidden", "This upload link is invalid or has expired.", HttpStatus.FORBIDDEN);
     const body = req.body;
     if (!Buffer.isBuffer(body) || body.length === 0) throw new ApiError("bad_request", "The upload was empty.", HttpStatus.BAD_REQUEST);
@@ -80,5 +87,18 @@ export class UploadsController {
     }
     await this.storage.write(grant.key, body);
     return { ok: true };
+  }
+
+  /** Serves a download link issued by `GET /v1/documents/:id/file` (local adapter only). */
+  @Get(":token")
+  async download(@Param("token") token: string, @Res() res: Response) {
+    if (!(this.storage instanceof LocalObjectStorage)) throw new ApiError("not_found", "Not found.", HttpStatus.NOT_FOUND);
+    const grant = this.storage.verifyToken(token, "get");
+    if (!grant) throw new ApiError("forbidden", "This link is invalid or has expired.", HttpStatus.FORBIDDEN);
+    const data = await this.storage.readKey(grant.key);
+    if (!data) throw new ApiError("not_found", "File not found.", HttpStatus.NOT_FOUND);
+    const type = sniffContentType(data) ?? "application/octet-stream";
+    res.set({ "Content-Type": type, "Content-Disposition": "attachment", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+    res.send(data);
   }
 }

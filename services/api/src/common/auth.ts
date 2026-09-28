@@ -1,23 +1,33 @@
 import { CanActivate, createParamDecorator, ExecutionContext, Inject, Injectable } from "@nestjs/common";
 import type { Request } from "express";
 import { unauthorized } from "./errors";
-import { TokenService } from "../modules/auth/token.service";
+import { DATABASE, type Database } from "../db/database";
+import { IDENTITY, type IdentityProvider } from "../modules/auth/identity";
 
 export interface AuthedRequest extends Request {
   userId?: string;
 }
 
-/** Requires a valid access token. Every health route uses it. */
+/**
+ * Requires a valid access token (local or Supabase) for an account that still
+ * exists. Every health route uses it; each query then filters by this user id.
+ */
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(@Inject(TokenService) private readonly tokens: TokenService) {}
+  constructor(
+    @Inject(IDENTITY) private readonly identity: IdentityProvider,
+    @Inject(DATABASE) private readonly db: Database,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthedRequest>();
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) throw unauthorized();
-    const userId = await this.tokens.verifyAccessToken(header.slice(7));
+    const userId = await this.identity.verifyAccessToken(header.slice(7));
     if (!userId) throw unauthorized();
+    // A signed token outlives logout/deletion by up to its expiry; the account must still exist.
+    const { rows } = await this.db.query<{ id: string }>(`SELECT id FROM users WHERE id = $1`, [userId]);
+    if (!rows[0]) throw unauthorized();
     req.userId = userId;
     return true;
   }
