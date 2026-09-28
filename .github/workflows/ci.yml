@@ -39,23 +39,81 @@ jobs:
     name: iOS (core package + app build + unit tests)
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to restore file timestamps below
+
+      # Git checkouts stamp every file with "now", which makes Xcode treat a
+      # restored DerivedData cache as stale and rebuild everything. Resetting
+      # each file's mtime to its last commit keeps unchanged files cached.
+      - name: Restore file timestamps
+        working-directory: apps/ios
+        run: |
+          git ls-files | while IFS= read -r f; do
+            t=$(git log -1 --format=%ct -- "$f")
+            touch -t "$(date -r "$t" +%Y%m%d%H%M.%S)" "$f"
+          done
+
       - name: Select Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+        id: xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          echo "version=$(xcodebuild -version | tr '\n' ' ' | tr -cs 'A-Za-z0-9.' '-')" >> "$GITHUB_OUTPUT"
+
+      # Boot the simulator early so it starts up while the package tests run.
+      - name: Boot simulator
+        id: sim
+        run: |
+          SDK_MAJOR=$(xcrun --sdk iphonesimulator --show-sdk-version | cut -d. -f1)
+          UDID=$(xcrun simctl list devices available -j | SDK_MAJOR="$SDK_MAJOR" python3 -c '
+          import json, os, sys
+          devices = json.load(sys.stdin)["devices"]
+          wanted = "iOS-" + os.environ["SDK_MAJOR"] + "-"
+          for runtime in sorted(devices, reverse=True):
+              if wanted in runtime:
+                  for d in devices[runtime]:
+                      if d["name"].startswith("iPhone"):
+                          print(d["udid"]); sys.exit()
+          ')
+          echo "Using simulator $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/Packages/HealthMateCore/.build
+          key: spm-${{ steps.xcode.outputs.version }}-${{ hashFiles('apps/ios/Packages/HealthMateCore/**/*.swift') }}
+          restore-keys: spm-${{ steps.xcode.outputs.version }}-
+
       - name: HealthMateCore tests
         run: swift test
         working-directory: apps/ios/Packages/HealthMateCore
+
       - name: Generate Xcode project
         run: brew install xcodegen && xcodegen generate
         working-directory: apps/ios
+
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/DerivedData
+          key: dd-${{ steps.xcode.outputs.version }}-${{ hashFiles('apps/ios/**/*.swift', 'apps/ios/project.yml', 'apps/ios/HealthMate/Resources/**') }}
+          restore-keys: dd-${{ steps.xcode.outputs.version }}-
+
       - name: Build and test app
         working-directory: apps/ios
         run: |
-          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+( Pro)?' | head -1)
-          echo "Using simulator: $DEVICE"
+          set -o pipefail
           xcodebuild test \
             -project HealthMate.xcodeproj \
             -scheme HealthMate \
-            -destination "platform=iOS Simulator,name=$DEVICE" \
-            CODE_SIGNING_ALLOWED=NO | xcbeautify || exit ${PIPESTATUS[0]}
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath DerivedData \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | (command -v xcbeautify >/dev/null && xcbeautify || cat)
