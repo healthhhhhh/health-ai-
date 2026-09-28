@@ -1,0 +1,352 @@
+import Foundation
+
+// Codable mirrors of services/api responses.
+
+public struct TokenPair: Codable, Sendable {
+    public let accessToken: String
+    public let refreshToken: String
+    public let expiresIn: Int
+}
+
+public struct AuthResponse: Codable, Sendable {
+    public let userId: String
+    public let accessToken: String
+    public let refreshToken: String
+    public let expiresIn: Int
+    public var tokens: TokenPair { TokenPair(accessToken: accessToken, refreshToken: refreshToken, expiresIn: expiresIn) }
+}
+
+public struct APIMeta: Codable, Sendable {
+    public struct AI: Codable, Sendable { public let available: Bool }
+    public let apiVersion: Int
+    public let ai: AI
+}
+
+// MARK: Profile
+
+public enum ProfileSource: String, Codable, Sendable, CaseIterable {
+    case userReported = "user_reported"
+    case clinicianProvided = "clinician_provided"
+    case documentExtracted = "document_extracted"
+
+    public var label: String {
+        switch self {
+        case .userReported: return "Added by you"
+        case .clinicianProvided: return "From your clinician"
+        case .documentExtracted: return "From a report"
+        }
+    }
+}
+
+public struct ProfileDetails: Codable, Equatable, Sendable {
+    public var firstName: String
+    public var lastName: String
+    public var dateOfBirth: String?
+    public var sex: String?
+    public var heightCm: Double?
+    public var timeZone: String
+}
+
+public struct ConditionRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let status: String
+    public let source: ProfileSource
+    public let notes: String?
+}
+
+public struct AllergyRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let substance: String
+    public let reaction: String?
+    public let severity: String?
+    public let source: ProfileSource
+}
+
+/// `instruction` is the clinician's or label's wording, exactly as entered.
+public struct MedicationRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let instruction: String
+    public let source: ProfileSource
+    public let active: Bool
+}
+
+public struct HealthProfile: Codable, Equatable, Sendable {
+    public var profile: ProfileDetails
+    public var conditions: [ConditionRecord]
+    public var allergies: [AllergyRecord]
+    public var medications: [MedicationRecord]
+}
+
+// MARK: Memory
+
+public enum MemoryStatus: String, Codable, Sendable {
+    case userReported = "user_reported"
+    case userConfirmed = "user_confirmed"
+    case documentExtracted = "document_extracted"
+    case wearable
+    case clinicianProvided = "clinician_provided"
+    case aiInferred = "ai_inferred"
+    case superseded
+
+    /// AI-inferred facts are never presented as confirmed history.
+    public var label: String {
+        switch self {
+        case .userReported: return "You told HealthMate"
+        case .userConfirmed: return "Confirmed by you"
+        case .documentExtracted: return "From a report"
+        case .wearable: return "From a device"
+        case .clinicianProvided: return "From your clinician"
+        case .aiInferred: return "Unconfirmed suggestion"
+        case .superseded: return "Replaced"
+        }
+    }
+}
+
+public struct MemoryRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let fact: String
+    public let source: String
+    public let status: MemoryStatus
+    public let createdAt: Date
+}
+
+// MARK: Chat
+
+public struct EscalationAction: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable { case callEmergency = "call_emergency", crisisSupport = "crisis_support", contactClinician = "contact_clinician", findCare = "find_care" }
+    public let kind: Kind
+    public let label: String
+}
+
+public struct Escalation: Codable, Equatable, Sendable {
+    public let level: TriageLevel
+    public let title: String
+    public let body: String
+    public let actions: [EscalationAction]
+}
+
+public struct FollowUpQuestion: Codable, Equatable, Sendable {
+    public let question: String
+    public let options: [String]
+    public let allowsMultiple: Bool
+}
+
+public struct CareRecommendation: Codable, Equatable, Sendable {
+    public enum Level: String, Codable, Sendable { case selfCare = "self_care", routine, soon, urgent, emergency }
+    public let level: Level
+    public let text: String
+}
+
+public struct AssistantAnswer: Codable, Equatable, Sendable {
+    public let answer: String
+    public let followUp: FollowUpQuestion?
+    public let warningSigns: [String]
+    public let careRecommendation: CareRecommendation?
+    public let memorySuggestions: [MemorySuggestion]
+    public let escalation: Escalation?
+    public let notice: String?
+    public let safetyAdjusted: Bool
+
+    public struct MemorySuggestion: Codable, Equatable, Sendable { public let fact: String }
+}
+
+public enum AssistantPayload: Codable, Equatable, Sendable {
+    case escalation(Escalation)
+    case answer(AssistantAnswer)
+
+    private enum CodingKeys: String, CodingKey { case kind, escalation }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .kind) {
+        case "escalation": self = .escalation(try container.decode(Escalation.self, forKey: .escalation))
+        default: self = .answer(try AssistantAnswer(from: decoder))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .escalation(let e):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode("escalation", forKey: .kind)
+            try c.encode(e, forKey: .escalation)
+        case .answer(let a):
+            try a.encode(to: encoder)
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode("answer", forKey: .kind)
+        }
+    }
+}
+
+public struct ChatMessageRecord: Codable, Equatable, Identifiable, Sendable {
+    public enum Role: String, Codable, Sendable { case user, assistant }
+    public let id: String
+    public let role: Role
+    public let content: String
+    public let payload: AssistantPayload?
+    public let triageLevel: TriageLevel?
+    public let createdAt: Date
+}
+
+public struct ConversationRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let title: String
+    public let createdAt: Date
+    public let updatedAt: Date
+}
+
+public struct ConversationStart: Codable, Sendable {
+    public let conversation: ConversationRecord
+    public let messages: [ChatMessageRecord]
+}
+
+public struct ConversationDetail: Codable, Sendable {
+    public let conversation: ConversationRecord
+    public let messages: [ChatMessageRecord]
+}
+
+public struct MessagesResponse: Codable, Sendable {
+    public let messages: [ChatMessageRecord]
+}
+
+// MARK: Documents
+
+public enum DocumentKind: String, Codable, Sendable { case report, image }
+public enum DocumentStatus: String, Codable, Sendable { case awaitingUpload = "awaiting_upload", processing, ready, failed }
+public enum ImagePurpose: String, Codable, Sendable, CaseIterable, Identifiable {
+    case skin, wound, swelling, other
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .skin: return "Skin or rash"
+        case .wound: return "Cut or wound"
+        case .swelling: return "Swelling or bruise"
+        case .other: return "Something else"
+        }
+    }
+}
+
+public struct ReportFinding: Codable, Equatable, Sendable, Identifiable {
+    public enum Flag: String, Codable, Sendable { case withinRange = "within_range", high, low, abnormal, notStated = "not_stated" }
+    public let name: String
+    public let value: String
+    public let unit: String?
+    public let referenceRange: String?
+    public let flag: Flag
+    public let page: Int?
+    public let explanation: String
+    public var id: String { "\(name)|\(value)|\(page ?? 0)" }
+}
+
+public struct PossibleCause: Codable, Equatable, Sendable {
+    public enum Likelihood: String, Codable, Sendable { case possible, lessLikely = "less_likely" }
+    public let name: String
+    public let likelihood: Likelihood
+}
+
+/// Union of report and image results; `type` says which fields are meaningful.
+public struct AnalysisResult: Codable, Equatable, Sendable {
+    public let type: DocumentKind
+    public let model: String
+    public let injectionDetected: Bool
+    // Report
+    public let readable: Bool?
+    public let documentType: String?
+    public let summary: String?
+    public let findings: [ReportFinding]?
+    public let suggestedQuestions: [String]?
+    // Image
+    public let quality: String?
+    public let qualityIssue: String?
+    public let supported: Bool?
+    public let bodyArea: String?
+    public let observations: [String]?
+    public let possibleCauses: [PossibleCause]?
+    public let recommendations: [String]?
+    public let warningSigns: [String]?
+    public let careUrgency: CareRecommendation.Level?
+}
+
+public struct DocumentRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let kind: DocumentKind
+    public let purpose: ImagePurpose?
+    public let filename: String
+    public let contentType: String
+    public let byteSize: Int
+    public let status: DocumentStatus
+    public let failureReason: String?
+    public let result: AnalysisResult?
+    public let createdAt: Date
+    public let processedAt: Date?
+}
+
+public struct UploadInstructions: Codable, Sendable {
+    public let method: String
+    public let url: URL
+    public let headers: [String: String]
+}
+
+public struct DocumentCreation: Codable, Sendable {
+    public let document: DocumentRecord
+    public let upload: UploadInstructions
+}
+
+// MARK: Health data & timeline
+
+public struct TrendPoint: Codable, Equatable, Sendable, Identifiable {
+    public let date: String
+    public let value: Double
+    public let min: Double
+    public let max: Double
+    public let count: Int
+    public var id: String { date }
+}
+
+public struct TrendResponse: Codable, Equatable, Sendable {
+    public let kind: String
+    public let unit: String
+    public let points: [TrendPoint]
+    public let average: Double?
+    public let previousAverage: Double?
+}
+
+public struct MeasurementUpload: Codable, Equatable, Sendable {
+    public let kind: String
+    public let value: Double
+    public let recordedAt: Date
+    public let source: String
+    public let sourceDevice: String?
+    public let externalId: String?
+
+    public init(kind: String, value: Double, recordedAt: Date, source: String, sourceDevice: String?, externalId: String?) {
+        self.kind = kind
+        self.value = value
+        self.recordedAt = recordedAt
+        self.source = source
+        self.sourceDevice = sourceDevice
+        self.externalId = externalId
+    }
+}
+
+public struct TimelineEventRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let eventType: String
+    public let title: String
+    public let occurredAt: Date
+    public let sourceType: String
+    public let sourceId: String?
+}
+
+public struct TimelinePage: Codable, Sendable {
+    public let events: [TimelineEventRecord]
+    public let nextCursor: String?
+}
+
+public struct ConsentRecord: Codable, Equatable, Sendable {
+    public let kind: String
+    public let granted: Bool
+    public let version: String
+}

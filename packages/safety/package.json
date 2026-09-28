@@ -1,0 +1,14 @@
+{
+  "name": "@healthmate/safety",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic medical safety checks (triage, response review, prompt-injection detection)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "export-rules": "node --experimental-strip-types scripts/export-rules.mjs",
+    "check": "node --experimental-strip-types scripts/export-rules.mjs --check"
+  }
+}

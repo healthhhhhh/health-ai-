@@ -1,28 +1,48 @@
 import HealthMateCore
 import SwiftUI
 
-/// Sign-in UI with validation. Real authentication arrives in Phase 2; until
-/// then a valid submission says so honestly and offers demo mode.
+/// Sign in or create an account. An account is needed only for server
+/// features (AI assistant, reports, photo analysis, sync); the rest of the app
+/// works without one.
 struct SignInView: View {
-    var onContinueInDemo: () -> Void
+    let session: SessionStore
+    var startInSignUp = false
+    var onSignedIn: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var mode: Mode = .signIn
+    @State private var firstName = ""
     @State private var email = ""
     @State private var password = ""
     @State private var errors = SignInValidator.Errors()
-    @State private var showUnavailable = false
+    @State private var nameError: String?
     @State private var shakes = 0
     @FocusState private var focused: Field?
 
-    private enum Field { case email, password }
+    private enum Mode: String, CaseIterable, Identifiable { case signIn, signUp; var id: String { rawValue } }
+    private enum Field { case name, email, password }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Welcome back").font(.hmPageHeading).foregroundStyle(HM.Colors.textPrimary)
-                        Text("Sign in to continue to HealthMate.").font(.hmBody).foregroundStyle(HM.Colors.textSecondary)
+                        Text(mode == .signIn ? "Welcome back" : "Create your account")
+                            .font(.hmPageHeading)
+                            .foregroundStyle(HM.Colors.textPrimary)
+                        Text(mode == .signIn ? "Sign in to use your AI Health Assistant." : "Your account keeps conversations, reports and memories private to you.")
+                            .font(.hmBody)
+                            .foregroundStyle(HM.Colors.textSecondary)
+                    }
+                    SegmentedTabs(items: [SegmentItem(value: Mode.signIn, title: "Sign in"), SegmentItem(value: Mode.signUp, title: "Create account")], selection: $mode)
+
+                    if mode == .signUp {
+                        field("First name", error: nameError, field: .name) {
+                            TextField("Alex", text: $firstName)
+                                .textContentType(.givenName)
+                                .submitLabel(.next)
+                                .onSubmit { focused = .email }
+                        }
                     }
                     field("Email", error: errors.email, field: .email) {
                         TextField("you@example.com", text: $email)
@@ -35,46 +55,59 @@ struct SignInView: View {
                     }
                     field("Password", error: errors.password, field: .password) {
                         SecureField("At least 8 characters", text: $password)
-                            .textContentType(.password)
+                            .textContentType(mode == .signIn ? .password : .newPassword)
                             .submitLabel(.go)
-                            .onSubmit(submit)
+                            .onSubmit { Task { await submit() } }
                     }
-                    Button("Sign In", action: submit)
-                        .buttonStyle(.hmPrimary(fullWidth: true))
-                        .keyframeAnimator(initialValue: 0.0, trigger: shakes) { content, x in
-                            content.offset(x: x)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                LinearKeyframe(-8, duration: 0.06)
-                                LinearKeyframe(8, duration: 0.08)
-                                LinearKeyframe(-5, duration: 0.07)
-                                LinearKeyframe(0, duration: 0.06)
-                            }
-                        }
-                    if showUnavailable {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Account sign-in isn't available in this preview yet.", systemImage: "info.circle.fill")
-                                .font(.hmCaption)
-                                .foregroundStyle(HM.Colors.textPrimary)
-                            Button("Continue in demo mode →", action: onContinueInDemo)
-                                .font(.hmBodyEmphasis)
-                                .foregroundStyle(HM.Colors.primary)
-                        }
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.primarySoft))
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+
+                    if let message = session.errorMessage {
+                        Label(message, systemImage: "exclamationmark.circle.fill")
+                            .font(.hmCaption.weight(.medium))
+                            .foregroundStyle(HM.Colors.error)
+                            .accessibilityAddTraits(.updatesFrequently)
                     }
+
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        if session.busy {
+                            ProgressView().tint(HM.Colors.onPrimary)
+                        } else {
+                            Text(mode == .signIn ? "Sign In" : "Create Account")
+                        }
+                    }
+                    .buttonStyle(.hmPrimary(fullWidth: true))
+                    .disabled(session.busy)
+                    .keyframeAnimator(initialValue: 0.0, trigger: shakes) { content, x in
+                        content.offset(x: x)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(-8, duration: 0.06)
+                            LinearKeyframe(8, duration: 0.08)
+                            LinearKeyframe(-5, duration: 0.07)
+                            LinearKeyframe(0, duration: 0.06)
+                        }
+                    }
+
+                    DisclaimerView(text: "By creating an account you agree to our Terms and Privacy Policy. HealthMate is not a substitute for a doctor.")
                 }
                 .padding(24)
+                .animation(HMMotion.spring, value: mode)
             }
             .background(HMGradient.appBackground.ignoresSafeArea())
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
             .sensoryFeedback(.error, trigger: shakes)
+            .onAppear {
+                if startInSignUp { mode = .signUp }
+                session.errorMessage = nil
+            }
+            .onChange(of: mode) { _, _ in
+                session.errorMessage = nil
+                errors = SignInValidator.Errors()
+                nameError = nil
+            }
         }
     }
 
@@ -99,14 +132,22 @@ struct SignInView: View {
         }
     }
 
-    private func submit() {
+    private func submit() async {
         errors = SignInValidator.validate(email: email, password: password)
-        withAnimation(HMMotion.spring) {
-            showUnavailable = errors.isEmpty
-        }
-        if !errors.isEmpty {
+        nameError = mode == .signUp && firstName.trimmingCharacters(in: .whitespaces).isEmpty ? "Enter your first name." : nil
+        guard errors.isEmpty, nameError == nil else {
             shakes += 1
-            focused = errors.email != nil ? .email : .password
+            focused = nameError != nil ? .name : errors.email != nil ? .email : .password
+            return
+        }
+        let ok = mode == .signIn
+            ? await session.signIn(email: email, password: password)
+            : await session.signUp(email: email, password: password, firstName: firstName.trimmingCharacters(in: .whitespaces), lastName: "")
+        if ok {
+            onSignedIn()
+            dismiss()
+        } else {
+            shakes += 1
         }
     }
 }

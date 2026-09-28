@@ -7,3 +7,5 @@ apps/ios/**/xcuserdata/
 apps/ios/**/.build/
 apps/ios/DerivedData/
 *.xcworkspace/xcuserdata/
+dist/
+.data/

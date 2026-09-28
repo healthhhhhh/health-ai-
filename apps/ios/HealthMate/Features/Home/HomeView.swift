@@ -7,6 +7,7 @@ struct HomeView: View {
     let plan: PlanStore
     var onAsk: (String) -> Void
     var onNavigate: (AppTab) -> Void
+    var onVoice: () -> Void = {}
 
     @State private var question = ""
 
@@ -52,7 +53,7 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: HM.Spacing.md) {
                 if model.isSampleData { SampleDataBanner() }
                 HomeHeader(user: summary.user, unreadNotifications: summary.unreadNotifications)
-                AskBar(text: $question, onSubmit: onAsk, onVoice: { onNavigate(.chat) })
+                AskBar(text: $question, onSubmit: onAsk, onVoice: onVoice)
             }
             .appearAnimation()
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 /// First-run welcome (reference: first iOS screen).
 struct OnboardingView: View {
+    let session: SessionStore
     var onFinish: () -> Void
 
     @State private var showSignIn = false
@@ -50,10 +51,7 @@ struct OnboardingView: View {
         .background(HMGradient.appBackground.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) { actions }
         .sheet(isPresented: $showSignIn) {
-            SignInView(onContinueInDemo: {
-                showSignIn = false
-                onFinish()
-            })
+            SignInView(session: session, onSignedIn: onFinish)
         }
     }
 
@@ -103,5 +101,5 @@ struct OnboardingView: View {
 }
 
 #Preview {
-    OnboardingView(onFinish: {})
+    OnboardingView(session: SessionStore(api: AppServices.preview.api), onFinish: {})
 }

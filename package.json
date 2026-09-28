@@ -5,7 +5,8 @@
   "description": "HealthMate — AI Health Companion (iOS + web monorepo)",
   "workspaces": [
     "apps/web",
-    "packages/*"
+    "packages/*",
+    "services/*"
   ],
   "engines": {
     "node": ">=20"
@@ -16,8 +17,14 @@
     "dev": "npm run dev -w @healthmate/web",
     "build": "npm run build -w @healthmate/web",
     "lint": "npm run lint -w @healthmate/web",
+    "safety:build": "npm run build -w @healthmate/safety",
+    "safety:export": "npm run export-rules -w @healthmate/safety",
+    "safety:check": "npm run check -w @healthmate/safety",
+    "api:dev": "npm run build -w @healthmate/safety && npm run dev -w @healthmate/api",
+    "pretypecheck": "npm run safety:build",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run tokens:check && npm run test --workspaces --if-present",
+    "pretest": "npm run safety:build",
+    "test": "npm run tokens:check && npm run safety:check && npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e -w @healthmate/web"
   }
 }

@@ -8,7 +8,7 @@ HealthMate ships a native iOS app and a web app on **one shared backend and data
           │                                 │
           └──────── HTTPS / REST (v1) ──────┘
                           │
-              NestJS API (planned — Phase 2+)
+              NestJS API (services/api)
       auth · profile · conversations · memory · documents ·
       images · plans · reminders · health data · care
                           │
@@ -27,10 +27,39 @@ HealthMate ships a native iOS app and a web app on **one shared backend and data
 | `packages/shared-types` | TypeScript domain model = the API contract. Mirrored in Swift in `HealthMateCore/Models`. Later: generate both from the backend's OpenAPI schema. |
 | `apps/web` | Next.js 16 App Router, Tailwind CSS v4, in-house component library (`src/components/ui`, shadcn-style: cva + tailwind-merge, no runtime UI dependency). |
 | `apps/ios` | SwiftUI app (iOS 17+), XcodeGen project spec, `HealthMateCore` Swift package. |
+| `packages/safety` | Deterministic safety checks: symptom triage rules, escalation copy, medication-change detection, prompt-injection detection, review of AI answers. `npm run safety:export` generates the Swift copy of the rules; CI fails if it is stale. |
+| `services/api` | NestJS API: auth, health profile, consents, data export/deletion, AI gateway, chat, memory, documents and image analysis, health data, timeline. |
 | `docs/` | Spec, UI reference image, this document, design system, roadmap. |
 
 The iOS app lives beside the TypeScript workspace rather than inside a JS framework (spec §18).
-`services/` (NestJS API, AI gateway, workers) and `infrastructure/` are added from Phase 2.
+
+## Safety pipeline (chat)
+
+1. **On-device triage** (iOS `SafetyEngine`, same rules as the server): emergency guidance appears
+   instantly, even when signed out or offline.
+2. **Server triage** before any model call. Emergencies get a fixed escalation message and the model
+   is **not** called. Urgent cases always carry an "urgent" care recommendation.
+3. **Context**: profile, conditions, allergies, medications (verbatim) and confirmed memories. AI
+   inferences are never stored as confirmed history; the person confirms memory suggestions.
+4. **Structured answer** (JSON schema) from the AI gateway.
+5. **Review** of the answer (overconfident diagnosis, dosing directions). Failing answers are
+   regenerated once, then replaced with a safe fallback.
+6. Medication-change requests always get the fixed "talk to your prescriber" notice.
+
+Uploaded documents and photos are untrusted input: the server checks file signatures, the AI is
+told to ignore embedded instructions, and detected injection attempts are flagged in the result.
+
+## API (services/api)
+
+- `npm run api:dev` runs it on `http://localhost:4000` with an embedded in-memory PGlite database.
+  Set `PGLITE_DIR` to keep data between restarts, or `DATABASE_URL` for PostgreSQL. Set
+  `JWT_SECRET` (32+ characters) too, or sessions reset on every restart. Migrations are applied at
+  start-up (`services/api/migrations`).
+- `ANTHROPIC_API_KEY` enables the AI features. Without it `/v1/meta` reports `ai.available: false` and
+  AI routes return `ai_unavailable`. The apps show this state; nothing is faked.
+- Access tokens last 15 minutes. Refresh tokens rotate, and reusing one revokes its whole family.
+- Every health route requires a bearer token and filters by the caller's user ID. Rate limits
+  cover auth, chat and uploads. Audit logs record actions, never health content.
 
 ## Client data layer
 
@@ -68,6 +97,6 @@ optimistically and rolls back with an inline error if the call fails. iOS does t
    (web) or an asset named `Mascot` (iOS).
 10. **Motion respects Reduce Motion** — CSS media query on web, `accessibilityReduceMotion` on iOS.
 
-## Security baseline (applies from Phase 2)
+## Security baseline
 No model keys in clients; auth tokens in Keychain (iOS) / httpOnly cookies (web); server-side
 authorization on every health route; signed URLs for uploads; audit logs without health content.

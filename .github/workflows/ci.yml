@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   web:
-    name: Web (lint, types, unit, e2e)
+    name: Web + API (lint, types, unit, e2e)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -27,6 +27,8 @@ jobs:
       - run: npm ci
       - name: Design tokens are up to date
         run: npm run tokens:check
+      - name: iOS safety rules match packages/safety
+        run: npm run safety:check
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
@@ -141,6 +143,9 @@ jobs:
             shoot "home-activity-$appearance" YES activity
             shoot "plan-$appearance" YES "" -hmInitialTab plans
             shoot "plan-add-$appearance" YES "" -hmInitialTab plans -hmShowAddPlan YES
+            shoot "chat-$appearance" YES "" -hmInitialTab chat
+            shoot "health-$appearance" YES "" -hmInitialTab health
+            shoot "profile-$appearance" YES "" -hmInitialTab profile
           done
 
       # Artifact storage isn't reachable from every review environment, so the

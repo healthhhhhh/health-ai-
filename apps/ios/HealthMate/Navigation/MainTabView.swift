@@ -4,18 +4,24 @@ import SwiftUI
 /// Bottom tab navigation: Home · Chat · Health · Plans · Profile.
 struct MainTabView: View {
     let services: AppServices
-    var onSignOut: () -> Void
+    let session: SessionStore
+    var onRestartOnboarding: () -> Void
 
     @State private var selection: AppTab
     @State private var homeModel: HomeViewModel
     @State private var planStore: PlanStore
+    @State private var chatModel: ChatViewModel
     @State private var pendingQuestion: String?
+    @State private var showCareFinder = false
+    @State private var showVoice = false
 
-    init(services: AppServices, onSignOut: @escaping () -> Void) {
+    init(services: AppServices, session: SessionStore, onRestartOnboarding: @escaping () -> Void) {
         self.services = services
-        self.onSignOut = onSignOut
+        self.session = session
+        self.onRestartOnboarding = onRestartOnboarding
         _homeModel = State(initialValue: HomeViewModel(service: services.healthData))
         _planStore = State(initialValue: PlanStore(repository: services.planRepository, reminders: services.reminders))
+        _chatModel = State(initialValue: ChatViewModel(api: services.api, onSessionEnded: { [session] error in session.handle(error) }))
         var initial = AppTab.home
         #if DEBUG
         // `-hmInitialTab plans` lets CI screenshot a specific tab.
@@ -33,34 +39,45 @@ struct MainTabView: View {
                     pendingQuestion = question
                     selection = .chat
                 },
-                onNavigate: { selection = $0 }
+                onNavigate: { selection = $0 },
+                onVoice: { showVoice = true }
             )
             .tabItem { Label(AppTab.home.title, systemImage: AppTab.home.systemImage) }
             .tag(AppTab.home)
 
-            ChatPlaceholderView(pendingQuestion: pendingQuestion)
-                .tabItem { Label(AppTab.chat.title, systemImage: AppTab.chat.systemImage) }
-                .tag(AppTab.chat)
-
-            PlannedFeatureView(
-                title: "Health",
-                systemImage: "heart.text.square",
-                tone: .purple,
-                phase: "Phase 5",
-                summary: "Vitals, sleep, activity, weight, nutrition and your health timeline — with clear charts and plain-language context."
+            ChatView(
+                session: session,
+                model: chatModel,
+                pendingQuestion: $pendingQuestion,
+                onFindCare: { showCareFinder = true },
+                onVoice: { showVoice = true }
             )
-            .tabItem { Label(AppTab.health.title, systemImage: AppTab.health.systemImage) }
-            .tag(AppTab.health)
+            .tabItem { Label(AppTab.chat.title, systemImage: AppTab.chat.systemImage) }
+            .tag(AppTab.chat)
+
+            HealthDashboardView(session: session, reader: services.healthReader)
+                .tabItem { Label(AppTab.health.title, systemImage: AppTab.health.systemImage) }
+                .tag(AppTab.health)
 
             PlanView(store: planStore)
-            .tabItem { Label(AppTab.plans.title, systemImage: AppTab.plans.systemImage) }
-            .tag(AppTab.plans)
+                .tabItem { Label(AppTab.plans.title, systemImage: AppTab.plans.systemImage) }
+                .tag(AppTab.plans)
 
-            ProfileView(onSignOut: onSignOut)
+            ProfileView(session: session, onRestartOnboarding: onRestartOnboarding)
                 .tabItem { Label(AppTab.profile.title, systemImage: AppTab.profile.systemImage) }
                 .tag(AppTab.profile)
         }
         .sensoryFeedback(.selection, trigger: selection)
         .task { await planStore.loadIfNeeded() }
+        .sheet(isPresented: $showCareFinder) {
+            CareFinderView()
+        }
+        .sheet(isPresented: $showVoice) {
+            VoiceInputView { transcript in
+                pendingQuestion = transcript
+                selection = .chat
+            }
+            .presentationDetents([.medium])
+        }
     }
 }

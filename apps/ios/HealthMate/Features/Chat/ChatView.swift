@@ -1,0 +1,412 @@
+import HealthMateCore
+import SwiftUI
+
+/// AI Health Assistant chat (reference: second iOS screen).
+///
+/// Gates, in order: an account (answers are generated on the HealthMate
+/// server, never on-device with a bundled key) and explicit consent to AI
+/// processing. The on-device safety check runs before any of that, so
+/// emergency guidance appears even when signed out or offline.
+struct ChatView: View {
+    let session: SessionStore
+    @Bindable var model: ChatViewModel
+    @Binding var pendingQuestion: String?
+    var onFindCare: () -> Void
+    var onVoice: () -> Void
+
+    @State private var showSignIn = false
+    @State private var showHistory = false
+    @State private var gateEscalation: Escalation?
+    @FocusState private var composerFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var canChat: Bool { session.isSignedIn && session.hasConsent("ai_processing") }
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        if let gateEscalation {
+                            EscalationCard(escalation: gateEscalation, onFindCare: onFindCare)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        if !session.isSignedIn {
+                            SignInGate(onSignIn: { showSignIn = true })
+                        } else if !session.hasConsent("ai_processing") {
+                            ConsentGate(busy: session.busy) {
+                                Task { await session.setConsent("ai_processing", granted: true) }
+                            }
+                        } else if model.isEmpty {
+                            ChatWelcome(onPick: { suggestion in Task { await model.send(suggestion) } })
+                        }
+                        ForEach(model.items) { item in
+                            row(item)
+                                .id(item.id)
+                                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                        }
+                        if model.sending {
+                            TypingIndicator().id("typing")
+                        }
+                        if let error = model.errorMessage {
+                            ErrorRow(message: error, canRetry: model.failedText != nil) {
+                                Task { await model.retry() }
+                            }
+                            .id("error")
+                        }
+                        Color.clear.frame(height: 1).id("bottom")
+                    }
+                    .padding(.horizontal, HM.Spacing.lg)
+                    .padding(.vertical, HM.Spacing.md)
+                    .animation(reduceMotion ? nil : HMMotion.spring, value: model.items)
+                    .animation(reduceMotion ? nil : HMMotion.spring, value: model.sending)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: model.items.count) { _, _ in scrollToBottom(proxy) }
+                .onChange(of: model.sending) { _, _ in scrollToBottom(proxy) }
+            }
+            .background(HM.Colors.background.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom) { composer }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) { header }
+                ToolbarItem(placement: .topBarLeading) {
+                    if session.isSignedIn {
+                        Button { showHistory = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                            .accessibilityLabel("Past conversations")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !model.isEmpty {
+                        Button { model.startNew() } label: { Image(systemName: "square.and.pencil") }
+                            .accessibilityLabel("New conversation")
+                    }
+                }
+            }
+            .sheet(isPresented: $showSignIn) {
+                SignInView(session: session, onSignedIn: {})
+            }
+            .sheet(isPresented: $showHistory) {
+                ConversationHistoryView(model: model)
+                    .presentationDetents([.medium, .large])
+            }
+        }
+        .task(id: session.state) { consumePendingQuestion() }
+        .onChange(of: pendingQuestion) { _, _ in consumePendingQuestion() }
+        .onChange(of: session.consents) { _, _ in consumePendingQuestion() }
+    }
+
+    // MARK: Rows
+
+    @ViewBuilder
+    private func row(_ item: ChatItem) -> some View {
+        switch item {
+        case .user(_, let text):
+            ChatBubble(author: .user, text: text)
+        case .localEscalation(_, let escalation):
+            EscalationCard(escalation: escalation, onFindCare: onFindCare)
+        case .assistant(let message):
+            AssistantTurnView(
+                message: message,
+                isLatest: item.id == model.items.last?.id && !model.sending,
+                savedSuggestions: model.savedSuggestions,
+                onAnswer: { answer in Task { await model.send(answer) } },
+                onSaveSuggestion: { fact in Task { await model.saveSuggestion(fact) } },
+                onFindCare: onFindCare
+            )
+        }
+    }
+
+    // MARK: Header & composer
+
+    private var header: some View {
+        VStack(spacing: 1) {
+            Text("AI Health Assistant").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
+            HStack(spacing: 5) {
+                Circle().fill(statusColor).frame(width: 7, height: 7)
+                Text(statusText).font(.hmMicro).foregroundStyle(HM.Colors.textSecondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var statusText: String {
+        switch session.aiAvailable {
+        case .some(true): return "Online"
+        case .some(false): return "AI answers unavailable"
+        case .none: return session.isSignedIn ? "Connecting…" : "Sign in to chat"
+        }
+    }
+
+    private var statusColor: Color {
+        switch session.aiAvailable {
+        case .some(true): return HM.Colors.success
+        case .some(false): return HM.Colors.warning
+        case .none: return HM.Colors.textMuted
+        }
+    }
+
+    private var composer: some View {
+        VStack(spacing: 6) {
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Type your message…", text: $model.draft, axis: .vertical)
+                    .font(.hmBody)
+                    .lineLimit(1...5)
+                    .focused($composerFocused)
+                    .submitLabel(.send)
+                    .onSubmit(submit)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(HM.Colors.card))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .strokeBorder(composerFocused ? HM.Colors.primary : HM.Colors.separator, lineWidth: composerFocused ? 2 : 1)
+                    )
+                    .accessibilityLabel("Message")
+                if model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    CircleIconButton(systemName: "mic.fill", label: "Speak your message", filled: false, action: onVoice)
+                } else {
+                    CircleIconButton(systemName: "arrow.up", label: "Send", filled: true, action: submit)
+                        .disabled(model.sending)
+                }
+            }
+            Text("AI-generated information, not a diagnosis.")
+                .font(.hmMicro)
+                .foregroundStyle(HM.Colors.textMuted)
+        }
+        .padding(.horizontal, HM.Spacing.lg)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(.bar)
+        .animation(reduceMotion ? nil : HMMotion.bouncy, value: model.draft.isEmpty)
+    }
+
+    // MARK: Actions
+
+    private func submit() {
+        let text = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        guard canChat else {
+            // Safety still runs locally for people who aren't signed in yet.
+            showGateEscalation(for: text)
+            if !session.isSignedIn { showSignIn = true }
+            return
+        }
+        Task { await model.send() }
+    }
+
+    private func consumePendingQuestion() {
+        guard let question = pendingQuestion else { return }
+        if canChat {
+            pendingQuestion = nil
+            Task { await model.send(question) }
+        } else if session.state != .unknown {
+            pendingQuestion = nil
+            model.draft = question
+            showGateEscalation(for: question)
+        }
+    }
+
+    private func showGateEscalation(for text: String) {
+        let triage = SafetyEngine.triage(text)
+        if triage.level >= .urgent { gateEscalation = SafetyEngine.escalation(for: triage) }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        if reduceMotion {
+            proxy.scrollTo("bottom", anchor: .bottom)
+        } else {
+            withAnimation(HMMotion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
+        }
+    }
+}
+
+// MARK: - Pieces
+
+private struct CircleIconButton: View {
+    let systemName: String
+    let label: String
+    let filled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(filled ? HM.Colors.onPrimary : HM.Colors.primary)
+                .frame(width: 46, height: 46)
+                .background(Circle().fill(filled ? HM.Colors.primaryFill : HM.Colors.primarySoft))
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.9))
+        .accessibilityLabel(label)
+        .transition(.scale.combined(with: .opacity))
+    }
+}
+
+private struct ChatWelcome: View {
+    let onPick: (String) -> Void
+
+    private let suggestions = [
+        "I've had a headache since this morning",
+        "Help me understand my blood test",
+        "Tips for sleeping better",
+        "What should I ask my doctor?",
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ChatBubble(author: .assistant, text: "Hi! I'm your AI Health Assistant. Tell me what's going on and I'll ask a few questions, explain things in plain language and let you know when to see a professional.")
+                .appearAnimation()
+            Text("Try asking")
+                .font(.hmCaption.weight(.semibold))
+                .foregroundStyle(HM.Colors.textSecondary)
+                .padding(.leading, 38)
+                .appearAnimation(delay: 0.1)
+            FlowLayout(spacing: 8) {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button(suggestion) { onPick(suggestion) }
+                        .font(.hmCaption.weight(.medium))
+                        .foregroundStyle(HM.Colors.primary)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(Capsule().fill(HM.Colors.primarySoft))
+                        .buttonStyle(PressableButtonStyle(scale: 0.95))
+                }
+            }
+            .padding(.leading, 38)
+            .appearAnimation(delay: 0.15)
+        }
+    }
+}
+
+private struct SignInGate: View {
+    let onSignIn: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            MascotView(size: 110, withBackdrop: true)
+            Text("Sign in to talk with your AI Health Assistant")
+                .font(.hmSectionHeading)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(HM.Colors.textPrimary)
+            Text("Answers are generated securely on the HealthMate server so your conversations stay private to your account. Your plan and reminders keep working without an account.")
+                .font(.hmBody)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(HM.Colors.textSecondary)
+            Button("Sign in or create account", action: onSignIn)
+                .buttonStyle(.hmPrimary(fullWidth: true))
+            DisclaimerView()
+        }
+        .padding(HM.Spacing.lg)
+        .hmCard()
+        .appearAnimation()
+    }
+}
+
+private struct ConsentGate: View {
+    let busy: Bool
+    let onAllow: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            IconBadge(systemName: "lock.shield", tone: .blue, size: .large, filled: true)
+            Text("Before we start")
+                .font(.hmSectionHeading)
+                .foregroundStyle(HM.Colors.textPrimary)
+            VStack(alignment: .leading, spacing: 8) {
+                bullet("Your messages, plus the profile details and memories you've saved, are sent to our AI provider to write each answer.")
+                bullet("They aren't used to train AI models, and you can delete conversations or your whole account at any time.")
+                bullet("Answers are general information, not a diagnosis. For emergencies, always call your local emergency number.")
+            }
+            Button(action: onAllow) {
+                if busy { ProgressView().tint(HM.Colors.onPrimary) } else { Text("Allow and continue") }
+            }
+            .buttonStyle(.hmPrimary(fullWidth: true))
+            .disabled(busy)
+            Text("You can turn this off in Profile → Privacy.")
+                .font(.hmMicro)
+                .foregroundStyle(HM.Colors.textMuted)
+        }
+        .padding(HM.Spacing.lg)
+        .hmCard()
+        .appearAnimation()
+    }
+
+    private func bullet(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "checkmark.circle.fill").font(.caption).foregroundStyle(HM.Colors.primary)
+            Text(text).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct ErrorRow: View {
+    let message: String
+    let canRetry: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(HM.Colors.error)
+            Text(message).font(.hmCaption).foregroundStyle(HM.Colors.textPrimary)
+            Spacer(minLength: 6)
+            if canRetry {
+                Button("Retry", action: onRetry)
+                    .font(.hmCaption.weight(.semibold))
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.errorSoft))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Past conversations; swipe to delete.
+struct ConversationHistoryView: View {
+    @Bindable var model: ChatViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var loaded = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if !loaded {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if model.conversations.isEmpty {
+                    EmptyStateView(systemImage: "bubble.left.and.bubble.right", title: "No conversations yet", message: "Your chats with the AI Health Assistant will appear here.")
+                        .padding(HM.Spacing.lg)
+                } else {
+                    List {
+                        ForEach(model.conversations) { conversation in
+                            Button {
+                                Task {
+                                    await model.open(conversation)
+                                    dismiss()
+                                }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(conversation.title).font(.hmBodyEmphasis).foregroundStyle(HM.Colors.textPrimary).lineLimit(1)
+                                    Text(conversation.updatedAt, format: .relative(presentation: .named))
+                                        .font(.hmCaption)
+                                        .foregroundStyle(HM.Colors.textSecondary)
+                                }
+                            }
+                        }
+                        .onDelete { offsets in
+                            let targets = offsets.map { model.conversations[$0] }
+                            Task { for conversation in targets { await model.delete(conversation) } }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Conversations")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .task {
+            await model.loadHistory()
+            loaded = true
+        }
+    }
+}

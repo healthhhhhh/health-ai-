@@ -44,6 +44,16 @@ targets:
         HMAPIBaseURL: $(HM_API_BASE_URL)
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        NSMicrophoneUsageDescription: HealthMate uses the microphone only while you ask a question by voice. Audio isn't stored.
+        NSSpeechRecognitionUsageDescription: HealthMate turns your spoken question into text so you can check it before sending.
+        NSLocationWhenInUseUsageDescription: HealthMate uses your location to show emergency departments, clinics and pharmacies near you. It isn't sent to HealthMate.
+        NSCameraUsageDescription: Take a photo of a report or of a skin concern for the AI Health Assistant to review.
+        NSHealthShareUsageDescription: HealthMate reads the Apple Health data you choose (like steps, heart rate and sleep) to show your trends and personalise your plan.
+    entitlements:
+      path: HealthMate/Resources/HealthMate.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.healthmate.app
