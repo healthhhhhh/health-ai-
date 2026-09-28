@@ -107,7 +107,10 @@ export function supabaseVersion(file: string): { version: string; name: string }
 export async function migrate(db: Database, directory = join(__dirname, "..", "..", "migrations")): Promise<string[]> {
   const isSupabase = (await db.query<{ ok: boolean }>("SELECT to_regnamespace('auth') IS NOT NULL AS ok")).rows[0]?.ok;
   if (!isSupabase) await db.exec(readFileSync(join(SQL_DIR, "supabase-compat.sql"), "utf8"));
-  await db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
+  // Bookkeeping only: never reachable through Supabase's Data API (Supabase grants new public tables to anon by default).
+  await db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+    ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON schema_migrations FROM anon, authenticated;`);
   const applied = new Set((await db.query<{ name: string }>("SELECT name FROM schema_migrations")).rows.map((r) => r.name));
   const cli = (await db.query<{ ok: boolean }>("SELECT to_regclass('supabase_migrations.schema_migrations') IS NOT NULL AS ok")).rows[0]?.ok;
   const cliVersions = cli ? new Set((await db.query<{ version: string }>("SELECT version FROM supabase_migrations.schema_migrations")).rows.map((r) => r.version)) : new Set<string>();

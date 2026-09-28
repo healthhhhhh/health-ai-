@@ -41,6 +41,57 @@ jobs:
         env:
           CI: "true"
 
+  supabase:
+    name: API on Supabase + Redis (migrations, RLS, Storage, Auth, jobs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start local Supabase (applies supabase/migrations)
+        run: supabase start
+      - name: Lint database functions
+        run: supabase db lint --level error
+      - name: Export local Supabase settings
+        run: |
+          supabase status -o json > /tmp/sb.json
+          {
+            echo "SUPABASE_URL=$(jq -r .API_URL /tmp/sb.json)"
+            echo "SUPABASE_PUBLISHABLE_KEY=$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY' /tmp/sb.json)"
+            echo "SUPABASE_SECRET_KEY=$(jq -r '.SECRET_KEY // .SERVICE_ROLE_KEY' /tmp/sb.json)"
+            echo "TEST_DATABASE_URL=$(jq -r .DB_URL /tmp/sb.json)"
+          } >> "$GITHUB_ENV"
+      - name: Embeddings Edge Function (gte-small)
+        run: |
+          echo "EMBED_FUNCTION_SECRET=ci-embed-secret-0123456789abcdef" > /tmp/functions.env
+          supabase functions serve --env-file /tmp/functions.env > /tmp/functions.log 2>&1 &
+          for i in $(seq 1 30); do curl -s -o /dev/null "$SUPABASE_URL/functions/v1/embed" && break; sleep 2; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPABASE_URL/functions/v1/embed" -d '{"input":["x"]}')" = 403
+          curl -sf -m 180 -X POST "$SUPABASE_URL/functions/v1/embed" -H "Content-Type: application/json" \
+            -H "x-healthmate-secret: ci-embed-secret-0123456789abcdef" -d '{"input":["headache after screens","walks daily"]}' > /tmp/embed.json \
+            || { cat /tmp/functions.log; exit 1; }
+          test "$(jq '.embeddings | length' /tmp/embed.json)" = 2
+          test "$(jq '.embeddings[0] | length' /tmp/embed.json)" = 384
+      - name: API tests on Supabase Postgres + Redis, and live Auth/Storage/Data API
+        run: npm run safety:build && npm test -w @healthmate/api -- --no-file-parallelism
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+          SUPABASE_LIVE_TEST: "1"
+      - name: Migrations are idempotent
+        run: npm run build -w @healthmate/api && DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate -w @healthmate/api | tee /tmp/migrate.log && grep -q "up to date" /tmp/migrate.log
+
   ios:
     name: iOS (core package + app build + unit tests)
     runs-on: macos-15

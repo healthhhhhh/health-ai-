@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDatabase, migrate, type Database, type Queryable } from "../src/db/database";
+import { migrate, type Database, type Queryable } from "../src/db/database";
+import { testDatabase } from "./helpers";
 
 /**
  * Row Level Security and Storage policies, exercised exactly as Supabase's
@@ -13,7 +14,7 @@ let alice: string;
 let bob: string;
 
 beforeAll(async () => {
-  db = await createDatabase({});
+  db = await testDatabase();
   await migrate(db);
   alice = await authUser("alice@example.com", "Alice");
   bob = await authUser("bob@example.com", "Bob");
@@ -25,6 +26,7 @@ afterAll(async () => {
 /** Signs up through Supabase Auth: the auth.users trigger creates the HealthMate rows. */
 async function authUser(email: string, firstName: string) {
   const id = randomUUID();
+  email = email.replace("@", `+${id.slice(0, 8)}@`); // unique per run (the database may be shared)
   await db.query(`INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ($1, $2, $3::jsonb)`, [id, email, JSON.stringify({ first_name: firstName, time_zone: "Europe/London" })]);
   return id;
 }
@@ -38,6 +40,16 @@ async function as<T>(userId: string | null, fn: (q: Queryable) => Promise<T>): P
   });
 }
 
+/** Rows changed as `userId`; a refusal by Supabase's storage guard counts as none. */
+async function changed(userId: string, sql: string, params: unknown[]) {
+  try {
+    return await as(userId, async (q) => (await q.query(sql, params)).rows.length);
+  } catch (error) {
+    if (/Direct deletion from storage tables is not allowed/.test((error as Error).message)) return 0;
+    throw error;
+  }
+}
+
 const count = async (q: Queryable, sql: string, params: unknown[] = []) => (await q.query(sql, params)).rows.length;
 
 describe("Supabase Auth linkage", () => {
@@ -46,7 +58,7 @@ describe("Supabase Auth linkage", () => {
       `SELECT u.email, u.auth_provider, p.first_name, p.time_zone FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.id = $1`,
       [alice],
     );
-    expect(rows[0]).toEqual({ email: "alice@example.com", auth_provider: "supabase", first_name: "Alice", time_zone: "Europe/London" });
+    expect(rows[0]).toEqual({ email: expect.stringMatching(/^alice\+[0-9a-f]{8}@example\.com$/), auth_provider: "supabase", first_name: "Alice", time_zone: "Europe/London" });
 
     const temp = await authUser("temp@example.com", "Temp");
     await db.query(`INSERT INTO health_conditions (user_id, name, source) VALUES ($1, 'Asthma', 'user_reported')`, [temp]);
@@ -56,12 +68,39 @@ describe("Supabase Auth linkage", () => {
   });
 });
 
+describe("Supabase Auth email changes", () => {
+  it("are mirrored to the HealthMate user", async () => {
+    const id = await authUser("old@example.com", "Sam");
+    await db.query(`UPDATE auth.users SET email = $2 WHERE id = $1`, [id, `New+${id}@Example.com`]);
+    expect((await db.query<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [id])).rows[0]!.email).toBe(`new+${id}@example.com`);
+  });
+});
+
 describe("row level security", () => {
   it("is enabled on every table in the public schema", async () => {
     const { rows } = await db.query<{ relname: string }>(
       `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity`,
     );
     expect(rows.map((r) => r.relname)).toEqual([]);
+  });
+
+  it("passes Supabase security-advisor style checks", async () => {
+    const q = async (sql: string) => (await db.query<{ name: string }>(sql)).rows.map((r) => r.name);
+    // Functions pin their search_path.
+    expect(await q(`SELECT p.proname AS name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%')
+        AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')`)).toEqual([]); // extension-owned (pgvector on PGlite) excluded
+    // SECURITY DEFINER functions can't be called through the Data API.
+    expect(await q(`SELECT p.proname AS name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.prosecdef AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))`)).toEqual([]);
+    // Views respect the caller's RLS.
+    expect(await q(`SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'v' AND NOT coalesce(c.reloptions::text[] @> ARRAY['security_invoker=true'], false)`)).toEqual([]);
+    // Only the server-only tables have RLS without policies (i.e. deny everyone but the API).
+    expect((await q(`SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = c.oid)`)).sort()).toEqual(
+      ["ai_usage", "audit_logs", "documents_legacy", "refresh_tokens", "safety_events", "schema_migrations"],
+    );
   });
 
   it("stops one person reading, changing or deleting another's records", async () => {
@@ -164,7 +203,7 @@ describe("timeline policies", () => {
 
 describe("storage policies", () => {
   it("keeps medical buckets private and each person's folder their own", async () => {
-    const { rows } = await db.query<{ id: string; public: boolean }>(`SELECT id, public FROM storage.buckets ORDER BY id`);
+    const { rows } = await db.query<{ id: string; public: boolean }>(`SELECT id, public FROM storage.buckets WHERE id IN ('avatars', 'health-images', 'medical-reports') ORDER BY id`);
     expect(rows).toEqual([
       { id: "avatars", public: false },
       { id: "health-images", public: false },
@@ -173,18 +212,20 @@ describe("storage policies", () => {
     // Uploaded by the server through signed URLs.
     await db.query(`INSERT INTO storage.objects (bucket_id, name) VALUES ('medical-reports', $1), ('health-images', $2)`, [`${alice}/${randomUUID()}`, `${alice}/${randomUUID()}`]);
     await as(alice, async (q) => expect(await count(q, `SELECT 1 FROM storage.objects WHERE bucket_id IN ('medical-reports', 'health-images')`)).toBe(2));
-    await as(bob, async (q) => {
-      expect(await count(q, `SELECT 1 FROM storage.objects WHERE name LIKE $1`, [`${alice}/%`])).toBe(0);
-      expect(await count(q, `DELETE FROM storage.objects WHERE name LIKE $1 RETURNING id`, [`${alice}/%`])).toBe(0);
-      expect(await count(q, `UPDATE storage.objects SET name = $2 WHERE name LIKE $1 RETURNING id`, [`${alice}/%`, `${bob}/stolen`])).toBe(0);
-    });
+    await as(bob, async (q) => expect(await count(q, `SELECT 1 FROM storage.objects WHERE name LIKE $1`, [`${alice}/%`])).toBe(0));
+    // Real Supabase refuses direct deletes from storage tables altogether; either way nothing is touched.
+    expect(await changed(bob, `DELETE FROM storage.objects WHERE name LIKE $1 RETURNING id`, [`${alice}/%`])).toBe(0);
+    expect(await changed(bob, `UPDATE storage.objects SET name = $2 WHERE name LIKE $1 RETURNING id`, [`${alice}/%`, `${bob}/stolen`])).toBe(0);
+    expect((await db.query(`SELECT 1 FROM storage.objects WHERE name LIKE $1`, [`${alice}/%`])).rows).toHaveLength(2);
     // People can't write medical files directly (only via the API's signed URLs)…
     await expect(as(alice, (q) => q.query(`INSERT INTO storage.objects (bucket_id, name) VALUES ('medical-reports', $1)`, [`${alice}/direct.pdf`]))).rejects.toThrow(/row-level security/);
     // …and can manage only their own avatar.
     await as(alice, (q) => q.query(`INSERT INTO storage.objects (bucket_id, name) VALUES ('avatars', $1)`, [`${alice}/me.png`]));
     await expect(as(bob, (q) => q.query(`INSERT INTO storage.objects (bucket_id, name) VALUES ('avatars', $1)`, [`${alice}/evil.png`]))).rejects.toThrow(/row-level security/);
-    await as(bob, async (q) => expect(await count(q, `DELETE FROM storage.objects WHERE name = $1 RETURNING id`, [`${alice}/me.png`])).toBe(0));
-    await expect(as(null, (q) => q.query(`SELECT 1 FROM storage.objects`))).rejects.toThrow(/permission denied/);
+    expect(await changed(bob, `DELETE FROM storage.objects WHERE name = $1 RETURNING id`, [`${alice}/me.png`])).toBe(0);
+    // Anonymous callers see nothing (Supabase may answer with an empty result instead of an error).
+    const anon = await as(null, (q) => q.query(`SELECT 1 FROM storage.objects`)).then((r) => r.rows.length, (e: Error) => (/permission denied/.test(e.message) ? 0 : -1));
+    expect(anon).toBe(0);
   });
 });
 

@@ -1,0 +1,55 @@
+# Supabase CLI configuration for local development and CI (`supabase start`).
+# Hosted projects are configured in the dashboard; see docs/backend-supabase-migration.md.
+project_id = "healthmate"
+
+[api]
+enabled = true
+port = 54321
+# The API talks to Postgres directly; the Data API is exposed only with RLS.
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = false
+
+[realtime]
+enabled = false
+
+[analytics]
+enabled = false
+
+[storage]
+enabled = true
+file_size_limit = "20MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/reset-password"]
+jwt_expiry = 900
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+minimum_password_length = 10
+
+[auth.email]
+enable_signup = true
+# Hosted projects: turn confirmations ON in the dashboard.
+enable_confirmations = false
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+
+# Called only by the API with a shared secret (EMBED_FUNCTION_SECRET), not by users.
+[functions.embed]
+verify_jwt = false

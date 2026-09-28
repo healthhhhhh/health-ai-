@@ -24,8 +24,10 @@
     "pretypecheck": "npm run safety:build",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "pretest": "npm run safety:build",
-    "test": "npm run tokens:check && npm run safety:check && npm run test --workspaces --if-present",
+    "test": "npm run tokens:check && npm run safety:check && npm run supabase:check && npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e -w @healthmate/web",
-    "prebuild": "npm run safety:build"
+    "prebuild": "npm run safety:build",
+    "supabase:migrations": "node scripts/supabase-migrations.mjs",
+    "supabase:check": "node scripts/supabase-migrations.mjs --check"
   }
 }

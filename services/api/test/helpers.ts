@@ -22,10 +22,15 @@ export interface TestContext {
   close: () => Promise<void>;
 }
 
-/** A full app on an in-memory Postgres (PGlite) with a fake AI provider. */
+/** A test database: in-memory PGlite, or a real Postgres (e.g. local Supabase) when TEST_DATABASE_URL is set. */
+export async function testDatabase(): Promise<Database> {
+  return createDatabase({ url: process.env.TEST_DATABASE_URL, poolSize: 4 });
+}
+
+/** A full app with a fake AI provider. */
 export async function createTestContext(): Promise<TestContext> {
   const config = loadConfig({ NODE_ENV: "test", PUBLIC_BASE_URL: "http://127.0.0.1" } as NodeJS.ProcessEnv);
-  const db = await createDatabase({});
+  const db = await testDatabase();
   await migrate(db);
   const ai = new FakeAiProvider();
   const storage = new LocalObjectStorage(mkdtempSync(join(tmpdir(), "hm-uploads-")), config.PUBLIC_BASE_URL, config.jwtSecret);
