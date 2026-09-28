@@ -133,18 +133,27 @@ private struct ConnectHealthCard: View {
                     Text("See your steps, heart rate, sleep and weight over time.").font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
                 }
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Label("You choose exactly what to share", systemImage: "hand.tap")
-                Label("Read-only — HealthMate never writes to Apple Health", systemImage: "eye")
-                Label("Stays on your phone unless you turn on sync", systemImage: "iphone")
+            VStack(alignment: .leading, spacing: 8) {
+                point("You choose exactly what to share", systemImage: "hand.tap")
+                point("Read-only — HealthMate never writes to Apple Health", systemImage: "eye")
+                point("Stays on your phone unless you turn on sync", systemImage: "iphone")
             }
-            .font(.hmCaption)
-            .foregroundStyle(HM.Colors.textPrimary)
             Button("Connect", action: onConnect).buttonStyle(.hmPrimary(fullWidth: true))
         }
         .padding(HM.Spacing.lg)
         .hmCard()
         .appearAnimation()
+    }
+
+    private func point(_ text: String, systemImage: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(HM.Colors.primary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text(text).foregroundStyle(HM.Colors.textPrimary)
+        }
+        .font(.hmCaption)
     }
 }
 

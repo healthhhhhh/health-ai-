@@ -17,7 +17,7 @@
 | 11 | Web dashboard (health, reports pages) | ⬜ Parked (iOS first) |
 | 12 | Production hardening | ⬜ See "Before launch" |
 
-🟡 = written, not yet verified by CI. The shell was unavailable while this code was written, so it has not been compiled.
+🟡 = built and unit-tested in CI (iOS build, HealthMateCore + app tests, API tests against an embedded database), but not yet exercised end to end with a live AI provider key or on a device with real Apple Health data.
 
 ## Before launch (decisions and work outside the codebase)
 
