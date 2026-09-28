@@ -12,6 +12,7 @@ struct DocumentsView: View {
     @State private var showFileImporter = false
     @State private var reportPhoto: PhotosPickerItem?
     @State private var showPhotoCheck = false
+    @State private var showReportCamera = false
     @State private var openedID: String?
 
     init(session: SessionStore) {
@@ -45,6 +46,9 @@ struct DocumentsView: View {
                             tileLabel(title: "Report photo", subtitle: "From Photos", systemImage: "doc.viewfinder", tone: .teal)
                         }
                         .buttonStyle(PressableButtonStyle(scale: 0.96))
+                    }
+                    if CameraPicker.isAvailable {
+                        uploadTile(title: "Photograph a report", subtitle: "Use the camera", systemImage: "camera", tone: .blue) { showReportCamera = true }
                     }
                     uploadTile(title: "Check a photo", subtitle: "Skin, wound or swelling", systemImage: "camera.viewfinder", tone: .purple, wide: true) { showPhotoCheck = true }
                     if model.uploading {
@@ -95,6 +99,14 @@ struct DocumentsView: View {
                 }
                 reportPhoto = nil
             }
+        }
+        .fullScreenCover(isPresented: $showReportCamera) {
+            CameraPicker { data in
+                Task {
+                    if let record = await model.submitReport(data: data, filename: "report.jpg") { openedID = record.id }
+                }
+            }
+            .ignoresSafeArea()
         }
         .sheet(isPresented: $showPhotoCheck) {
             PhotoCheckView(model: model) { record in openedID = record.id }
@@ -188,6 +200,7 @@ private struct PhotoCheckView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var item: PhotosPickerItem?
+    @State private var showCamera = false
     @State private var imageData: Data?
     @State private var purpose: ImagePurpose = .skin
     @State private var note = ""
@@ -207,6 +220,11 @@ private struct PhotoCheckView: View {
                                 .accessibilityLabel("Selected photo. Tap to choose another.")
                         } else {
                             Label("Choose a photo", systemImage: "photo.on.rectangle")
+                        }
+                    }
+                    if CameraPicker.isAvailable {
+                        Button { showCamera = true } label: {
+                            Label(imageData == nil ? "Take a photo" : "Retake with camera", systemImage: "camera")
                         }
                     }
                 } footer: {
@@ -248,6 +266,10 @@ private struct PhotoCheckView: View {
                         .disabled(imageData == nil)
                     }
                 }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraPicker { data in imageData = data }
+                    .ignoresSafeArea()
             }
             .onChange(of: item) { _, item in
                 Task { imageData = try? await item?.loadTransferable(type: Data.self) }
