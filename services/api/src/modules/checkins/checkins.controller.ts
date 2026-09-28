@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
+import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { parseBody } from "../../common/errors";
 import { DATABASE, type Database } from "../../db/database";
 
@@ -10,7 +11,8 @@ const toCheckIn = (r: Row) => ({ mood: r.mood, recordedAt: r.recorded_at.toISOSt
 
 /** Mood check-ins. Only the caller's own rows are ever read or written. */
 @Controller("v1/check-ins")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RateLimitGuard)
+@RateLimit("check-ins", 60, 60_000)
 export class CheckInsController {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 

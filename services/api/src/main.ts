@@ -3,6 +3,7 @@ import { Logger } from "@nestjs/common";
 import { createApp } from "./bootstrap";
 import { loadConfig } from "./config";
 import { createDatabase, migrate } from "./db/database";
+import { startMaintenance } from "./maintenance";
 import { aiProviderFor, jobQueueFor, rateLimitStoreFor, storageFor } from "./adapters";
 
 async function main() {
@@ -18,6 +19,8 @@ async function main() {
     config, database, aiProvider, storage: storageFor(config), jobQueue: await jobQueueFor(config),
     rateLimitStore: await rateLimitStoreFor(config),
   });
+  // With Redis, a separate worker (`npm run worker`) runs jobs and housekeeping.
+  if (!config.REDIS_URL || config.RUN_WORKER_IN_API === "true") startMaintenance(app);
   await app.listen(config.PORT);
   logger.log(
     `HealthMate API listening on :${config.PORT} (database: ${config.DATABASE_URL ? "postgres" : "embedded"}, auth: ${config.authProvider}, storage: ${config.storageProvider}, ` +

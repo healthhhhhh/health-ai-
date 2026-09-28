@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
+import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { parseBody } from "../../common/errors";
 import { TimelineService, type TimelineEventType } from "./timeline.service";
 
@@ -15,7 +16,8 @@ const CreateBody = z.object({
 });
 
 @Controller("v1/timeline")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RateLimitGuard)
+@RateLimit("timeline", 120, 60_000)
 export class TimelineController {
   constructor(@Inject(TimelineService) private readonly timeline: TimelineService) {}
 

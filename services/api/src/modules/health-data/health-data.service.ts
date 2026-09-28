@@ -53,7 +53,46 @@ export class HealthDataService {
         inserted += rows.length;
       }
     });
+    if (measurements.some((m) => m.source === "apple_health")) {
+      const device = measurements.find((m) => m.source === "apple_health" && m.sourceDevice)?.sourceDevice ?? null;
+      await this.db.query(
+        `INSERT INTO healthkit_connections (user_id, status, device_name, last_sync_at) VALUES ($1, 'connected', $2, now())
+         ON CONFLICT (user_id) DO UPDATE SET status = 'connected', disconnected_at = NULL, last_sync_at = now(),
+           device_name = COALESCE(EXCLUDED.device_name, healthkit_connections.device_name),
+           connected_at = CASE WHEN healthkit_connections.status = 'disconnected' THEN now() ELSE healthkit_connections.connected_at END`,
+        [userId, device],
+      );
+    }
     return { inserted };
+  }
+
+  async connection(userId: string) {
+    const { rows } = await this.db.query<{ status: string; device_name: string | null; scopes: string[]; connected_at: Date; disconnected_at: Date | null; last_sync_at: Date | null }>(
+      `SELECT status, device_name, scopes, connected_at, disconnected_at, last_sync_at FROM healthkit_connections WHERE user_id = $1`,
+      [userId],
+    );
+    const r = rows[0];
+    if (!r) return { status: "never_connected" as const, deviceName: null, scopes: [], connectedAt: null, disconnectedAt: null, lastSyncAt: null };
+    return {
+      status: r.status as "connected" | "disconnected",
+      deviceName: r.device_name,
+      scopes: r.scopes,
+      connectedAt: r.connected_at.toISOString(),
+      disconnectedAt: r.disconnected_at?.toISOString() ?? null,
+      lastSyncAt: r.last_sync_at?.toISOString() ?? null,
+    };
+  }
+
+  /** Records which data types the person granted on their iPhone. */
+  async connect(userId: string, input: { deviceName?: string | null; scopes: string[] }) {
+    await this.db.query(
+      `INSERT INTO healthkit_connections (user_id, status, device_name, scopes) VALUES ($1, 'connected', $2, $3)
+       ON CONFLICT (user_id) DO UPDATE SET status = 'connected', disconnected_at = NULL, scopes = EXCLUDED.scopes,
+         device_name = COALESCE(EXCLUDED.device_name, healthkit_connections.device_name),
+         connected_at = CASE WHEN healthkit_connections.status = 'disconnected' THEN now() ELSE healthkit_connections.connected_at END`,
+      [userId, input.deviceName ?? null, input.scopes],
+    );
+    return this.connection(userId);
   }
 
   async trend(userId: string, kind: MeasurementKind, days: number, timeZone: string): Promise<{ kind: MeasurementKind; unit: string; points: TrendPoint[]; average: number | null; previousAverage: number | null }> {
@@ -86,7 +125,10 @@ export class HealthDataService {
 
   /** Removes everything synced from Apple Health (used when the person disconnects it). */
   async removeSource(userId: string, source: "apple_health"): Promise<number> {
-    const { rows } = await this.db.query(`DELETE FROM health_measurements WHERE user_id = $1 AND source = $2 RETURNING id`, [userId, source]);
-    return rows.length;
+    return this.db.transaction(async (tx) => {
+      const { rows } = await tx.query(`DELETE FROM health_measurements WHERE user_id = $1 AND source = $2 RETURNING id`, [userId, source]);
+      await tx.query(`UPDATE healthkit_connections SET status = 'disconnected', disconnected_at = now() WHERE user_id = $1`, [userId]);
+      return rows.length;
+    });
   }
 }

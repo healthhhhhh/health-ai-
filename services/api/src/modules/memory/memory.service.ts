@@ -146,6 +146,7 @@ export class MemoryService implements OnModuleInit {
   }
 
   private async queueEmbedding(userId: string, memoryId: string) {
-    if (this.embeddings.available) await this.jobs.enqueue("embed-memory", { userId, memoryId }, { jobId: `embed-${memoryId}` });
+    // No fixed job id: an edited fact must be re-embedded; `embed` is idempotent.
+    if (this.embeddings.available) await this.jobs.enqueue("embed-memory", { userId, memoryId });
   }
 }

@@ -71,6 +71,8 @@ export class DocumentsController {
  * presigned URL.
  */
 @Controller("v1/uploads")
+@UseGuards(RateLimitGuard)
+@RateLimit("uploads", 60, 60_000)
 export class UploadsController {
   constructor(@Inject(STORAGE) private readonly storage: ObjectStorage) {}
 

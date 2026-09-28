@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
+import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { parseBody } from "../../common/errors";
 import { MemoryService } from "./memory.service";
 
@@ -18,7 +19,8 @@ const CreateBody = z.object({
 const PatchBody = z.object({ fact: z.string().trim().min(1).max(500).optional(), confirm: z.boolean().optional() });
 
 @Controller("v1/memories")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RateLimitGuard)
+@RateLimit("memories", 120, 60_000)
 export class MemoryController {
   constructor(@Inject(MemoryService) private readonly memories: MemoryService) {}
 

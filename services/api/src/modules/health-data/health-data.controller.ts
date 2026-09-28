@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
 import { parseBody } from "../../common/errors";
@@ -34,10 +34,16 @@ const Measurement = z
   })
   .refine((m) => m.value >= BOUNDS[m.kind][0] && m.value <= BOUNDS[m.kind][1], { message: "value out of range", path: ["value"] });
 
+const ConnectBody = z.object({
+  deviceName: z.string().trim().max(120).nullable().optional(),
+  scopes: z.array(z.enum(KINDS)).max(KINDS.length),
+});
+
 const IngestBody = z.object({ measurements: z.array(Measurement).min(1).max(500) });
 
 @Controller("v1/health-data")
 @UseGuards(AuthGuard, RateLimitGuard)
+@RateLimit("health-data", 120, 60_000)
 export class HealthDataController {
   constructor(
     @Inject(HealthDataService) private readonly data: HealthDataService,
@@ -67,7 +73,38 @@ export class HealthDataController {
   }
 
   @Delete("apple-health")
+  @RateLimit("health-disconnect", 10, 60_000)
   async disconnectAppleHealth(@UserId() userId: string) {
+    return { removed: await this.data.removeSource(userId, "apple_health") };
+  }
+}
+
+/** Apple Health (HealthKit) connection state. Reading HealthKit happens on the iPhone only. */
+@Controller("v1/healthkit")
+@UseGuards(AuthGuard, RateLimitGuard)
+@RateLimit("healthkit", 60, 60_000)
+export class HealthKitController {
+  constructor(
+    @Inject(HealthDataService) private readonly data: HealthDataService,
+    @Inject(AccountService) private readonly account: AccountService,
+  ) {}
+
+  @Get("connection")
+  connection(@UserId() userId: string) {
+    return this.data.connection(userId);
+  }
+
+  @Put("connection")
+  async connect(@UserId() userId: string, @Body() body: unknown) {
+    const input = parseBody(ConnectBody, body);
+    await this.account.requireConsent(userId, "health_data_sync");
+    return this.data.connect(userId, input);
+  }
+
+  /** Disconnects and removes everything synced from Apple Health. */
+  @Delete("connection")
+  @RateLimit("health-disconnect", 10, 60_000)
+  async disconnect(@UserId() userId: string) {
     return { removed: await this.data.removeSource(userId, "apple_health") };
   }
 }

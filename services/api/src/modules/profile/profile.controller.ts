@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
+import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { parseBody } from "../../common/errors";
 import { ProfileService } from "./profile.service";
 
@@ -28,7 +29,8 @@ const MedicationBody = z.object({
 const MedicationPatch = z.object({ active: z.boolean() });
 
 @Controller("v1/me")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RateLimitGuard)
+@RateLimit("profile", 120, 60_000)
 export class ProfileController {
   constructor(@Inject(ProfileService) private readonly profiles: ProfileService) {}
 

@@ -13,6 +13,9 @@ export interface RateLimitRule {
 
 const RATE_LIMIT_KEY = "healthmate:rate-limit";
 
+/** Applies to any guarded route without its own rule, so nothing is unlimited by omission. */
+export const DEFAULT_RATE_LIMIT: RateLimitRule = { bucket: "default", limit: 300, windowMs: 60_000 };
+
 /** Limits requests per user (or per hashed IP when signed out) for a route. */
 export const RateLimit = (bucket: string, limit: number, windowMs: number) => SetMetadata(RATE_LIMIT_KEY, { bucket, limit, windowMs } satisfies RateLimitRule);
 
@@ -119,8 +122,7 @@ export class RateLimitGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const rule = this.reflector.getAllAndOverride<RateLimitRule | undefined>(RATE_LIMIT_KEY, [context.getHandler(), context.getClass()]);
-    if (!rule) return true;
+    const rule = this.reflector.getAllAndOverride<RateLimitRule | undefined>(RATE_LIMIT_KEY, [context.getHandler(), context.getClass()]) ?? DEFAULT_RATE_LIMIT;
     const req = context.switchToHttp().getRequest<AuthedRequest>();
     const subject = req.userId ?? `ip:${createHash("sha256").update(req.ip ?? "unknown").digest("hex").slice(0, 16)}`;
     const { allowed, retryAfterMs } = await this.limiter.hit(`${rule.bucket}:${subject}`, rule);

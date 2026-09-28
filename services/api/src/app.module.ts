@@ -18,13 +18,15 @@ import { EMBEDDINGS, type EmbeddingProvider } from "./modules/memory/embeddings"
 import { embeddingsFor } from "./adapters";
 import { ChatController } from "./modules/chat/chat.controller";
 import { CheckInsController } from "./modules/checkins/checkins.controller";
-import { PlanController } from "./modules/plan/plan.controller";
+import { PlanController, PlanService, RemindersController } from "./modules/plan/plan.controller";
+import { SymptomsController, SymptomsService } from "./modules/symptoms/symptoms.controller";
+import { CareController, CareService } from "./modules/care/care.controller";
 import { ChatService } from "./modules/chat/chat.service";
 import { DocumentsController, UploadsController } from "./modules/documents/documents.controller";
 import { DocumentsService } from "./modules/documents/documents.service";
 import { InProcessJobQueue, JobQueue } from "./modules/documents/job-queue";
 import { STORAGE, type ObjectStorage } from "./modules/documents/storage";
-import { HealthDataController } from "./modules/health-data/health-data.controller";
+import { HealthDataController, HealthKitController } from "./modules/health-data/health-data.controller";
 import { HealthDataService } from "./modules/health-data/health-data.service";
 import { MemoryController } from "./modules/memory/memory.controller";
 import { MemoryService } from "./modules/memory/memory.service";
@@ -110,6 +112,9 @@ export class AppModule {
       },
       DocumentsService,
       HealthDataService,
+      PlanService,
+      SymptomsService,
+      CareService,
     ];
     return {
       module: AppModule,
@@ -126,6 +131,10 @@ export class AppModule {
         HealthDataController,
         CheckInsController,
         PlanController,
+        RemindersController,
+        SymptomsController,
+        CareController,
+        HealthKitController,
       ],
       providers,
     };

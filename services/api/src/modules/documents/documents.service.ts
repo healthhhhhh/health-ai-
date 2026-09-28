@@ -145,7 +145,8 @@ export class DocumentsService implements OnModuleInit {
     } else {
       await this.db.query(`UPDATE medical_documents SET status = 'processing', failure_reason = NULL WHERE id = $1 AND user_id = $2`, [row.id, userId]);
     }
-    await this.queue.enqueue("process-document", { userId, kind: row.kind, id: row.id }, { jobId: `document-${row.id}` });
+    // Job id unique per attempt: a failed file can be retried, and Redis keeps finished job ids for a while.
+    await this.queue.enqueue("process-document", { userId, kind: row.kind, id: row.id }, { jobId: `document-${row.id}-${Date.now()}` });
     return toRecord({ ...row, status: "processing", failure_reason: null });
   }
 
