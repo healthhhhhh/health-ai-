@@ -26,7 +26,12 @@ struct AppServices {
             planRepository = InMemoryPlanRepository()
         }
         let reminders = NotificationReminderScheduler()
-        let api = APIClient(baseURL: baseURL, tokens: KeychainTokenStore())
+        var tokens: any TokenStore = KeychainTokenStore()
+        #if DEBUG
+        // Demo sign-in for screenshots keeps tokens in memory (unsigned simulator builds may lack Keychain access).
+        if UserDefaults.standard.string(forKey: "hmDemoEmail") != nil { tokens = InMemoryTokenStore() }
+        #endif
+        let api = APIClient(baseURL: baseURL, tokens: tokens)
         let healthReader = HealthKitService()
         // "sample" shows labelled demo data on Home; anything else uses the person's real data.
         var useSample = source == "sample"

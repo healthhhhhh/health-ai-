@@ -8,6 +8,8 @@ struct HomeView: View {
     var onAsk: (String) -> Void
     var onNavigate: (AppTab) -> Void
     var onVoice: () -> Void = {}
+    /// Signed in to a demo server: account content is seeded demo data.
+    var isDemoAccount = false
 
     @State private var question = ""
 
@@ -51,7 +53,11 @@ struct HomeView: View {
     private func content(_ summary: HomeSummary) -> some View {
         VStack(alignment: .leading, spacing: HM.Spacing.xl) {
             VStack(alignment: .leading, spacing: HM.Spacing.md) {
-                if model.isSampleData { SampleDataBanner() }
+                if model.isSampleData {
+                    SampleDataBanner()
+                } else if isDemoAccount {
+                    SampleDataBanner(text: "Demo account — example content, not real health data")
+                }
                 HomeHeader(user: summary.user, unreadNotifications: summary.unreadNotifications)
                 AskBar(text: $question, onSubmit: onAsk, onVoice: onVoice)
             }

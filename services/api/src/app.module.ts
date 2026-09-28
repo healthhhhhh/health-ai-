@@ -41,7 +41,7 @@ class HealthController {
   /** Lets clients show an honest "AI unavailable" state instead of failing late. */
   @Get("v1/meta")
   meta() {
-    return { apiVersion: 1, ai: { available: this.ai.available } };
+    return { apiVersion: 1, ai: { available: this.ai.available, demo: this.ai.demo === true } };
   }
 }
 

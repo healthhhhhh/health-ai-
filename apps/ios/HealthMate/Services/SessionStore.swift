@@ -12,6 +12,8 @@ final class SessionStore {
     private(set) var state: State = .unknown
     /// nil until checked; false means the server has no AI provider configured.
     private(set) var aiAvailable: Bool?
+    /// The server gives scripted demo answers; the UI must say so.
+    private(set) var isDemo = false
     private(set) var consents: [String: Bool] = [:]
     private(set) var busy = false
     var errorMessage: String?
@@ -26,12 +28,22 @@ final class SessionStore {
 
     func restore() async {
         state = await api.isSignedIn ? .signedIn : .signedOut
+        #if DEBUG
+        // Screenshots and UI tests: `-hmDemoEmail … -hmDemoPassword …` signs in to a demo server.
+        if state == .signedOut,
+           let email = UserDefaults.standard.string(forKey: "hmDemoEmail"),
+           let password = UserDefaults.standard.string(forKey: "hmDemoPassword") {
+            _ = await signIn(email: email, password: password)
+        }
+        #endif
         await refreshMeta()
         if isSignedIn { await loadConsents() }
     }
 
     func refreshMeta() async {
-        aiAvailable = (try? await api.meta())?.ai.available
+        let meta = try? await api.meta()
+        aiAvailable = meta?.ai.available
+        isDemo = meta?.ai.demo == true
     }
 
     func signIn(email: String, password: String) async -> Bool {

@@ -44,8 +44,10 @@ struct DisclaimerView: View {
 
 /// Marks screens that are rendering sample data.
 struct SampleDataBanner: View {
+    var text = "Demo mode — sample data, not real measurements"
+
     var body: some View {
-        Label("Demo mode — sample data, not real measurements", systemImage: "flask")
+        Label(text, systemImage: "flask")
             .font(.hmMicro)
             .foregroundStyle(HM.Colors.warning)
             .padding(.horizontal, 12)

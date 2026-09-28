@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "dev": "tsc -p tsconfig.build.json --watch & node --watch dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo": "node dist/demo.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

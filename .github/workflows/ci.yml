@@ -115,6 +115,21 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | (command -v xcbeautify >/dev/null && xcbeautify || cat)
 
+      # Signed-in screenshots use the real API in demo mode (scripted AI
+      # answers, labelled as a demo in the app; non-medical demo account).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Start demo API
+        run: |
+          npm ci --no-audit --no-fund
+          npm run safety:build
+          npm run build -w @healthmate/api
+          nohup npm run demo -w @healthmate/api > "$RUNNER_TEMP/demo-api.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:4000/v1/meta && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/demo-api.log"; exit 1
+
       # Visual review: install the built app and capture key screens in light
       # and dark mode. Launch arguments override UserDefaults (NSArgumentDomain),
       # which is how each run picks a screen.
@@ -146,6 +161,10 @@ jobs:
             shoot "chat-$appearance" YES "" -hmInitialTab chat
             shoot "health-$appearance" YES "" -hmInitialTab health
             shoot "profile-$appearance" YES "" -hmInitialTab profile
+            DEMO=(-hmDemoEmail demo@healthmate.example -hmDemoPassword demo-password-123)
+            shoot "home-account-$appearance" YES "" "${DEMO[@]}"
+            shoot "chat-conversation-$appearance" YES "" -hmInitialTab chat -hmOpenLatestConversation YES "${DEMO[@]}"
+            shoot "profile-account-$appearance" YES "" -hmInitialTab profile "${DEMO[@]}"
           done
 
       # Artifact storage isn't reachable from every review environment, so the

@@ -32,6 +32,8 @@ export interface AiResult<T> {
 export interface AiProvider {
   readonly name: string;
   readonly available: boolean;
+  /** Scripted demo answers, not a real model. Clients must show a demo notice. */
+  readonly demo?: boolean;
   generate<T>(request: AiRequest<T>): Promise<AiResult<T>>;
 }
 

@@ -17,7 +17,11 @@ public struct AuthResponse: Codable, Sendable {
 }
 
 public struct APIMeta: Codable, Sendable {
-    public struct AI: Codable, Sendable { public let available: Bool }
+    public struct AI: Codable, Sendable {
+        public let available: Bool
+        /// Scripted demo answers, not a real model (demo server only).
+        public let demo: Bool?
+    }
     public let apiVersion: Int
     public let ai: AI
 }

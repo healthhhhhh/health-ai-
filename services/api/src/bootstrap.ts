@@ -24,6 +24,6 @@ export async function createApp(deps: AppDependencies, options: { logger?: boole
   if (origins?.length) app.enableCors({ origin: origins, credentials: true });
   app.enableShutdownHooks();
   await app.init();
-  if (!deps.config.aiEnabled) new Logger("Bootstrap").warn("ANTHROPIC_API_KEY is not set: AI features will report that they are unavailable.");
+  if (!deps.config.aiEnabled && !deps.aiProvider.demo) new Logger("Bootstrap").warn("ANTHROPIC_API_KEY is not set: AI features will report that they are unavailable.");
   return app;
 }

@@ -26,6 +26,11 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack {
             List {
+                if session.isSignedIn && session.isDemo {
+                    Section { SampleDataBanner(text: "Demo account — example content, not real health data") }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
                 if session.isSignedIn {
                     signedInSections
                 } else {

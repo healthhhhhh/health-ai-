@@ -27,6 +27,15 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
+                        if session.isDemo {
+                            Label("Demo server: answers are scripted examples, not real AI.", systemImage: "theatermasks")
+                                .font(.hmCaption.weight(.medium))
+                                .foregroundStyle(HM.Colors.textPrimary)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.warningSoft))
+                                .accessibilityIdentifier("demoNotice")
+                        }
                         if let gateEscalation {
                             EscalationCard(escalation: gateEscalation, onFindCare: onFindCare)
                                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -91,7 +100,16 @@ struct ChatView: View {
                     .presentationDetents([.medium, .large])
             }
         }
-        .task(id: session.state) { consumePendingQuestion() }
+        .task(id: session.state) {
+            consumePendingQuestion()
+            #if DEBUG
+            // Screenshots: `-hmOpenLatestConversation YES` opens the most recent chat.
+            if session.isSignedIn, model.isEmpty, UserDefaults.standard.bool(forKey: "hmOpenLatestConversation") {
+                await model.loadHistory()
+                if let latest = model.conversations.first { await model.open(latest) }
+            }
+            #endif
+        }
         .onChange(of: pendingQuestion) { _, _ in consumePendingQuestion() }
         .onChange(of: session.consents) { _, _ in consumePendingQuestion() }
     }
@@ -133,7 +151,7 @@ struct ChatView: View {
 
     private var statusText: String {
         switch session.aiAvailable {
-        case .some(true): return "Online"
+        case .some(true): return session.isDemo ? "Demo answers" : "Online"
         case .some(false): return "AI answers unavailable"
         case .none: return session.isSignedIn ? "Connecting…" : "Sign in to chat"
         }

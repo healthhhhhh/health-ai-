@@ -40,7 +40,8 @@ struct MainTabView: View {
                     selection = .chat
                 },
                 onNavigate: { selection = $0 },
-                onVoice: { showVoice = true }
+                onVoice: { showVoice = true },
+                isDemoAccount: session.isSignedIn && session.isDemo
             )
             .tabItem { Label(AppTab.home.title, systemImage: AppTab.home.systemImage) }
             .tag(AppTab.home)
