@@ -80,7 +80,7 @@ struct PlanView: View {
 
         WeekStrip(days: store.week, selection: Binding(get: { store.selectedDay }, set: { store.selectedDay = $0 }), today: store.today, calendar: store.calendar)
 
-        let occurrences = store.occurrences(on: store.selectedDay, kind: kind)
+        let occurrences = store.occurrences(on: store.selectedDay, kind: filter)
         let progress = PlanSchedule.progress(occurrences)
 
         VStack(alignment: .leading, spacing: 8) {
@@ -149,6 +149,9 @@ struct PlanView: View {
         .accessibilityAction(named: "Delete") { pendingDelete = item }
     }
 
+    /// Like the reference, "Tasks" lists everything due; the other tabs narrow it down.
+    private var filter: PlanItemKind? { kind == .task ? nil : kind }
+
     private var heading: String {
         if store.selectedDay == store.today { return "Today's \(kind.title)" }
         let date = store.selectedDay.date(in: store.calendar) ?? Date()
@@ -165,7 +168,7 @@ struct PlanView: View {
 
     private var emptyMessage: String {
         switch kind {
-        case .task: return "Add things you want to do, like logging a reading."
+        case .task: return "Add tasks, medications and habits with the + button."
         case .medication: return "Add medications exactly as your clinician prescribed them, and get reminders."
         case .habit: return "Build routines like drinking water or an evening walk."
         }
