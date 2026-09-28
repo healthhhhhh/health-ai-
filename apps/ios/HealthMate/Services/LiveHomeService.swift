@@ -47,6 +47,10 @@ actor LiveHomeService: HealthDataService {
                 inputs.timeZone = details.timeZone
             }
             inputs.timeline = (try? await api.timeline().events) ?? []
+            // A check-in made on the web counts too; the newest one wins.
+            if let remote = try? await api.latestMood(), remote.recordedAt > (inputs.todayMood?.recordedAt ?? .distantPast) {
+                inputs.todayMood = remote
+            }
         }
         return HomeSummaryBuilder.build(inputs, now: date)
     }
@@ -59,6 +63,7 @@ actor LiveHomeService: HealthDataService {
     func recordMood(_ mood: Mood) async throws -> MoodCheckIn {
         let checkIn = MoodCheckIn(mood: mood, recordedAt: now())
         await moods.save(checkIn)
+        if await api.isSignedIn { try await api.recordMood(mood) }
         return checkIn
     }
 }

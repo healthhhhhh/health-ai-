@@ -19,11 +19,12 @@ struct AppServices {
         let source = bundle.object(forInfoDictionaryKey: "HMDataSource") as? String
         let baseURL = (bundle.object(forInfoDictionaryKey: "HMAPIBaseURL") as? String).flatMap(URL.init(string:)) ?? defaultAPIBaseURL
         // The plan is stored on this device only (local-first).
-        let planRepository: any PlanRepository
-        if let url = try? FilePlanRepository.defaultFileURL() {
-            planRepository = FilePlanRepository(fileURL: url)
+        let localPlan: any PlanRepository
+        let fileURL = try? FilePlanRepository.defaultFileURL()
+        if let fileURL {
+            localPlan = FilePlanRepository(fileURL: fileURL)
         } else {
-            planRepository = InMemoryPlanRepository()
+            localPlan = InMemoryPlanRepository()
         }
         let reminders = NotificationReminderScheduler()
         var tokens: any TokenStore = KeychainTokenStore()
@@ -32,6 +33,8 @@ struct AppServices {
         if UserDefaults.standard.string(forKey: "hmDemoEmail") != nil { tokens = InMemoryTokenStore() }
         #endif
         let api = APIClient(baseURL: baseURL, tokens: tokens)
+        // The plan works offline on the device and is shared with the account (web app) when signed in.
+        let planRepository = SyncingPlanRepository(local: localPlan, transport: api, stateURL: fileURL?.deletingLastPathComponent().appendingPathComponent("plan-sync.json"))
         let healthReader = HealthKitService()
         // "sample" shows labelled demo data on Home; anything else uses the person's real data.
         var useSample = source == "sample"

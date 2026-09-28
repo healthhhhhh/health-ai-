@@ -73,6 +73,8 @@ final class PlanStore {
             apply(document)
             state = .loaded
             remindersDenied = await reminders.authorization() == .denied
+            // Items may have been added or changed on the web; keep this phone's reminders in step.
+            if await reminders.authorization() == .authorized { await syncReminders() }
         } catch {
             state = .failed("We couldn't open your plan. Your data hasn't been changed — please try again.")
         }

@@ -14,6 +14,7 @@ struct MainTabView: View {
     @State private var pendingQuestion: String?
     @State private var showCareFinder = false
     @State private var showVoice = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init(services: AppServices, session: SessionStore, onRestartOnboarding: @escaping () -> Void) {
         self.services = services
@@ -74,6 +75,10 @@ struct MainTabView: View {
         .onChange(of: session.state) { _, _ in Task { await homeModel.load() } }
         .onChange(of: selection) { _, tab in
             if tab == .home { Task { await homeModel.load() } }
+            if tab == .plans { Task { await planStore.load() } } // picks up changes made on the web
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await planStore.load() } }
         }
         .sheet(isPresented: $showCareFinder) {
             CareFinderView()

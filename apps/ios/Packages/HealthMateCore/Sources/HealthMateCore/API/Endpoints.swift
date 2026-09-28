@@ -179,3 +179,34 @@ extension APIClient {
         let _: [String: String] = try await send(.json("POST", "timeline", Body(eventType: type, title: title, occurredAt: occurredAt, details: details)))
     }
 }
+
+// MARK: Plan sync
+
+extension APIClient: PlanSyncTransport {
+    public func fetchPlan() async throws -> PlanRecord? {
+        guard await isSignedIn else { return nil }
+        return try await send(Endpoint("GET", "plan"))
+    }
+
+    public func pushPlan(_ plan: PlanRecord) async throws -> PlanRecord {
+        struct Body: Encodable { let baseRevision: Int; let items: [PlanItemWire]; let completions: [PlanCompletionWire] }
+        do {
+            return try await send(.json("PUT", "plan", Body(baseRevision: plan.revision, items: plan.items, completions: plan.completions)))
+        } catch APIError.server(status: 409, code: "plan_conflict", message: _) {
+            throw PlanSyncError.conflict
+        }
+    }
+
+    /// Mood check-ins are also stored in the account when signed in.
+    public func recordMood(_ mood: Mood) async throws {
+        struct Body: Encodable { let mood: Mood }
+        struct Result: Decodable {}
+        let _: Result = try await send(.json("POST", "check-ins/mood", Body(mood: mood)))
+    }
+
+    public func latestMood() async throws -> MoodCheckIn? {
+        struct Response: Decodable { let checkIn: MoodCheckIn? }
+        let response: Response = try await send(Endpoint("GET", "check-ins/mood/latest"))
+        return response.checkIn
+    }
+}
