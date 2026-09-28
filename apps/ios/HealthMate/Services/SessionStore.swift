@@ -17,6 +17,8 @@ final class SessionStore {
     private(set) var consents: [String: Bool] = [:]
     private(set) var busy = false
     var errorMessage: String?
+    /// Non-error status to show on the sign-in screen (e.g. "check your email").
+    var notice: String?
 
     let api: APIClient
 
@@ -50,10 +52,39 @@ final class SessionStore {
         await perform { _ = try await self.api.login(email: email, password: password) }
     }
 
+    /// Returns true when signed in. With email confirmation on, returns false and sets `notice`.
     func signUp(email: String, password: String, firstName: String, lastName: String) async -> Bool {
-        await perform {
-            _ = try await self.api.register(email: email, password: password, firstName: firstName, lastName: lastName, timeZone: TimeZone.current.identifier)
+        var pending = false
+        let ok = await perform {
+            let outcome = try await self.api.register(email: email, password: password, firstName: firstName, lastName: lastName, timeZone: TimeZone.current.identifier)
+            if outcome == .confirmationRequired {
+                pending = true
+                throw CancellationError()
+            }
         }
+        if pending {
+            errorMessage = nil
+            notice = "We've sent a confirmation link to \(email). Open it, then sign in."
+        }
+        return ok
+    }
+
+    /// Always reports success for a valid address, so it can't reveal who has an account.
+    func requestPasswordReset(email: String) async -> Bool {
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            try await api.requestPasswordReset(email: email)
+        } catch APIError.server(501, _, _) {
+            errorMessage = "Password reset isn't available on this server yet."
+            return false
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Couldn't send the reset email. Please try again."
+            return false
+        }
+        notice = "If an account uses \(email), we've sent a link to reset the password."
+        return true
     }
 
     func signOut() async {

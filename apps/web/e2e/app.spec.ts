@@ -61,9 +61,36 @@ test.describe("signed out", () => {
     await expect(page).toHaveURL(/\/sign-in/);
   });
 
+  test("forgot password is reachable from sign-in and explains when reset isn't available", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("link", { name: "Forgot password?" }).click();
+    await expect(page).toHaveURL(/\/forgot-password/);
+    await page.getByRole("button", { name: "Send Reset Link" }).click();
+    await expect(page.locator("main").getByRole("alert")).toHaveText("Enter a valid email address.");
+    await page.getByLabel("Email").fill("someone@example.com");
+    await page.getByRole("button", { name: "Send Reset Link" }).click();
+    // The demo server uses local accounts, which have no email reset.
+    await expect(page.locator("main").getByRole("alert")).toHaveText("Password reset isn't available on this server yet.");
+  });
+
+  test("the reset page takes the one-time link from the URL fragment and removes it", async ({ page }) => {
+    await page.goto("/reset-password");
+    await expect(page.locator("main").getByRole("alert")).toHaveText("This reset link is invalid or has expired.");
+    await page.goto("about:blank"); // reset links always open as a fresh page load
+    await page.goto("/reset-password#access_token=not-a-real-token-123456&type=recovery");
+    await expect(page.getByLabel("New password", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/reset-password$/);
+    await page.getByLabel("New password", { exact: true }).fill("a new passphrase");
+    await page.getByLabel("Confirm new password").fill("different passphrase");
+    await page.getByRole("button", { name: "Set New Password" }).click();
+    await expect(page.locator("main").getByRole("alert")).toHaveText("The passwords don't match.");
+  });
+
   test("welcome and sign-in have no detectable accessibility violations", async ({ page }) => {
     await expectNoA11yViolations(page, "/");
     await expectNoA11yViolations(page, "/sign-in");
+    await expectNoA11yViolations(page, "/forgot-password");
+    await expectNoA11yViolations(page, "/reset-password");
   });
 });
 

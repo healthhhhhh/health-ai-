@@ -1,6 +1,6 @@
 "use server";
 
-import type { AuthResponse } from "@healthmate/shared-types";
+import type { AuthResponse, RegisterResponse } from "@healthmate/shared-types";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiBaseUrl } from "@/lib/api/config";
@@ -12,6 +12,8 @@ export interface AuthFormState {
   mode: "sign-in" | "sign-up";
   errors: SignInErrors & { firstName?: string };
   message?: string;
+  /** Non-error status, e.g. "check your email". */
+  notice?: string;
   values?: { email: string; firstName: string };
 }
 
@@ -32,18 +34,57 @@ export async function authenticate(_prev: AuthFormState, form: FormData): Promis
   if (mode === "sign-up" && !firstName) errors.firstName = "Enter your first name.";
   if (Object.keys(errors).length) return { mode, errors, values: { email, firstName } };
 
-  let auth: AuthResponse;
+  let auth: RegisterResponse;
   try {
     auth =
       mode === "sign-up"
-        ? await publicApi<AuthResponse>("auth/register", { method: "POST", json: { email, password, firstName, lastName: "", timeZone } })
+        ? await publicApi<RegisterResponse>("auth/register", { method: "POST", json: { email, password, firstName, lastName: "", timeZone } })
         : await publicApi<AuthResponse>("auth/login", { method: "POST", json: { email, password } });
   } catch (error) {
     const message = error instanceof ApiError && error.status === 409 ? "An account with this email already exists. Sign in instead." : errorMessage(error);
     return { mode, errors: {}, message, values: { email, firstName } };
   }
+  if ("confirmationRequired" in auth) {
+    return { mode: "sign-in", errors: {}, notice: `We've sent a confirmation link to ${email}. Open it, then sign in.`, values: { email, firstName } };
+  }
   writeSession(await cookies(), auth);
   redirect(safeNext(form.get("next")));
+}
+
+export interface ResetState {
+  sent?: boolean;
+  done?: boolean;
+  error?: string;
+}
+
+/** Always reports success for a valid email, so the form can't reveal who has an account. */
+export async function requestPasswordReset(_prev: ResetState, form: FormData): Promise<ResetState> {
+  const email = String(form.get("email") ?? "").trim();
+  if (validateSignIn({ email, password: "placeholder" }).email) return { error: "Enter a valid email address." };
+  try {
+    await publicApi("auth/password-reset", { method: "POST", json: { email } });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 501) return { error: "Password reset isn't available on this server yet." };
+    if (!(error instanceof ApiError && error.status < 500)) return { error: errorMessage(error) };
+  }
+  return { sent: true };
+}
+
+/** Sets the new password with the one-time session from the emailed link. */
+export async function completePasswordReset(_prev: ResetState, form: FormData): Promise<ResetState> {
+  const accessToken = String(form.get("accessToken") ?? "");
+  const password = String(form.get("password") ?? "");
+  const confirm = String(form.get("confirm") ?? "");
+  if (!accessToken) return { error: "This reset link is incomplete. Request a new one." };
+  const passwordError = validateSignIn({ email: "a@b.co", password }).password;
+  if (passwordError) return { error: passwordError };
+  if (password !== confirm) return { error: "The passwords don't match." };
+  try {
+    await publicApi("auth/password-reset/complete", { method: "POST", json: { accessToken, password } });
+  } catch (error) {
+    return { error: errorMessage(error) };
+  }
+  redirect("/sign-in?reset=1");
 }
 
 export async function signOut() {

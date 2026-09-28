@@ -10,11 +10,20 @@ extension APIClient {
         try await send(Endpoint("GET", "meta", authenticated: false))
     }
 
-    public func register(email: String, password: String, firstName: String, lastName: String, timeZone: String) async throws -> AuthResponse {
+    public func register(email: String, password: String, firstName: String, lastName: String, timeZone: String) async throws -> RegisterOutcome {
         struct Body: Encodable { let email, password, firstName, lastName, timeZone: String }
-        let response: AuthResponse = try await send(.json("POST", "auth/register", Body(email: email, password: password, firstName: firstName, lastName: lastName, timeZone: timeZone), authenticated: false))
-        await store(response.tokens)
-        return response
+        let response: RegisterWire = try await send(.json("POST", "auth/register", Body(email: email, password: password, firstName: firstName, lastName: lastName, timeZone: timeZone), authenticated: false))
+        guard let userId = response.userId, let access = response.accessToken, let refresh = response.refreshToken, let expiresIn = response.expiresIn else {
+            return .confirmationRequired
+        }
+        await store(TokenPair(accessToken: access, refreshToken: refresh, expiresIn: expiresIn))
+        return .signedIn(userId: userId)
+    }
+
+    /// Emails a reset link if the account exists (the server never says whether it does).
+    public func requestPasswordReset(email: String) async throws {
+        struct Body: Encodable { let email: String }
+        try await sendNoContent(.json("POST", "auth/password-reset", Body(email: email), authenticated: false))
     }
 
     public func login(email: String, password: String) async throws -> AuthResponse {
@@ -141,6 +150,11 @@ extension APIClient {
 
     public func document(_ id: String) async throws -> DocumentRecord {
         try await send(Endpoint("GET", "documents/\(id)"))
+    }
+
+    /// A 5-minute signed link to the original file (never a public URL).
+    public func documentFile(_ id: String) async throws -> DocumentFileLink {
+        try await send(Endpoint("GET", "documents/\(id)/file"))
     }
 
     public func deleteDocument(_ id: String) async throws {

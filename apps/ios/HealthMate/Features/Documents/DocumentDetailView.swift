@@ -8,6 +8,7 @@ struct DocumentDetailView: View {
     let documentID: String
     @State private var confirmDelete = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         ScrollView {
@@ -25,6 +26,15 @@ struct DocumentDetailView: View {
         .navigationTitle(model.document(documentID)?.kind == .image ? "Photo check" : "Report")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if let document = model.document(documentID), document.status != .awaitingUpload {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        Task { if let url = await model.originalFileURL(document.id) { openURL(url) } }
+                    } label: {
+                        Label("View original file", systemImage: "doc.viewfinder")
+                    }
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button(role: .destructive) { confirmDelete = true } label: { Image(systemName: "trash") }
                     .accessibilityLabel("Delete")

@@ -125,7 +125,7 @@ const MEMORY_LABEL: Record<MemoryRecord["status"], string> = {
   user_reported: "You told HealthMate",
   user_confirmed: "Confirmed by you",
   document_extracted: "From a report",
-  wearable: "From a device",
+  healthkit: "From Apple Health",
   clinician_provided: "From your clinician",
   ai_inferred: "Unconfirmed suggestion",
   superseded: "Replaced",

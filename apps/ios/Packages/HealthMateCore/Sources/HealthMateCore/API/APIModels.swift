@@ -16,6 +16,28 @@ public struct AuthResponse: Codable, Sendable {
     public var tokens: TokenPair { TokenPair(accessToken: accessToken, refreshToken: refreshToken, expiresIn: expiresIn) }
 }
 
+/// Result of creating an account. With email confirmation turned on (Supabase),
+/// there is no session until the person opens the link in their inbox.
+public enum RegisterOutcome: Equatable, Sendable {
+    case signedIn(userId: String)
+    case confirmationRequired
+}
+
+/// Wire shape of `POST /v1/auth/register` (200 with tokens, or 202 `{ confirmationRequired: true }`).
+struct RegisterWire: Decodable {
+    let userId: String?
+    let accessToken: String?
+    let refreshToken: String?
+    let expiresIn: Int?
+    let confirmationRequired: Bool?
+}
+
+/// A short-lived signed link to download an uploaded original.
+public struct DocumentFileLink: Codable, Equatable, Sendable {
+    public let url: URL
+    public let expiresIn: Int
+}
+
 public struct APIMeta: Codable, Sendable {
     public struct AI: Codable, Sendable {
         public let available: Bool
@@ -89,6 +111,8 @@ public enum MemoryStatus: String, Codable, Sendable {
     case userReported = "user_reported"
     case userConfirmed = "user_confirmed"
     case documentExtracted = "document_extracted"
+    case healthkit
+    /// Older servers' name for `healthkit`.
     case wearable
     case clinicianProvided = "clinician_provided"
     case aiInferred = "ai_inferred"
@@ -100,7 +124,7 @@ public enum MemoryStatus: String, Codable, Sendable {
         case .userReported: return "You told HealthMate"
         case .userConfirmed: return "Confirmed by you"
         case .documentExtracted: return "From a report"
-        case .wearable: return "From a device"
+        case .healthkit, .wearable: return "From Apple Health"
         case .clinicianProvided: return "From your clinician"
         case .aiInferred: return "Unconfirmed suggestion"
         case .superseded: return "Replaced"

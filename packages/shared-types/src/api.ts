@@ -15,6 +15,9 @@ export interface AuthResponse extends TokenPair {
   userId: string;
 }
 
+/** `POST /v1/auth/register`: a session, or (Supabase with email confirmation on, HTTP 202) a pending confirmation. */
+export type RegisterResponse = AuthResponse | { confirmationRequired: true };
+
 export interface ApiMeta {
   apiVersion: number;
   ai: { available: boolean; demo?: boolean };
@@ -63,7 +66,7 @@ export interface HealthProfile {
   medications: MedicationRecord[];
 }
 
-export type MemoryStatus = "user_reported" | "user_confirmed" | "document_extracted" | "wearable" | "clinician_provided" | "ai_inferred" | "superseded";
+export type MemoryStatus = "user_reported" | "user_confirmed" | "document_extracted" | "healthkit" | "clinician_provided" | "ai_inferred" | "superseded";
 
 export interface MemoryRecord {
   id: string;

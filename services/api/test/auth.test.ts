@@ -95,4 +95,9 @@ describe("profile and data controls", () => {
     const res = await ctx.http.get("/v1/me/consents").set(user.auth).expect(200);
     expect(res.body).toEqual([expect.objectContaining({ kind: "voice", granted: false })]);
   });
+  it("explains that password reset needs Supabase Auth in local mode", async () => {
+    await ctx.http.post("/v1/auth/password-reset").send({ email: "someone@example.com" }).expect(501);
+    await ctx.http.post("/v1/auth/password-reset/complete").send({ accessToken: "x".repeat(20), password: "long enough pass" }).expect(501);
+    await ctx.http.post("/v1/auth/password-reset/complete").send({ accessToken: "short", password: "x" }).expect(400);
+  });
 });

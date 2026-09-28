@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle } from "lucide-react";
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,17 @@ import { cn } from "@/lib/cn";
 import { authenticate, type AuthFormState } from "./actions";
 
 /** Sign in or create an account. Credentials go to the Next.js server, which holds the session in httpOnly cookies. */
-export function SignInForm({ next, expired = false, initialMode = "sign-in" }: { next?: string; expired?: boolean; initialMode?: AuthFormState["mode"] }) {
+export function SignInForm({
+  next,
+  expired = false,
+  passwordReset = false,
+  initialMode = "sign-in",
+}: {
+  next?: string;
+  expired?: boolean;
+  passwordReset?: boolean;
+  initialMode?: AuthFormState["mode"];
+}) {
   const [mode, setMode] = useState<AuthFormState["mode"]>(initialMode);
   const [state, action, pending] = useActionState(authenticate, { mode: initialMode, errors: {} });
   // The browser's time zone, for greetings and reminders; read when the form is submitted.
@@ -18,6 +29,13 @@ export function SignInForm({ next, expired = false, initialMode = "sign-in" }: {
   };
   const errors = state.mode === mode ? state.errors : {};
   const message = state.mode === mode ? state.message : undefined;
+  // A notice (e.g. "confirm your email") switches the form to sign-in.
+  const notice = state.notice && mode === "sign-in" ? state.notice : undefined;
+  const [shownNotice, setShownNotice] = useState<string | undefined>();
+  if (state.notice && state.notice !== shownNotice) {
+    setShownNotice(state.notice);
+    setMode("sign-in");
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -37,7 +55,12 @@ export function SignInForm({ next, expired = false, initialMode = "sign-in" }: {
           </button>
         ))}
       </div>
-      {expired && !message && (
+      {(notice ?? (passwordReset ? "Your password was changed. Sign in with the new one." : undefined)) && !message && (
+        <p role="status" className="rounded-md bg-primary-soft p-3 text-caption text-text-primary">
+          {notice ?? "Your password was changed. Sign in with the new one."}
+        </p>
+      )}
+      {expired && !message && !notice && (
         <p role="status" className="rounded-md bg-primary-soft p-3 text-caption text-text-primary">
           Your session ended. Please sign in again.
         </p>
@@ -57,6 +80,11 @@ export function SignInForm({ next, expired = false, initialMode = "sign-in" }: {
           error={errors.password}
           hint={mode === "sign-up" ? "At least 8 characters." : undefined}
         />
+        {mode === "sign-in" && (
+          <Link href="/forgot-password" className="-mt-2 self-end text-caption font-semibold text-primary hover:underline">
+            Forgot password?
+          </Link>
+        )}
         {message && (
           <p role="alert" className="flex gap-2 rounded-md bg-error-soft p-3 text-caption font-medium text-error">
             <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />

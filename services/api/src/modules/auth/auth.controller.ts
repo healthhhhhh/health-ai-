@@ -21,6 +21,7 @@ const LoginBody = z.object({ email, password: z.string().min(1).max(256) });
 // Supabase refresh tokens are shorter than our local ones.
 const RefreshBody = z.object({ refreshToken: z.string().min(8).max(512) });
 const ResetBody = z.object({ email });
+const ResetCompleteBody = z.object({ accessToken: z.string().min(16).max(4096), password });
 
 /**
  * Same contract for local auth (development) and Supabase Auth (production):
@@ -41,8 +42,9 @@ export class AuthController {
     const result = await this.identity.register(input);
     if ("confirmationRequired" in result) {
       // Supabase projects with email confirmation: no session until the link is clicked.
+      // No user id: the response must not reveal whether the email already had an account.
       res.status(HttpStatus.ACCEPTED);
-      return { userId: result.userId, confirmationRequired: true };
+      return { confirmationRequired: true };
     }
     return { userId: result.userId, ...result.tokens };
   }
@@ -78,5 +80,14 @@ export class AuthController {
   async passwordReset(@Body() body: unknown) {
     await this.identity.requestPasswordReset(parseBody(ResetBody, body).email, this.config.PASSWORD_RESET_REDIRECT_URL);
     return { ok: true };
+  }
+
+  /** Completes a reset with the access token from the emailed link (Supabase Auth). */
+  @Post("password-reset/complete")
+  @HttpCode(204)
+  @RateLimit("auth-password-reset-complete", 5, 60_000)
+  async completePasswordReset(@Body() body: unknown) {
+    const { accessToken, password: newPassword } = parseBody(ResetCompleteBody, body);
+    await this.identity.completePasswordReset(accessToken, newPassword);
   }
 }

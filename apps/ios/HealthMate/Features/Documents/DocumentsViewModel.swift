@@ -60,6 +60,16 @@ final class DocumentsViewModel {
         return await submit(kind: .image, data: jpeg, filename: "photo.jpg", contentType: "image/jpeg", purpose: purpose, note: note)
     }
 
+    /// A short-lived signed link to the original upload (never a public URL).
+    func originalFileURL(_ id: String) async -> URL? {
+        do {
+            return try await api.documentFile(id).url
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Couldn't open the original file."
+            return nil
+        }
+    }
+
     func delete(_ document: DocumentRecord) async {
         do {
             try await api.deleteDocument(document.id)

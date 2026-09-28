@@ -142,6 +142,31 @@ describe.skipIf(!live)("Supabase (live)", () => {
     }
   }, 120_000);
 
+  // Needs the local stack's Mailpit (SUPABASE_MAILPIT_URL) to read the reset email.
+  it.skipIf(!env.SUPABASE_MAILPIT_URL)("resets a forgotten password through the emailed link", async () => {
+    const dave = await user("Dave");
+    await http.post("/v1/auth/password-reset").send({ email: dave.email }).expect(202);
+    let link: string | undefined;
+    for (let i = 0; i < 40 && !link; i++) {
+      const list = (await (await fetch(`${env.SUPABASE_MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${dave.email}`)}`)).json()) as { messages: { ID: string }[] };
+      if (list.messages[0]) {
+        const message = (await (await fetch(`${env.SUPABASE_MAILPIT_URL}/api/v1/message/${list.messages[0].ID}`)).json()) as { Text: string; HTML: string };
+        link = /(https?:\/\/[^\s"<>]+verify[^\s"<>]+)/.exec(`${message.Text} ${message.HTML}`)?.[1]?.replace(/&amp;/g, "&");
+      }
+      if (!link) await new Promise((r) => setTimeout(r, 250));
+    }
+    expect(link).toBeDefined();
+    const verified = await fetch(link!, { redirect: "manual" });
+    const accessToken = new URLSearchParams((verified.headers.get("location") ?? "").split("#")[1] ?? "").get("access_token");
+    expect(accessToken).toBeTruthy();
+    const newPassword = `New passphrase ${randomUUID()}`;
+    await http.post("/v1/auth/password-reset/complete").send({ accessToken, password: newPassword }).expect(204);
+    await http.post("/v1/auth/login").send({ email: dave.email, password }).expect(401);
+    await http.post("/v1/auth/login").send({ email: dave.email, password: newPassword }).expect(200);
+    // The old session was signed out everywhere.
+    await http.post("/v1/auth/refresh").send({ refreshToken: dave.refreshToken }).expect(401);
+  }, 60_000);
+
   it("deletes the account: Storage objects, the Auth user and every row", async () => {
     const carol = await user("Carol");
     const doc = await http.post("/v1/documents").set(carol.auth).send({ kind: "report", filename: "a.pdf", contentType: "application/pdf", byteSize: PDF.length }).expect(201);

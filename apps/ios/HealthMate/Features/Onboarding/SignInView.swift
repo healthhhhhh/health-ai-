@@ -17,6 +17,7 @@ struct SignInView: View {
     @State private var errors = SignInValidator.Errors()
     @State private var nameError: String?
     @State private var shakes = 0
+    @State private var showingForgotPassword = false
     @FocusState private var focused: Field?
 
     private enum Mode: String, CaseIterable, Identifiable { case signIn, signUp; var id: String { rawValue } }
@@ -60,6 +61,22 @@ struct SignInView: View {
                             .onSubmit { Task { await submit() } }
                     }
 
+                    if mode == .signIn {
+                        Button("Forgot password?") { showingForgotPassword = true }
+                            .font(.hmCaption.weight(.semibold))
+                            .foregroundStyle(HM.Colors.primary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+
+                    if let notice = session.notice, session.errorMessage == nil {
+                        Label(notice, systemImage: "envelope.badge")
+                            .font(.hmCaption.weight(.medium))
+                            .foregroundStyle(HM.Colors.textPrimary)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: HM.Radius.md, style: .continuous).fill(HM.Colors.primarySoft))
+                    }
+
                     if let message = session.errorMessage {
                         Label(message, systemImage: "exclamationmark.circle.fill")
                             .font(.hmCaption.weight(.medium))
@@ -99,9 +116,13 @@ struct SignInView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
             .sensoryFeedback(.error, trigger: shakes)
+            .sheet(isPresented: $showingForgotPassword) {
+                ForgotPasswordView(session: session, email: email)
+            }
             .onAppear {
                 if startInSignUp { mode = .signUp }
                 session.errorMessage = nil
+                session.notice = nil
             }
             .onChange(of: mode) { _, _ in
                 session.errorMessage = nil
@@ -146,8 +167,69 @@ struct SignInView: View {
         if ok {
             onSignedIn()
             dismiss()
+        } else if session.notice != nil {
+            // Account created; waiting for the emailed confirmation.
+            mode = .signIn
+            password = ""
         } else {
             shakes += 1
+        }
+    }
+}
+
+/// Sends a reset link. The new password is chosen on the web page the link opens.
+private struct ForgotPasswordView: View {
+    let session: SessionStore
+    @State var email: String
+    @State private var sent = false
+    @State private var emailError: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Forgot your password?").font(.hmPageHeading).foregroundStyle(HM.Colors.textPrimary)
+                if sent, let notice = session.notice {
+                    Label(notice, systemImage: "envelope.badge")
+                        .font(.hmBody)
+                        .foregroundStyle(HM.Colors.textPrimary)
+                    Button("Done") { dismiss() }.buttonStyle(.hmPrimary(fullWidth: true))
+                } else {
+                    Text("Enter your email and we'll send you a link to choose a new one.")
+                        .font(.hmBody)
+                        .foregroundStyle(HM.Colors.textSecondary)
+                    TextField("you@example.com", text: $email)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.hmBody)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 50)
+                        .background(RoundedRectangle(cornerRadius: HM.Radius.md, style: .continuous).fill(HM.Colors.card))
+                        .accessibilityLabel("Email")
+                    if let error = emailError ?? session.errorMessage {
+                        Label(error, systemImage: "exclamationmark.circle.fill")
+                            .font(.hmCaption.weight(.medium))
+                            .foregroundStyle(HM.Colors.error)
+                    }
+                    Button {
+                        Task {
+                            emailError = SignInValidator.validate(email: email, password: "placeholder").email
+                            guard emailError == nil else { return }
+                            sent = await session.requestPasswordReset(email: email.trimmingCharacters(in: .whitespaces))
+                        }
+                    } label: {
+                        if session.busy { ProgressView().tint(HM.Colors.onPrimary) } else { Text("Send Reset Link") }
+                    }
+                    .buttonStyle(.hmPrimary(fullWidth: true))
+                    .disabled(session.busy)
+                }
+                Spacer()
+            }
+            .padding(24)
+            .background(HMGradient.appBackground.ignoresSafeArea())
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
     }
 }

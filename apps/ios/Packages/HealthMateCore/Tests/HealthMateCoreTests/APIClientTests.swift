@@ -155,4 +155,37 @@ final class APIClientTests: XCTestCase {
         }
         return data
     }
+
+    func testRegisterReportsPendingEmailConfirmationWithoutASession() async throws {
+        StubURLProtocol.reset { _ in .init(status: 202, body: #"{"confirmationRequired":true}"#) }
+        let client = APIClient(baseURL: base, tokens: InMemoryTokenStore(), session: StubURLProtocol.session())
+        let outcome = try await client.register(email: "a@example.com", password: "long enough", firstName: "A", lastName: "", timeZone: "UTC")
+        XCTAssertEqual(outcome, .confirmationRequired)
+        let signedIn = await client.isSignedIn
+        XCTAssertFalse(signedIn)
+    }
+
+    func testRegisterStoresTheSession() async throws {
+        StubURLProtocol.reset { _ in .init(status: 201, body: #"{"userId":"u1","accessToken":"a","refreshToken":"r","expiresIn":900}"#) }
+        let client = APIClient(baseURL: base, tokens: InMemoryTokenStore(), session: StubURLProtocol.session())
+        let outcome = try await client.register(email: "a@example.com", password: "long enough", firstName: "A", lastName: "", timeZone: "UTC")
+        XCTAssertEqual(outcome, .signedIn(userId: "u1"))
+        let refresh = await client.refreshTokenValue()
+        XCTAssertEqual(refresh, "r")
+    }
+
+    func testPasswordResetRequestIsUnauthenticated() async throws {
+        StubURLProtocol.reset { _ in .init(status: 202, body: #"{"ok":true}"#) }
+        let client = APIClient(baseURL: base, tokens: InMemoryTokenStore(), session: StubURLProtocol.session())
+        try await client.requestPasswordReset(email: "a@example.com")
+        XCTAssertEqual(StubURLProtocol.recorded.first?.url?.path, "/v1/auth/password-reset")
+        XCTAssertNil(StubURLProtocol.recorded.first?.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func testMemoryStatusDecodesHealthKitUnderBothNames() throws {
+        let decoder = JSONDecoder()
+        XCTAssertEqual(try decoder.decode([MemoryStatus].self, from: Data(#"["healthkit","wearable"]"#.utf8)), [.healthkit, .wearable])
+        XCTAssertEqual(MemoryStatus.healthkit.label, "From Apple Health")
+        XCTAssertEqual(MemoryStatus.aiInferred.label, "Unconfirmed suggestion")
+    }
 }

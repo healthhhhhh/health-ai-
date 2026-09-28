@@ -1,6 +1,6 @@
 import type { AnalysisResult, DocumentRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
-import { ArrowLeft, Eye, ListChecks, ShieldAlert, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Eye, FileDown, ListChecks, ShieldAlert, Sparkles, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Mascot } from "@/components/illustrations/mascot";
@@ -30,7 +30,17 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         <Link href="/reports" className="flex items-center gap-1 text-caption font-semibold text-primary hover:underline">
           <ArrowLeft aria-hidden className="size-4" /> Reports
         </Link>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {doc.status !== "awaiting_upload" && (
+            <a
+              href={`/reports/${doc.id}/file`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 items-center gap-1.5 rounded-pill px-3 text-caption font-semibold text-primary ring-1 ring-separator hover:bg-primary-soft"
+            >
+              <FileDown aria-hidden className="size-4" /> Original file
+            </a>
+          )}
           <DeleteDocumentButton id={doc.id} />
         </div>
       </div>

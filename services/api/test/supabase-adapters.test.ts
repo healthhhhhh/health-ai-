@@ -127,6 +127,16 @@ describe("Supabase Auth adapter", () => {
     expect((await db.query(`SELECT 1 FROM users WHERE id = $1`, [id])).rows).toHaveLength(0);
   });
 
+  it("completes a password reset with the recovery session, then signs out everywhere", async () => {
+    const { provider, calls, sign } = await setup((call) => (call.method === "PUT" && (call.body as { password: string }).password === "same" ? { status: 422, body: { error_code: "same_password" } } : {}));
+    const recovery = await sign({ sub: "55555555-5555-4555-8555-555555555555", role: "authenticated", amr: [{ method: "recovery" }] });
+    await provider.completePasswordReset(recovery, "a brand new passphrase");
+    expect(calls.map((c) => `${c.method} ${c.url.replace(URL_, "")}`)).toEqual(["PUT /auth/v1/user", "POST /auth/v1/logout?scope=global"]);
+    expect(calls[0]!.headers.Authorization).toBe(`Bearer ${recovery}`);
+    await expect(provider.completePasswordReset("forged.token.value", "whatever passphrase")).rejects.toMatchObject({ status: 401 });
+    await expect(provider.completePasswordReset(recovery, "same")).rejects.toMatchObject({ status: 400 });
+  });
+
   it("fails closed with a friendly error when Supabase Auth is down", async () => {
     const { provider } = await setup(() => ({ status: 503 }));
     await expect(provider.login("a@example.com", "p")).rejects.toMatchObject({ status: 503 });

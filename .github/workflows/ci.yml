@@ -72,6 +72,7 @@ jobs:
             echo "SUPABASE_PUBLISHABLE_KEY=$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY' /tmp/sb.json)"
             echo "SUPABASE_SECRET_KEY=$(jq -r '.SECRET_KEY // .SERVICE_ROLE_KEY' /tmp/sb.json)"
             echo "TEST_DATABASE_URL=$(jq -r .DB_URL /tmp/sb.json)"
+            echo "SUPABASE_MAILPIT_URL=$(jq -r '.MAILPIT_URL // .INBUCKET_URL' /tmp/sb.json)"
           } >> "$GITHUB_ENV"
       - name: Embeddings Edge Function (gte-small)
         run: |

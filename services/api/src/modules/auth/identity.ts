@@ -26,6 +26,8 @@ export interface IdentityProvider {
   verifyPassword(userId: string, password: string): Promise<boolean>;
   /** Sends a reset email when the account exists. Never reveals whether it does. */
   requestPasswordReset(email: string, redirectTo?: string): Promise<void>;
+  /** Sets a new password using the access token from a reset link, then ends every other session. */
+  completePasswordReset(recoveryToken: string, newPassword: string): Promise<void>;
   /** Removes the identity and (by cascade) every HealthMate row. Idempotent. */
   deleteIdentity(userId: string): Promise<void>;
 }
@@ -60,6 +62,9 @@ export class LocalIdentityProvider implements IdentityProvider {
     return this.auth.verifyPassword(userId, password);
   }
   async requestPasswordReset(): Promise<void> {
+    throw new ApiError("not_found", "Password reset isn't available in local development. Use Supabase Auth.", HttpStatus.NOT_IMPLEMENTED);
+  }
+  async completePasswordReset(): Promise<void> {
     throw new ApiError("not_found", "Password reset isn't available in local development. Use Supabase Auth.", HttpStatus.NOT_IMPLEMENTED);
   }
   async deleteIdentity(userId: string) {
@@ -179,6 +184,21 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     const res = await this.call("POST", `/recover${query}`, { email: email.trim().toLowerCase() });
     // Always succeed from the caller's view so the endpoint can't reveal which emails have accounts.
     if (!res.ok && res.status >= 500) throw this.unavailable(res.status);
+  }
+
+  async completePasswordReset(recoveryToken: string, newPassword: string) {
+    if (!(await this.verifyAccessToken(recoveryToken))) throw unauthorized("This reset link is invalid or has expired. Request a new one.");
+    const auth = { Authorization: `Bearer ${recoveryToken}` };
+    const res = await this.call("PUT", "/user", { password: newPassword }, auth);
+    if (res.status === 401 || res.status === 403) throw unauthorized("This reset link is invalid or has expired. Request a new one.");
+    if (res.status === 422 || res.status === 400) {
+      const body = (await res.json().catch(() => ({}))) as { error_code?: string };
+      if (body.error_code === "same_password") throw new ApiError("validation_failed", "Choose a password you haven't used for this account.", HttpStatus.BAD_REQUEST);
+      throw new ApiError("validation_failed", "Choose a longer or less common password.", HttpStatus.BAD_REQUEST);
+    }
+    if (!res.ok) throw this.unavailable(res.status);
+    // A reset usually means the old password may be known to someone else.
+    await this.call("POST", "/logout?scope=global", undefined, auth).catch(() => undefined);
   }
 
   async deleteIdentity(userId: string) {

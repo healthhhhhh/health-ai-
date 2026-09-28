@@ -4,7 +4,7 @@ import { apiBaseUrl } from "@/lib/api/config";
 import { ACCESS_COOKIE, clearSession, EXPIRES_COOKIE, needsRefresh, REFRESH_COOKIE, writeSession } from "@/lib/api/session";
 
 /** Pages anyone can see. Everything else holds personal health data and needs a session. */
-const PUBLIC_PATHS = new Set(["/", "/sign-in", "/help"]);
+const PUBLIC_PATHS = new Set(["/", "/sign-in", "/help", "/forgot-password", "/reset-password"]);
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
