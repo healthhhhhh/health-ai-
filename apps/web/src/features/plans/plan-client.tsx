@@ -1,14 +1,13 @@
 "use client";
 
 import type { PlanTask } from "@healthmate/shared-types";
-import { Trash2 } from "lucide-react";
 import { useActionState, useOptimistic, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TaskRow } from "@/components/ui/task-row";
 import { sourceLabel } from "@/features/home/plan";
 import { formatClockTime } from "@/lib/format";
-import { addPlanItem, removePlanItem, setCompleted, type PlanFormState } from "./actions";
+import { addPlanItem, setCompleted, type PlanFormState } from "./actions";
 
 export function DayList({ tasks, day, canComplete }: { tasks: PlanTask[]; day: string; canComplete: boolean }) {
   const [optimistic, apply] = useOptimistic(tasks, (state, u: { id: string; completed: boolean }) => state.map((t) => (t.id === u.id ? { ...t, completed: u.completed } : t)));
@@ -35,16 +34,9 @@ export function DayList({ tasks, day, canComplete }: { tasks: PlanTask[]; day: s
                     if (res.error) setError(res.error);
                   })
                 }
+                href={`/plans/${encodeURIComponent(t.id)}`}
               />
             </div>
-            <button
-              type="button"
-              aria-label={`Remove ${t.title} from your plan`}
-              onClick={() => start(async () => void (await removePlanItem(t.id)))}
-              className="rounded-md p-2 text-text-muted hover:bg-error-soft hover:text-error"
-            >
-              <Trash2 aria-hidden className="size-4" />
-            </button>
           </li>
         ))}
       </ul>

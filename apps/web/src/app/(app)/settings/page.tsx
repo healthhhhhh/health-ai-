@@ -50,7 +50,12 @@ export default async function SettingsPage() {
             <h2 id="account" className="mb-4 text-card-title text-text-primary">
               Account
             </h2>
-            <SignOutButton />
+            <div className="flex flex-wrap items-center gap-3">
+              <Link href="/settings/account" className={buttonVariants({ variant: "secondary" })}>
+                Account & password
+              </Link>
+              <SignOutButton />
+            </div>
           </Card>
           <Card as="section" aria-labelledby="about">
             <h2 id="about" className="mb-2 text-card-title text-text-primary">

@@ -1,6 +1,7 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
+import Link from "next/link";
 import { useId } from "react";
 import { cn } from "@/lib/cn";
 
@@ -13,10 +14,12 @@ interface TaskRowProps {
   disabled?: boolean;
   /** Small provenance label, e.g. "From your clinician". */
   sourceLabel?: string;
+  /** Opens the item's detail (instructions, schedule, history). */
+  href?: string;
 }
 
 /** A plan task with a large, accessible completion checkbox (reference: "My Plan"). */
-export function TaskRow({ title, detail, time, completed, onToggle, disabled, sourceLabel }: TaskRowProps) {
+export function TaskRow({ title, detail, time, completed, onToggle, disabled, sourceLabel, href }: TaskRowProps) {
   const id = useId();
   return (
     <div className="flex items-center gap-3 py-3">
@@ -42,6 +45,11 @@ export function TaskRow({ title, detail, time, completed, onToggle, disabled, so
         )}
       </label>
       <span className="shrink-0 text-caption text-text-secondary tabular-nums">{time}</span>
+      {href && (
+        <Link href={href} aria-label={`${title} details`} className="-mr-2 rounded-full p-2 text-text-muted transition-colors hover:bg-card-muted hover:text-text-primary">
+          <ChevronRight aria-hidden className="size-4" />
+        </Link>
+      )}
     </div>
   );
 }

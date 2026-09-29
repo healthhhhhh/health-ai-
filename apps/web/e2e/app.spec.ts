@@ -3,6 +3,23 @@ import { expect, test, type Page } from "@playwright/test";
 
 const unique = () => Math.random().toString(36).slice(2, 8);
 
+/** Signs in to a new sample account, so tests that change data don't affect each other. */
+async function signInFresh(page: Page) {
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(`fresh-${unique()}@example.com`);
+  await page.getByLabel("Password").fill("preview-password");
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await expect(page).toHaveURL(/\/home$/);
+}
+
+/** Axe on the page that's already open (no reload). */
+async function expectCurrentPageAccessible(page: Page) {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+  expect(results.violations.map((v) => `${new URL(page.url()).pathname} ${v.id}: ${v.nodes.length}`)).toEqual([]);
+}
+
 async function expectNoA11yViolations(page: Page, path: string) {
   // Axe measures colours at a single instant; freeze entrance animations so it sees final styles.
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -212,6 +229,72 @@ test.describe("home", () => {
   });
 });
 
+test.describe("home destinations and notifications", () => {
+  // A fresh sample account for each test, so their changes don't affect other tests.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("every Home item opens its detail", async ({ page }) => {
+    await signInFresh(page);
+    await page.goto("/home", { waitUntil: "networkidle" });
+    await page.getByRole("link", { name: /^Steps:/ }).click();
+    await expect(page).toHaveURL(/\/health\/steps$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Steps" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Last 7 days" })).toBeVisible();
+    await page.getByRole("link", { name: "30 days" }).click();
+    await expect(page).toHaveURL(/\/health\/steps\?days=30$/);
+    await expect(page.getByRole("heading", { name: "Last 30 days" })).toBeVisible();
+
+    await page.goto("/home", { waitUntil: "networkidle" });
+    await page.getByRole("link", { name: /Example clinic letter uploaded/ }).click();
+    await expect(page).toHaveURL(/\/reports\/[\w-]+$/);
+
+    await page.goto("/home", { waitUntil: "networkidle" });
+    await page.getByRole("link", { name: /Annual check-up/ }).first().click();
+    await expect(page).toHaveURL(/\/care\/appointments\/[\w-]+$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Annual check-up" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Add to calendar" })).toHaveAttribute("href", /\/calendar$/);
+    await expect(page.getByText("Bring medication list")).toBeVisible();
+    await expectCurrentPageAccessible(page);
+
+    await page.goto("/home", { waitUntil: "networkidle" });
+    await page.getByRole("link", { name: "Morning medication details" }).click();
+    await expect(page).toHaveURL(/\/plans\/[\w-]+$/);
+    await expect(page.getByText("Instructions, exactly as entered")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Last 7 days" })).toBeVisible();
+    await expectCurrentPageAccessible(page);
+  });
+
+  test.describe("notification centre", () => {
+    test("bell, filters, open, mark all read and delete", async ({ page }) => {
+      await signInFresh(page);
+
+      await page.getByRole("link", { name: "Notifications, 3 unread" }).click();
+      await expect(page).toHaveURL(/\/notifications$/);
+      await expect(page.getByRole("heading", { level: 1, name: "Notifications" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+      await page.getByRole("button", { name: /^Unread/ }).click();
+      await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(3);
+
+      // Opening one goes to what it's about and marks it read.
+      await page.getByRole("link", { name: /Check-up in 3 days/ }).click();
+      await expect(page).toHaveURL(/\/care\/appointments\/[\w-]+$/);
+      await expect(page.getByRole("link", { name: "Notifications, 2 unread" })).toBeVisible();
+
+      await page.goto("/notifications");
+      await page.getByRole("button", { name: "Mark all as read" }).click();
+      await expect(page.getByText("All caught up")).toBeVisible();
+      await expect(page.getByRole("link", { name: "Notifications", exact: true })).toBeVisible();
+
+      await page.getByRole("button", { name: "Options for New sign-in on iPhone" }).click();
+      await page.getByRole("menuitem", { name: "Delete" }).click();
+      await expect(page.getByText("New sign-in on iPhone")).toHaveCount(0);
+      await page.reload();
+      await expect(page.getByText("New sign-in on iPhone")).toHaveCount(0);
+      await expectNoA11yViolations(page, "/notifications");
+    });
+  });
+});
+
 test.describe("chat", () => {
   test("emergencies get fixed guidance immediately, before any AI", async ({ page }) => {
     await page.goto("/chat", { waitUntil: "networkidle" });
@@ -266,7 +349,16 @@ test.describe("timeline, plan and profile", () => {
     await page.getByRole("button", { name: "Add to plan" }).click();
     await expect(page.getByText(name)).toBeVisible();
     await expect(page.getByText(instruction)).toBeVisible();
-    await page.getByRole("button", { name: `Remove ${name} from your plan` }).click();
+    // Detail shows the instruction word for word; removing asks first and says it doesn't change a prescription.
+    await page.getByRole("link", { name: `${name} details` }).click();
+    await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+    await expect(page.getByText("Instructions, exactly as entered")).toBeVisible();
+    await expect(page.getByText(instruction)).toBeVisible();
+    await page.getByRole("button", { name: "Remove from plan" }).click();
+    const dialog = page.getByRole("dialog", { name: `Remove “${name}”?` });
+    await expect(dialog).toContainText("doesn't change your prescription");
+    await dialog.getByRole("button", { name: "Remove" }).click();
+    await expect(page).toHaveURL(/\/plans$/);
     await expect(page.getByText(name)).toHaveCount(0);
   });
 
@@ -325,9 +417,30 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/settings", "/care", "/design"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/health/sleep", "/settings", "/care", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
+  });
+});
+
+test.describe("account", () => {
+  test("shows sign-in details and changes the password", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByRole("link", { name: "Account & password" }).click();
+    await expect(page).toHaveURL(/\/settings\/account$/);
+    await expect(page.getByText("alex.morgan@example.com")).toBeVisible();
+    await page.getByLabel("Current password").fill("wrong-password");
+    await page.getByLabel("New password", { exact: true }).fill("a brand new passphrase");
+    await page.getByLabel("Confirm new password").fill("a brand new passphrase");
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.locator("main").getByRole("alert")).toHaveText("Your current password is incorrect.");
+    // The form clears after each attempt, so passwords are never left on screen.
+    await page.getByLabel("Current password").fill("preview-password");
+    await page.getByLabel("New password", { exact: true }).fill("a brand new passphrase");
+    await page.getByLabel("Confirm new password").fill("a brand new passphrase");
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByText("Password changed")).toBeVisible();
+    await expectCurrentPageAccessible(page);
   });
 });
 

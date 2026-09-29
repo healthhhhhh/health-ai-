@@ -52,3 +52,36 @@ export function dayIn(date: Date, timeZone: string): string {
     return date.toISOString().slice(0, 10);
   }
 }
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "Every day", "Mon, Wed, Fri", "Once on 2026-10-01". */
+export function describeRepeat(repeat: PlanItemRecord["repeat"]): string {
+  switch (repeat.type) {
+    case "daily":
+      return "Every day";
+    case "weekdays": {
+      const days = [...repeat.days].sort((a, b) => a - b);
+      // 1 = Sunday … 7 = Saturday, as in `weekday`.
+      if (days.join() === "2,3,4,5,6") return "Weekdays";
+      if (days.join() === "1,7") return "Weekends";
+      return days.map((d) => WEEKDAYS[d - 1]).join(", ");
+    }
+    case "once":
+      return `Once, on ${new Date(`${repeat.day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
+  }
+}
+
+export type HistoryStatus = "done" | "missed" | "due" | "not_scheduled";
+
+/** The last `days` days (oldest first) for one item: done, missed, due today, or not scheduled. */
+export function itemHistory(plan: Pick<PlanRecord, "completions">, item: PlanItemRecord, today: string, days = 7): { day: string; status: HistoryStatus }[] {
+  const done = new Set(plan.completions.filter((c) => c.itemId === item.id).map((c) => c.day));
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - (days - 1 - i));
+    const day = d.toISOString().slice(0, 10);
+    const status: HistoryStatus = !occurs(item, day) ? "not_scheduled" : done.has(day) ? "done" : day === today ? "due" : "missed";
+    return { day, status };
+  });
+}

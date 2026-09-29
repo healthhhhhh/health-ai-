@@ -58,6 +58,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
               value={trend!.average != null ? formatMetric(def.kind, trend!.average) : "—"}
               unit={def.unit}
               context={`${def.summary} · ${trendLabel(trendOf(trend!))}`}
+              href={`/health/${def.kind}`}
             >
               <TrendChart
                 label={def.title}

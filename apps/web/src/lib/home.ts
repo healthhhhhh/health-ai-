@@ -14,6 +14,7 @@ import type {
   TimelineEventRecord,
   TrendResponse,
 } from "@healthmate/shared-types";
+import { timelineHref } from "./links";
 
 /** Measurement kinds shown on Home, in order, with their Home metric kind. */
 export const HOME_METRICS: [MeasurementKind, MetricKind][] = [
@@ -62,7 +63,7 @@ export function buildHomeSummary(inputs: HomeInputs): HomeSummary {
       .filter((e) => new Date(e.occurredAt) <= now)
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
       .slice(0, 5)
-      .map((e): ActivityEvent => ({ id: e.id, kind: activityKind(e.eventType), title: e.title, occurredAt: e.occurredAt, source: dataSource(e.sourceType) })),
+      .map((e): ActivityEvent => ({ id: e.id, kind: activityKind(e.eventType), title: e.title, occurredAt: e.occurredAt, source: dataSource(e.sourceType), link: timelineHref(e) })),
     upcomingAppointments: inputs.timeline
       .filter((e) => e.eventType === "appointment" && new Date(e.occurredAt) > now)
       .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))

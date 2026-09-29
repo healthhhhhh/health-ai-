@@ -1,5 +1,6 @@
 "use client";
 
+import { Bell } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Logo } from "@/components/illustrations/logo";
@@ -7,7 +8,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { SearchBar } from "@/components/ui/search-bar";
 import { MobileNavDrawer } from "./mobile-nav-drawer";
 
-export function TopBar({ userName }: { userName: string }) {
+export function TopBar({ userName, unreadNotifications }: { userName: string; unreadNotifications: number | null }) {
   const router = useRouter();
   const ask = (q: string) => router.push(`/chat?q=${encodeURIComponent(q)}`);
   return (
@@ -19,6 +20,18 @@ export function TopBar({ userName }: { userName: string }) {
         </Link>
         <SearchBar onSubmit={ask} shortcutHint="⌘K" className="hidden h-11 max-w-xl flex-1 md:flex" />
         <div className="ml-auto flex items-center gap-1">
+          <Link
+            href="/notifications"
+            aria-label={unreadNotifications ? `Notifications, ${unreadNotifications} unread` : "Notifications"}
+            className="relative inline-flex size-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-card-muted hover:text-text-primary"
+          >
+            <Bell aria-hidden className="size-5" />
+            {!!unreadNotifications && (
+              <span aria-hidden className="absolute top-1.5 right-1.5 flex min-w-4.5 items-center justify-center rounded-pill bg-error-fill px-1 text-[0.6875rem] leading-4.5 font-bold text-on-primary tabular-nums">
+                {unreadNotifications > 9 ? "9+" : unreadNotifications}
+              </span>
+            )}
+          </Link>
           <Link href="/profile" aria-label="Your profile" className="rounded-full">
             <Avatar name={userName} />
           </Link>

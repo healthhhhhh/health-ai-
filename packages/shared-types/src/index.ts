@@ -84,6 +84,8 @@ export interface ActivityEvent {
   title: string;
   occurredAt: ISODateString;
   source: DataSource;
+  /** In-app destination (web path; iOS maps it to a screen). */
+  link?: string | null;
 }
 
 export interface Appointment {

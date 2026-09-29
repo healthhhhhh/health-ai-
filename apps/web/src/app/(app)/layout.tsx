@@ -3,7 +3,7 @@ import { SampleDataNotice } from "@/components/layout/sample-data-notice";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { redirect } from "next/navigation";
-import { getAccount, getMeta, getProfile } from "@/lib/api/data";
+import { getAccount, getMeta, getProfile, getUnreadNotifications } from "@/lib/api/data";
 import { ApiError } from "@/lib/api/server";
 import type { ProfileDetails } from "@healthmate/shared-types";
 
@@ -11,7 +11,7 @@ import type { ProfileDetails } from "@healthmate/shared-types";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const meta = await getMeta();
+  const [meta, unreadNotifications] = await Promise.all([getMeta(), getUnreadNotifications().catch(() => null)]);
   let profile: ProfileDetails | null = null;
   let offline = false;
   let needsOnboarding = false;
@@ -42,7 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             You&apos;re offline. Showing what&apos;s available — we&apos;ll reconnect automatically.
           </p>
         )}
-        <TopBar userName={profile ? `${profile.firstName} ${profile.lastName}`.trim() : ""} />
+        <TopBar userName={profile ? `${profile.firstName} ${profile.lastName}`.trim() : ""} unreadNotifications={unreadNotifications} />
         <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 px-4 pt-6 pb-28 focus:outline-none sm:px-6 md:pb-10 lg:px-8">
           {children}
         </main>

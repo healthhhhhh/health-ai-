@@ -13,8 +13,9 @@ import { cn } from "@/lib/cn";
 import { formatClockTime } from "@/lib/format";
 import Link from "next/link";
 import { planProgress, sourceLabel } from "./plan";
+import { SectionError } from "./section-error";
 
-export function TodaysPlan({ tasks, className }: { tasks: PlanTask[]; className?: string }) {
+export function TodaysPlan({ tasks, failed, className }: { tasks: PlanTask[]; failed?: boolean; className?: string }) {
   const [optimistic, applyOptimistic] = useOptimistic(tasks, (state, update: { id: string; completed: boolean }) =>
     state.map((t) => (t.id === update.id ? { ...t, completed: update.completed } : t)),
   );
@@ -54,7 +55,9 @@ export function TodaysPlan({ tasks, className }: { tasks: PlanTask[]; className?
         }
         className="mb-2"
       />
-      {total === 0 ? (
+      {failed ? (
+        <SectionError what="today's plan" />
+      ) : total === 0 ? (
         <EmptyState icon={<ListChecks />} title="Nothing planned today" description="Tasks from your care plan and habits you add will show up here." className="py-6" />
       ) : (
         <>
@@ -83,6 +86,7 @@ export function TodaysPlan({ tasks, className }: { tasks: PlanTask[]; className?
                 time={formatClockTime(t.scheduledTime)}
                 completed={t.completed}
                 onToggle={(c) => toggle(t.id, c)}
+                href={`/plans/${encodeURIComponent(t.id)}`}
               />
             ))}
           </div>

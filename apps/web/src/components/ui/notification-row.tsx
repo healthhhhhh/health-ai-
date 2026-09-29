@@ -25,6 +25,7 @@ export function NotificationRow({
   read,
   aiGenerated,
   href,
+  onOpen,
   className,
 }: {
   category: NotificationCategory;
@@ -34,6 +35,8 @@ export function NotificationRow({
   read: boolean;
   aiGenerated?: boolean;
   href?: string | null;
+  /** Called when the row is opened (e.g. to mark it read). */
+  onOpen?: () => void;
   className?: string;
 }) {
   const c = notificationCategories[category] ?? { icon: <Bell />, tone: "blue" as Tone };
@@ -60,7 +63,7 @@ export function NotificationRow({
   );
   const base = cn("flex w-full items-start gap-3 px-5 py-4", !read && "bg-primary-soft/40", href && "transition-colors hover:bg-card-muted", className);
   return href ? (
-    <Link href={href} className={base}>
+    <Link href={href} className={base} onClick={onOpen}>
       {content}
     </Link>
   ) : (

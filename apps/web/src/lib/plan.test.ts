@@ -1,6 +1,6 @@
 import type { PlanItemRecord } from "@healthmate/shared-types";
 import { describe, expect, it } from "vitest";
-import { occurs, tasksForDay, weekday, withCompletion } from "./plan";
+import { describeRepeat, itemHistory, occurs, tasksForDay, weekday, withCompletion } from "./plan";
 
 const item = (overrides: Partial<PlanItemRecord> = {}): PlanItemRecord => ({
   id: "a",
@@ -45,5 +45,42 @@ describe("plan schedule", () => {
     expect(done).toHaveLength(1);
     expect(withCompletion(done, "a", "2026-09-28", false, "2026-09-28")).toEqual([]);
     expect(() => withCompletion([], "a", "2026-09-29", true, "2026-09-28")).toThrow();
+  });
+});
+
+describe("plan item detail helpers", () => {
+  const item = {
+    id: "walk",
+    title: "Walk",
+    notes: null,
+    kind: "habit" as const,
+    time: "08:00",
+    repeat: { type: "weekdays" as const, days: [2, 3, 4, 5, 6] },
+    reminderEnabled: true,
+    source: "user_reported" as const,
+    instruction: null,
+    startDay: "2026-09-01",
+    endDay: null,
+    createdAt: "2026-09-01T00:00:00Z",
+  };
+
+  it("describes repeats in words", () => {
+    expect(describeRepeat({ type: "daily" })).toBe("Every day");
+    expect(describeRepeat({ type: "weekdays", days: [6, 2, 3, 4, 5] })).toBe("Weekdays");
+    expect(describeRepeat({ type: "weekdays", days: [7, 1] })).toBe("Weekends");
+    expect(describeRepeat({ type: "weekdays", days: [2, 4, 6] })).toBe("Mon, Wed, Fri");
+    expect(describeRepeat({ type: "once", day: "2026-10-01" })).toBe("Once, on Oct 1");
+  });
+
+  it("marks each recent day done, missed, due or not scheduled", () => {
+    // 2026-09-27 is a Sunday; 2026-09-29 a Tuesday.
+    const history = itemHistory({ completions: [{ itemId: "walk", day: "2026-09-28", completedAt: "x" }] }, item, "2026-09-29", 4);
+    expect(history).toEqual([
+      { day: "2026-09-26", status: "not_scheduled" },
+      { day: "2026-09-27", status: "not_scheduled" },
+      { day: "2026-09-28", status: "done" },
+      { day: "2026-09-29", status: "due" },
+    ]);
+    expect(itemHistory({ completions: [] }, item, "2026-09-29", 2)[0]).toEqual({ day: "2026-09-28", status: "missed" });
   });
 });

@@ -1,15 +1,32 @@
 "use client";
 
-import type { Appointment } from "@healthmate/shared-types";
-import { CalendarDays, MapPin, Video } from "lucide-react";
+import type { Appointment, AppointmentRecord } from "@healthmate/shared-types";
+import { CalendarPlus } from "lucide-react";
 import Link from "next/link";
+import { AppointmentCard } from "@/components/ui/appointment-card";
 import { Card, CardHeader } from "@/components/ui/card";
-import { IconBadge } from "@/components/ui/icon-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useClientClock } from "@/hooks/use-client-clock";
-import { formatAppointmentDate } from "@/lib/format";
 
-export function UpcomingAppointments({ appointments, serverNow, timeZone }: { appointments: Appointment[]; serverNow: string; timeZone: string }) {
+/**
+ * Next appointments. Uses care appointments when the server has them, otherwise
+ * appointment entries from the timeline. Each opens its detail.
+ */
+export function UpcomingAppointments({
+  appointments,
+  fallback,
+  serverNow,
+  timeZone,
+}: {
+  appointments: AppointmentRecord[] | null;
+  fallback: Appointment[];
+  serverNow: string;
+  timeZone: string;
+}) {
   const { timeZone: tz } = useClientClock(serverNow, timeZone);
+  const items =
+    appointments?.map((a) => ({ id: a.id, title: a.title, providerName: a.providerName, startsAt: a.startsAt, mode: a.mode, location: a.location })) ??
+    fallback.map((a) => ({ id: a.id, title: a.title, providerName: a.clinicianName || null, startsAt: a.startsAt, mode: a.mode, location: null }));
   return (
     <Card>
       <CardHeader
@@ -20,26 +37,22 @@ export function UpcomingAppointments({ appointments, serverNow, timeZone }: { ap
           </Link>
         }
       />
-      {appointments.length === 0 ? (
-        <p className="text-body text-text-secondary">No upcoming appointments.</p>
+      {items.length === 0 ? (
+        <EmptyState icon={<CalendarPlus />} title="No upcoming appointments" description="Appointments you add in Care appear here, with a reminder the day before." className="py-6" />
       ) : (
         <ul className="flex flex-col gap-3">
-          {appointments.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 rounded-md bg-card-muted p-3">
-              <IconBadge icon={<CalendarDays />} tone="blue" size="sm" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-body font-semibold text-text-primary">{a.title}</p>
-                <p className="truncate text-caption text-text-secondary">
-                  {a.clinicianName} · {a.specialty}
-                </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="text-caption font-semibold text-text-primary">{formatAppointmentDate(a.startsAt, tz)}</p>
-                <p className="inline-flex items-center gap-1 text-xs text-text-secondary">
-                  {a.mode === "video" ? <Video aria-hidden className="size-3.5" /> : <MapPin aria-hidden className="size-3.5" />}
-                  {a.mode === "video" ? "Video visit" : "In person"}
-                </p>
-              </div>
+          {items.map((a) => (
+            <li key={a.id}>
+              <AppointmentCard
+                title={a.title}
+                providerName={a.providerName}
+                startsAt={a.startsAt}
+                timeZone={tz}
+                mode={a.mode}
+                location={a.location}
+                href={appointments ? `/care/appointments/${encodeURIComponent(a.id)}` : "/timeline"}
+                className="bg-card-muted shadow-none"
+              />
             </li>
           ))}
         </ul>

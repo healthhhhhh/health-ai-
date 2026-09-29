@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PartyPopper } from "lucide-react";
 import { getHomeSummary } from "@/lib/api/data";
 import { AssistantHeroCard } from "@/features/home/assistant-hero-card";
 import { DailyProgress } from "@/features/home/daily-progress";
@@ -16,13 +17,20 @@ import { Disclaimer } from "@/components/ui/disclaimer";
 export const metadata: Metadata = { title: "Home" };
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
-  const summary = await getHomeSummary();
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
+  const [summary, { welcome }] = await Promise.all([getHomeSummary(), searchParams]);
+  const failed = new Set(summary.failed);
   const serverNow = new Date().toISOString();
   const { user } = summary;
 
   return (
     <div className="flex flex-col gap-6">
+      {welcome === "1" && (
+        <p role="status" className="animate-fade-up flex items-center gap-2 rounded-lg bg-success-soft px-4 py-3 text-body font-medium text-text-primary">
+          <PartyPopper aria-hidden className="size-5 text-success" />
+          You&apos;re all set{user.firstName ? `, ${user.firstName}` : ""}. Here&apos;s your day.
+        </p>
+      )}
       <div className="animate-fade-up">
         <Greeting firstName={user.firstName} serverNow={serverNow} timeZone={user.timeZone} />
       </div>
@@ -33,10 +41,10 @@ export default async function HomePage() {
         <MoodCheckIn initialMood={summary.todayMood?.mood} className="xl:col-span-4" />
       </div>
 
-      <TodaysHealth metrics={summary.metrics} />
+      <TodaysHealth metrics={summary.metrics} failed={failed.has("metrics")} />
 
       <div className="animate-fade-up grid gap-6 [animation-delay:380ms] lg:grid-cols-12 [&>*]:min-w-0">
-        <TodaysPlan tasks={summary.tasks} className="lg:col-span-7" />
+        <TodaysPlan tasks={summary.tasks} failed={failed.has("plan")} className="lg:col-span-7" />
         <div className="flex flex-col gap-6 lg:col-span-5">
           {summary.insight && (
             <InsightCard
@@ -45,12 +53,12 @@ export default async function HomePage() {
               badge={summary.insight.source === "sample" ? <StatusBadge status="neutral">Sample</StatusBadge> : undefined}
             />
           )}
-          <UpcomingAppointments appointments={summary.upcomingAppointments} serverNow={serverNow} timeZone={user.timeZone} />
+          <UpcomingAppointments appointments={summary.appointments} fallback={summary.upcomingAppointments} serverNow={serverNow} timeZone={user.timeZone} />
         </div>
       </div>
 
       <div className="animate-fade-up grid gap-6 [animation-delay:480ms] lg:grid-cols-12 [&>*]:min-w-0">
-        <RecentActivity events={summary.recentActivity} serverNow={serverNow} className="lg:col-span-7" />
+        <RecentActivity events={summary.recentActivity} serverNow={serverNow} failed={failed.has("activity")} className="lg:col-span-7" />
         <DailyProgress tasks={summary.tasks} metrics={summary.metrics} className="lg:col-span-5" />
       </div>
 

@@ -2,8 +2,8 @@
 
 import type { AuthResponse, RegisterResponse } from "@healthmate/shared-types";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { ApiError, errorMessage, publicApi } from "@/lib/api/server";
+import { redirect, unstable_rethrow } from "next/navigation";
+import { api, ApiError, errorMessage, publicApi } from "@/lib/api/server";
 import { clearSession, REFRESH_COOKIE, writeSession } from "@/lib/api/session";
 import { validateSignIn, type SignInErrors } from "./validation";
 
@@ -122,4 +122,30 @@ export async function signOut() {
   }
   clearSession(jar);
   redirect("/sign-in?signedOut=1");
+}
+
+export interface ChangePasswordState {
+  error?: string;
+  ok?: number;
+}
+
+/** Changes the password for a signed-in account (the current one is checked by the server). */
+export async function changePassword(_prev: ChangePasswordState, form: FormData): Promise<ChangePasswordState> {
+  const currentPassword = String(form.get("currentPassword") ?? "");
+  const newPassword = String(form.get("newPassword") ?? "");
+  const confirm = String(form.get("confirm") ?? "");
+  if (!currentPassword) return { error: "Enter your current password." };
+  const passwordError = validateSignIn({ email: "a@b.co", password: newPassword }).password;
+  if (passwordError) return { error: passwordError };
+  if (newPassword !== confirm) return { error: "The new passwords don't match." };
+  if (newPassword === currentPassword) return { error: "Choose a password you haven't used here before." };
+  try {
+    await api("auth/change-password", { method: "POST", json: { currentPassword, newPassword } });
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof ApiError && error.status === 403) return { error: "Your current password is incorrect." };
+    if (error instanceof ApiError && (error.status === 404 || error.status === 501)) return { error: "Changing your password isn't available on this server yet." };
+    return { error: errorMessage(error) };
+  }
+  return { ok: Date.now() };
 }
