@@ -9,6 +9,9 @@ struct DesignSystemGallery: View {
     @State private var taskDone = false
     @State private var ring = 0.4
     @State private var burst = 0
+    @State private var filter = "all"
+    @State private var toasts = ToastCenter()
+    @State private var confirmDelete = false
 
     private let sampleMetric = HealthMetric(kind: .heartRate, value: 72, unit: "bpm", recordedAt: Date(), source: .sample, trend: .inUsualRange)
 
@@ -102,6 +105,57 @@ struct DesignSystemGallery: View {
                         ChatBubble(author: .assistant, text: "I'm sorry to hear that. How would you describe it?")
                     }
                 }
+                group("Screen states") {
+                    VStack(spacing: 0) {
+                        ForEach(ScreenState.allCases) { state in
+                            StateView(state: state, compact: true)
+                            if state != ScreenState.allCases.last { Divider() }
+                        }
+                    }
+                }
+                group("Skeleton & steps") {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ListRow(title: "Example report.pdf", subtitle: "Lab results · 2 days ago", systemImage: "doc.text").hmSkeleton(true)
+                        StepProgressView(steps: [.init(label: "Uploaded"), .init(label: "Reading the report", detail: "Usually under a minute"), .init(label: "Writing a plain-language summary")], current: 1)
+                    }
+                }
+                group("Feedback") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Button("Show success toast") { toasts.show("Saved", message: "Your reminder settings were updated.") }
+                            .buttonStyle(.hmSecondary)
+                        Button("Confirmation dialog") { confirmDelete = true }
+                            .buttonStyle(.hmSecondary)
+                        FilterChips(options: [.init(value: "all", label: "All", count: 12), .init(value: "reports", label: "Reports", count: 4), .init(value: "photos", label: "Photos", count: 2)], selection: $filter)
+                    }
+                }
+                group("Labels") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Provenance.allCases, id: \.self) { SourceBadge($0) }
+                        AIGeneratedLabel(basedOn: "your sleep data from the last 14 days")
+                        SampleContentLabel()
+                    }
+                }
+                group("Rows & cards") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ListRow(title: "Notifications", subtitle: "Reminders, reports and appointments", systemImage: "bell", showsChevron: true)
+                        ListRow(title: "Apple Health", systemImage: "heart.fill", tone: .red, trailing: "Connected", showsChevron: true)
+                        NotificationRow(category: .medication, title: "Time for your morning medication", message: "Morning medication · as prescribed", createdAt: Date().addingTimeInterval(-600), read: false)
+                        NotificationRow(category: .insight, title: "Your sleep is trending up", message: "About 20 minutes longer on average this month.", createdAt: Date().addingTimeInterval(-86_400), read: true, aiGenerated: true)
+                        MedicationCard(name: "Morning medication", instruction: "As prescribed by your clinician", sourceLabel: "From your clinician", schedule: "Daily · 8:00 AM", takenToday: true, lastSevenDays: [true, true, false, true, true, true, nil])
+                        AppointmentCard(title: "Annual check-up", providerName: "Dr. Sam Lee", startsAt: Date().addingTimeInterval(3 * 86_400), mode: .inPerson, location: "Riverside Health Centre")
+                        ProviderCard(name: "Dr. Sam Lee", specialty: "General practice", address: "Riverside Health Centre, 12 Mill Lane")
+                    }
+                }
+                group("Permissions") {
+                    VStack(spacing: 16) {
+                        PermissionPrimerView(systemImage: "heart.fill", tone: .red, title: "Connect Apple Health", message: "See your steps, sleep and heart rate next to your plan.", benefits: ["Trends compared with your own usual range", "Nothing is shared without your say-so"], privacyNote: "HealthMate only reads the data types you choose. You can disconnect at any time.") {
+                            Button("Continue") {}.buttonStyle(.hmPrimary(fullWidth: true))
+                        }
+                        PermissionPrimerView(systemImage: "camera", tone: .orange, title: "Camera access is off", message: "Needed to photograph a report or a skin concern.", status: .denied, deniedHelp: "Turn on Camera for HealthMate in Settings › Privacy & Security › Camera.") {
+                            Button("Open Settings") { SystemSettings.open() }.buttonStyle(.hmSecondary)
+                        }
+                    }
+                }
                 group("Mascot") {
                     HStack { MascotView(size: 140, withBackdrop: true); LogoMark(size: 48) }
                 }
@@ -110,6 +164,12 @@ struct DesignSystemGallery: View {
         }
         .background(HM.Colors.background.ignoresSafeArea())
         .navigationTitle("Design System")
+        .hmToasts(toasts)
+        .confirmationDialog("Delete this report?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete report", role: .destructive) { toasts.show("Report deleted") }
+        } message: {
+            Text("The file and its summary will be removed. This can't be undone.")
+        }
     }
 
     private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

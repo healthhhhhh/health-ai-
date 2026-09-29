@@ -30,7 +30,7 @@
   --hm-teal-fill: #0FA396;
   --hm-purple-fill: #7C5CF0;
   --hm-warning-fill: #D97706;
-  --hm-error-fill: #E0453A;
+  --hm-error-fill: #D1392E;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,7 +64,7 @@
     --hm-teal-fill: #0FA396;
     --hm-purple-fill: #7C5CF0;
     --hm-warning-fill: #D97706;
-    --hm-error-fill: #E0453A;
+    --hm-error-fill: #D1392E;
   }
 }
 
@@ -98,7 +98,7 @@
   --hm-teal-fill: #0FA396;
   --hm-purple-fill: #7C5CF0;
   --hm-warning-fill: #D97706;
-  --hm-error-fill: #E0453A;
+  --hm-error-fill: #D1392E;
 }
 
 @theme inline {

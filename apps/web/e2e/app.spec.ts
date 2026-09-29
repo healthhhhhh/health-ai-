@@ -260,9 +260,28 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/settings", "/care"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/settings", "/care", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
+  });
+});
+
+test.describe("design system", () => {
+  test("gallery components work: toast, confirmation and sheet", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByRole("link", { name: "Design system" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Design system" })).toBeVisible();
+    await page.getByRole("button", { name: "Show success toast" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Your reminder settings were updated." })).toBeVisible();
+    await page.getByRole("button", { name: "Confirmation dialog" }).click();
+    const dialog = page.getByRole("dialog", { name: "Delete this report?" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    await page.getByRole("button", { name: "Sheet" }).click();
+    await expect(page.getByRole("dialog", { name: "Add appointment" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Add appointment" })).toBeHidden();
   });
 });
 

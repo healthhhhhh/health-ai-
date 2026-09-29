@@ -13,6 +13,7 @@ export const buttonVariants = cva(
         soft: "bg-primary-soft text-primary hover:bg-primary-tint",
         ghost: "text-text-secondary hover:bg-card-muted hover:text-text-primary",
         link: "text-primary hover:underline underline-offset-4 px-0",
+        destructive: "bg-error-fill text-on-primary shadow-card hover:opacity-90",
       },
       size: {
         sm: "h-9 px-4 text-caption",

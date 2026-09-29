@@ -50,7 +50,7 @@ enum DesignTokens {
         static let tealFill = Color(light: 0x0FA396, dark: 0x0FA396)
         static let purpleFill = Color(light: 0x7C5CF0, dark: 0x7C5CF0)
         static let warningFill = Color(light: 0xD97706, dark: 0xD97706)
-        static let errorFill = Color(light: 0xE0453A, dark: 0xE0453A)
+        static let errorFill = Color(light: 0xD1392E, dark: 0xD1392E)
     }
 
     enum Radius {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ConsentRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
 import { Download, LogOut } from "lucide-react";
@@ -54,6 +55,14 @@ export default async function SettingsPage() {
                 <LogOut aria-hidden /> Sign out
               </Button>
             </form>
+          </Card>
+          <Card as="section" aria-labelledby="about">
+            <h2 id="about" className="mb-2 text-card-title text-text-primary">
+              About
+            </h2>
+            <Link href="/design" className="text-body font-semibold text-primary hover:underline">
+              Design system
+            </Link>
           </Card>
           <Card as="section" aria-labelledby="delete" className="ring-1 ring-error/30">
             <h2 id="delete" className="mb-3 text-card-title text-error">

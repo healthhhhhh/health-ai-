@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/inter";
 import "./globals.css";
 import { cookies } from "next/headers";
+import { ToastProvider } from "@/components/ui/toast";
 import { PreviewPanel } from "@/features/preview/preview-panel";
 import { REFRESH_COOKIE } from "@/lib/api/session";
 import { isPreviewMode } from "@/lib/preview/mode";
@@ -24,8 +25,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="min-h-dvh">
-        {children}
-        {preview && <PreviewPanel signedIn={signedIn} />}
+        <ToastProvider>
+          {children}
+          {preview && <PreviewPanel signedIn={signedIn} />}
+        </ToastProvider>
       </body>
     </html>
   );

@@ -15,8 +15,26 @@ real assessment.
 | Step | Status | Notes |
 |---|---|---|
 | 0 · Preview mode foundation | ✅ Done | See below |
-| 1 · Design system components | ⏳ Next | |
-| 2–12 | ⬜ Not started | |
+| 1 · Design system components | ✅ Done | See below |
+| 2 · Auth & onboarding | ⏳ Next | |
+| 3–12 | ⬜ Not started | |
+
+### Step 1: what was built
+
+Shared components, the same names and behaviour on both platforms (web `components/ui`, iOS
+`DesignSystem/Components`). Copy for states, provenance and notification categories lives in
+HealthMateCore so iOS and web say the same thing:
+- **States:** `StateView` (loading, processing, empty, error, offline, permission, success), skeletons (`Skeleton*` / `.hmSkeleton`), `StepProgress`.
+- **Feedback:** toasts (`ToastProvider`/`useToast`, iOS `ToastCenter` + `.hmToasts`), `ConfirmDialog` (iOS: native confirmation dialogs), `Sheet`.
+- **Controls:** `Switch`, `Textarea` with a counter, `Select`, `FilterChips`, and a destructive button style.
+- **Rows and labels:** `ListRow`/`ListGroup`, `SourceBadge` (provenance; AI inferences always "Unconfirmed"), `AIGeneratedLabel`, `SampleContentLabel`.
+- **Permissions:** `PermissionPrimer` (prompt, granted, denied with how to re-enable, unavailable).
+- **Domain cards:** `AppointmentCard`, `ProviderCard`, `NotificationRow`, `MedicationCard` (instruction verbatim, 7-day adherence). These join the existing metric, task, report and timeline components.
+- **Galleries:** web `/design` (linked from Settings) and iOS Profile › Design system.
+- **Accessibility fixes found by the new checks:**
+  - The error fill (used by the emergency Call button on iOS) was 4.13:1. It is now `#D1392E`, 4.84:1.
+  - The selected filter-chip count was below the contrast minimum; restyled.
+- **Verification:** web unit 66/66; web e2e 77/77 (gallery interactions and axe); iOS core 84/84.
 
 ### Step 0: what was built
 

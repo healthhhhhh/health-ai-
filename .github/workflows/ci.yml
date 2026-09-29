@@ -78,8 +78,14 @@ jobs:
         run: |
           echo "EMBED_FUNCTION_SECRET=ci-embed-secret-0123456789abcdef" > /tmp/functions.env
           supabase functions serve --env-file /tmp/functions.env > /tmp/functions.log 2>&1 &
-          for i in $(seq 1 30); do curl -s -o /dev/null "$SUPABASE_URL/functions/v1/embed" && break; sleep 2; done
-          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPABASE_URL/functions/v1/embed" -d '{"input":["x"]}')" = 403
+          # Ready when the function itself answers: 403 without the shared secret (the gateway returns 5xx while it boots).
+          status=000
+          for i in $(seq 1 60); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPABASE_URL/functions/v1/embed" -d '{"input":["x"]}' || true)
+            [ "$status" = 403 ] && break
+            sleep 2
+          done
+          [ "$status" = 403 ] || { echo "embed function not ready (last status $status)"; cat /tmp/functions.log; exit 1; }
           curl -sf -m 180 -X POST "$SUPABASE_URL/functions/v1/embed" -H "Content-Type: application/json" \
             -H "x-healthmate-secret: ci-embed-secret-0123456789abcdef" -d '{"input":["headache after screens","walks daily"]}' > /tmp/embed.json \
             || { cat /tmp/functions.log; exit 1; }
