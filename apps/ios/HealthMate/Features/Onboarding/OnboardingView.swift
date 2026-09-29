@@ -51,8 +51,10 @@ struct OnboardingView: View {
         .scrollBounceBehavior(.basedOnSize)
         .background(HMGradient.appBackground.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) { actions }
-        .sheet(isPresented: $showSignIn) {
-            SignInView(session: session, startInSignUp: signUp, onSignedIn: onFinish)
+        // Leave the welcome screens only once the sheet has fully closed, so the
+        // next screen (account setup or Home) isn't swapped in under a dismissing sheet.
+        .sheet(isPresented: $showSignIn, onDismiss: { if session.isSignedIn { onFinish() } }) {
+            SignInView(session: session, startInSignUp: signUp, onSignedIn: {})
         }
     }
 

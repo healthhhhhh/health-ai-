@@ -40,25 +40,32 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
     }
 
+    /// What's on screen, for failure messages.
+    private func screen(_ app: XCUIApplication) -> String {
+        app.staticTexts.allElementsBoundByIndex.prefix(12).map(\.label).joined(separator: " | ")
+    }
+
     /// Preview mode: Get Started → Continue with Apple → account setup → Home, with no server.
     func testSignUpRunsAccountSetupThenOpensHome() {
         let app = launch(onboarded: false, ["-hmPreviewState", "normal"])
         let getStarted = app.buttons["Get Started"]
-        XCTAssertTrue(getStarted.waitForExistence(timeout: 10))
+        XCTAssertTrue(getStarted.waitForExistence(timeout: 10), "welcome: \(screen(app))")
         getStarted.tap()
-        XCTAssertTrue(app.staticTexts["Create your account"].waitForExistence(timeout: 5))
-        app.buttons["Continue with Apple"].tap()
+        XCTAssertTrue(app.staticTexts["Create your account"].waitForExistence(timeout: 5), "sign-up sheet: \(screen(app))")
+        let apple = app.buttons["Continue with Apple"]
+        XCTAssertTrue(apple.waitForExistence(timeout: 5), "Apple button: \(screen(app))")
+        apple.tap()
 
-        XCTAssertTrue(app.staticTexts["About you"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["About you"].waitForExistence(timeout: 10), "setup: \(screen(app))")
         for heading in ["What would help most?", "Your health details", "Your privacy choices", "Reminders", "Apple Health"] {
             app.buttons["Continue"].tap()
-            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5), heading)
+            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5), "\(heading): \(screen(app))")
         }
         app.buttons["Continue"].tap()
         let goHome = app.buttons["Go to Home"]
-        XCTAssertTrue(goHome.waitForExistence(timeout: 5))
+        XCTAssertTrue(goHome.waitForExistence(timeout: 5), "summary: \(screen(app))")
         goHome.tap()
-        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10), "home: \(screen(app))")
     }
 
     func testEveryTabOpens() {

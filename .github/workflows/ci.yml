@@ -187,6 +187,14 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO \
             | (command -v xcbeautify >/dev/null && xcbeautify || cat)
+      - name: Show test failure details
+        if: failure()
+        working-directory: apps/ios
+        run: |
+          result=$(ls -td DerivedData/Logs/Test/*.xcresult 2>/dev/null | head -1)
+          [ -n "$result" ] || exit 0
+          xcrun xcresulttool get test-results tests --path "$result" --format json \
+            | jq -r '.. | objects | select(.nodeType? == "Failure Message") | .name' || true
 
       # Visual review: install the built app and capture key screens in light
       # and dark mode. Launch arguments override UserDefaults (NSArgumentDomain),
