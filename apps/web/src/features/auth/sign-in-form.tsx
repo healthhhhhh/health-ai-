@@ -7,17 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 import { authenticate, type AuthFormState } from "./actions";
+import { SocialSignIn } from "./social-sign-in";
 
 /** Sign in or create an account. Credentials go to the Next.js server, which holds the session in httpOnly cookies. */
 export function SignInForm({
   next,
   expired = false,
   passwordReset = false,
+  notice: pageNotice,
   initialMode = "sign-in",
 }: {
   next?: string;
   expired?: boolean;
   passwordReset?: boolean;
+  /** One-off message from the page (signed out, account deleted). */
+  notice?: string;
   initialMode?: AuthFormState["mode"];
 }) {
   const [mode, setMode] = useState<AuthFormState["mode"]>(initialMode);
@@ -55,9 +59,9 @@ export function SignInForm({
           </button>
         ))}
       </div>
-      {(notice ?? (passwordReset ? "Your password was changed. Sign in with the new one." : undefined)) && !message && (
+      {(notice ?? pageNotice ?? (passwordReset ? "Your password was changed. Sign in with the new one." : undefined)) && !message && (
         <p role="status" className="rounded-md bg-primary-soft p-3 text-caption text-text-primary">
-          {notice ?? "Your password was changed. Sign in with the new one."}
+          {notice ?? pageNotice ?? "Your password was changed. Sign in with the new one."}
         </p>
       )}
       {expired && !message && !notice && (
@@ -65,6 +69,7 @@ export function SignInForm({
           Your session ended. Please sign in again.
         </p>
       )}
+      <SocialSignIn />
       <form noValidate action={submit} className="flex flex-col gap-4">
         <input type="hidden" name="mode" value={mode} />
         <input type="hidden" name="next" value={next ?? ""} />

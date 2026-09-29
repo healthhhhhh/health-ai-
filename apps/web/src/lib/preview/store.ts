@@ -80,6 +80,11 @@ export function createSession(options: { timeZone: string; email?: string; first
   }
   if (options.method && options.method !== "password") account.account.signInMethods = [options.method];
   account.account.onboardingCompleted = options.onboarded ?? true;
+  // A brand-new account picks its own goals and privacy choices during onboarding.
+  if (!account.account.onboardingCompleted) {
+    account.profile.profile.goals = [];
+    for (const consent of account.consents) consent.granted = false;
+  }
   const session: PreviewSession = { id, account, processing: new Map() };
   store.sessions.set(id, session);
   return session;

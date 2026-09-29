@@ -3,7 +3,6 @@
 import type { AuthResponse, RegisterResponse } from "@healthmate/shared-types";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiBaseUrl } from "@/lib/api/config";
 import { ApiError, errorMessage, publicApi } from "@/lib/api/server";
 import { clearSession, REFRESH_COOKIE, writeSession } from "@/lib/api/session";
 import { validateSignIn, type SignInErrors } from "./validation";
@@ -41,14 +40,41 @@ export async function authenticate(_prev: AuthFormState, form: FormData): Promis
         ? await publicApi<RegisterResponse>("auth/register", { method: "POST", json: { email, password, firstName, lastName: "", timeZone } })
         : await publicApi<AuthResponse>("auth/login", { method: "POST", json: { email, password } });
   } catch (error) {
+    if (error instanceof ApiError && error.code === "email_not_confirmed") redirect(`/verify-email?email=${encodeURIComponent(email)}`);
     const message = error instanceof ApiError && error.status === 409 ? "An account with this email already exists. Sign in instead." : errorMessage(error);
     return { mode, errors: {}, message, values: { email, firstName } };
   }
-  if ("confirmationRequired" in auth) {
-    return { mode: "sign-in", errors: {}, notice: `We've sent a confirmation link to ${email}. Open it, then sign in.`, values: { email, firstName } };
+  if ("confirmationRequired" in auth) redirect(`/verify-email?email=${encodeURIComponent(email)}`);
+  writeSession(await cookies(), auth);
+  redirect(mode === "sign-up" ? "/onboarding" : safeNext(form.get("next")));
+}
+
+/**
+ * Continue with Apple or Google. Phase 1 (Preview mode) signs in to the
+ * sample account; real OAuth arrives with Supabase Auth in Phase 2.
+ */
+export async function continueWithProvider(provider: "apple" | "google", timeZone: string): Promise<{ error: string } | undefined> {
+  let auth: AuthResponse & { isNewUser?: boolean };
+  try {
+    auth = await publicApi<AuthResponse & { isNewUser?: boolean }>("auth/oauth", { method: "POST", json: { provider, timeZone } });
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+      return { error: `Continue with ${provider === "apple" ? "Apple" : "Google"} isn't available on this server yet. Use your email instead.` };
+    }
+    return { error: errorMessage(error) };
   }
   writeSession(await cookies(), auth);
-  redirect(safeNext(form.get("next")));
+  redirect(auth.isNewUser ? "/onboarding" : "/home");
+}
+
+/** Sends the confirmation email again (always "sent", so it can't reveal who has an account). */
+export async function resendVerification(email: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await publicApi("auth/resend-verification", { method: "POST", json: { email } });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
 }
 
 export interface ResetState {
@@ -91,14 +117,9 @@ export async function signOut() {
   const jar = await cookies();
   const refreshToken = jar.get(REFRESH_COOKIE)?.value;
   if (refreshToken) {
-    // Best effort: revoke the session server-side; always clear it here.
-    await fetch(`${apiBaseUrl()}/auth/logout`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-      cache: "no-store",
-    }).catch(() => undefined);
+    // Best effort: end the session on the server; always clear it here.
+    await publicApi("auth/logout", { method: "POST", json: { refreshToken } }).catch(() => undefined);
   }
   clearSession(jar);
-  redirect("/sign-in");
+  redirect("/sign-in?signedOut=1");
 }

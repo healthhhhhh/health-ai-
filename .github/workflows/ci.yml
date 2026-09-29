@@ -78,17 +78,17 @@ jobs:
         run: |
           echo "EMBED_FUNCTION_SECRET=ci-embed-secret-0123456789abcdef" > /tmp/functions.env
           supabase functions serve --env-file /tmp/functions.env > /tmp/functions.log 2>&1 &
-          # Ready when the function itself answers: 403 without the shared secret (the gateway returns 5xx while it boots).
+          # Ready when the function answers with our shared secret: the runtime started by `supabase start`
+          # answers 403 before `functions serve` has loaded the env file, and the gateway returns 5xx while booting.
           status=000
           for i in $(seq 1 60); do
-            status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPABASE_URL/functions/v1/embed" -d '{"input":["x"]}' || true)
-            [ "$status" = 403 ] && break
-            sleep 2
+            status=$(curl -s -m 180 -o /tmp/embed.json -w '%{http_code}' -X POST "$SUPABASE_URL/functions/v1/embed" \
+              -H "Content-Type: application/json" -H "x-healthmate-secret: ci-embed-secret-0123456789abcdef" \
+              -d '{"input":["headache after screens","walks daily"]}' || true)
+            [ "$status" = 200 ] && break
+            sleep 3
           done
-          [ "$status" = 403 ] || { echo "embed function not ready (last status $status)"; cat /tmp/functions.log; exit 1; }
-          curl -sf -m 180 -X POST "$SUPABASE_URL/functions/v1/embed" -H "Content-Type: application/json" \
-            -H "x-healthmate-secret: ci-embed-secret-0123456789abcdef" -d '{"input":["headache after screens","walks daily"]}' > /tmp/embed.json \
-            || { cat /tmp/functions.log; exit 1; }
+          [ "$status" = 200 ] || { echo "embed function not ready (last status $status)"; cat /tmp/functions.log; exit 1; }
           test "$(jq '.embeddings | length' /tmp/embed.json)" = 2
           test "$(jq '.embeddings[0] | length' /tmp/embed.json)" = 384
       - name: API tests on Supabase Postgres + Redis, and live Auth/Storage/Data API

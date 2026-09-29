@@ -2,7 +2,8 @@ import { BottomNav } from "@/components/layout/bottom-nav";
 import { SampleDataNotice } from "@/components/layout/sample-data-notice";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
-import { getMeta, getProfile } from "@/lib/api/data";
+import { redirect } from "next/navigation";
+import { getAccount, getMeta, getProfile } from "@/lib/api/data";
 import { ApiError } from "@/lib/api/server";
 import type { ProfileDetails } from "@healthmate/shared-types";
 
@@ -13,13 +14,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const meta = await getMeta();
   let profile: ProfileDetails | null = null;
   let offline = false;
+  let needsOnboarding = false;
   try {
-    profile = (await getProfile()).profile;
+    const [details, account] = await Promise.all([getProfile(), getAccount()]);
+    profile = details.profile;
+    needsOnboarding = account?.onboardingCompleted === false;
   } catch (error) {
     // Keep the app shell usable when data can't load; each page shows its own error or offline state.
     if (!(error instanceof ApiError)) throw error; // includes sign-in redirects
     offline = error.code === "network";
   }
+  if (needsOnboarding) redirect("/onboarding");
   return (
     <div className="flex min-h-dvh">
       <a href="#main" className="sr-only z-50 rounded-md bg-card px-4 py-2 font-semibold text-primary focus:not-sr-only focus:fixed focus:top-3 focus:left-3">

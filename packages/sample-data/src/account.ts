@@ -186,7 +186,7 @@ export function buildSampleAccount(now: Date, timeZone = "Europe/London"): Sampl
 
   // ── Profile (generic clinical fields — see header) ────────────────────────
   const profile: HealthProfile = {
-    profile: { firstName: "Alex", lastName: "Morgan", dateOfBirth: "1989-06-14", sex: "prefer_not_to_say", heightCm: 172, timeZone },
+    profile: { firstName: "Alex", lastName: "Morgan", dateOfBirth: "1989-06-14", sex: "prefer_not_to_say", heightCm: 172, timeZone, goals: ["sleep_better", "be_active", "prepare_appointments"] },
     conditions: [
       { id: sampleId(1, 1), name: "Example long-term condition", status: "active", source: "clinician_provided", notes: "Sample entry — shows how a condition from your clinician appears." },
       { id: sampleId(1, 2), name: "Example past condition", status: "resolved", source: "user_reported", notes: null },

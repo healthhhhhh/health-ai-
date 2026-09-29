@@ -1,4 +1,5 @@
 import type {
+  AccountSummary,
   ApiMeta,
   HealthProfile,
   LatestMeasurement,
@@ -16,6 +17,13 @@ import { api, ApiError, publicApi } from "./server";
 /** Per-request cached loaders (server only). */
 export const getProfile = cache(() => api<HealthProfile>("me"));
 export const getMeta = cache(() => publicApi<ApiMeta>("meta").catch(() => null));
+/** Null when the API server doesn't have this endpoint yet (then onboarding is treated as done). */
+export const getAccount = cache(() =>
+  api<AccountSummary>("me/account").catch((error) => {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 501)) return null;
+    throw error;
+  }),
+);
 export const getPlan = cache(() => api<PlanRecord>("plan"));
 
 export async function getHomeSummary(now = new Date()) {

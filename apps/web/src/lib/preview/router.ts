@@ -251,6 +251,7 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
       if (input.sex !== undefined) p.sex = optionalText(input.sex, 40);
       if (input.heightCm !== undefined) p.heightCm = typeof input.heightCm === "number" ? input.heightCm : null;
       if (typeof input.timeZone === "string") p.timeZone = validTimeZone(input.timeZone);
+      if (Array.isArray(input.goals)) p.goals = input.goals.filter((g): g is string => typeof g === "string").slice(0, 10);
       return json(account.profile);
     }
     if (b === "conditions" && method === "POST") {

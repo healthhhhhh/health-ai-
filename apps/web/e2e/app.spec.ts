@@ -44,26 +44,89 @@ test.describe("signed out", () => {
     await expect(page.getByText("Email or password is incorrect.")).toBeVisible();
   });
 
-  test("creates an account, confirms the email and signs out", async ({ page }) => {
+  test("creates an account, confirms the email, completes onboarding and signs out", async ({ page }) => {
     const email = `robin-${unique()}@example.com`;
     await page.goto("/sign-in?mode=sign-up");
     await page.getByLabel("First name").fill("Robin");
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill("a-long-password");
     await page.getByRole("button", { name: "Create Account", exact: true }).click();
-    await expect(page.getByText(`We've sent a confirmation link to ${email}`)).toBeVisible();
+    await expect(page).toHaveURL(/\/verify-email\?email=/);
+    await expect(page.getByRole("heading", { level: 1, name: "Check your email" })).toBeVisible();
+    await expect(page.getByText(email)).toBeVisible();
+
+    // Signing in before confirming comes back to the same screen.
+    await page.goto("/sign-in");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill("a-long-password");
+    await page.getByRole("button", { name: "Sign In", exact: true }).click();
+    await expect(page).toHaveURL(/\/verify-email\?email=/);
 
     // Preview inbox stands in for the email.
-    await page.goto(`/preview/inbox?email=${encodeURIComponent(email)}`);
+    await page.getByRole("link", { name: "Open Preview inbox" }).click();
     await page.getByRole("link", { name: "Confirm email address" }).click();
-    await expect(page).toHaveURL(/\/home$/);
+    await expect(page).toHaveURL(/\/onboarding$/);
+    await expect(page.getByRole("heading", { level: 1, name: "About you" })).toBeVisible();
+    await expect(page.getByLabel("First name")).toHaveValue("Robin");
+
+    // The app sends unfinished accounts back to onboarding.
+    await page.goto("/home");
+    await expect(page).toHaveURL(/\/onboarding$/);
+
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: /Sleep better/ }).click();
+    await expect(page.getByRole("button", { name: /Sleep better/ })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Your health details" })).toBeVisible();
+    await page.getByRole("button", { name: "Skip" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Your privacy choices" })).toBeVisible();
+    await page.getByRole("switch", { name: "AI Health Assistant" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Reminders" })).toBeVisible();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Apple Health" })).toBeVisible();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "You're all set, Robin" })).toBeVisible();
+    await expect(page.getByText("1 of 4 turned on")).toBeVisible();
+    await page.getByRole("button", { name: "Go to Home" }).click();
+    await expect(page).toHaveURL(/\/home\?welcome=1$/);
     await expect(page.getByRole("heading", { level: 1, name: /Good (Morning|Afternoon|Evening), Robin/ })).toBeVisible();
 
     await page.goto("/settings");
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page).toHaveURL(/\/sign-in/);
+    const dialog = page.getByRole("dialog", { name: "Sign out of HealthMate?" });
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/sign-in\?signedOut=1/);
+    await expect(page.getByText("You've signed out.")).toBeVisible();
     await page.goto("/home");
     await expect(page).toHaveURL(/\/sign-in/);
+  });
+
+  test("continue with Apple or Google starts onboarding for a new account", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with Google" }).click();
+    await expect(page).toHaveURL(/\/onboarding$/);
+    // Every onboarding step is accessible.
+    for (const heading of ["About you", "What would help most?", "Your health details", "Your privacy choices", "Reminders", "Apple Health"]) {
+      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+      const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+      expect(results.violations.map((v) => `${heading} ${v.id}: ${v.nodes.length}`)).toEqual([]);
+      if (heading === "About you") await page.getByLabel("First name").fill("Sam");
+      await page.getByRole("button", { name: "Continue" }).click();
+    }
+    await expect(page.getByRole("heading", { level: 1, name: "You're all set, Sam" })).toBeVisible();
+  });
+
+  test("a used or expired confirmation link explains what to do", async ({ page }) => {
+    await page.goto("/verify-email/confirm?token=not-a-real-token");
+    await expect(page).toHaveURL(/\/verify-email\?status=invalid/);
+    await expect(page.getByRole("heading", { level: 1, name: "This link has expired" })).toBeVisible();
+    await page.getByRole("link", { name: "Back to sign in" }).click();
+    await expect(page).toHaveURL(/\/sign-in$/);
   });
 
   test("resets a forgotten password through the emailed link", async ({ page }) => {
@@ -104,6 +167,8 @@ test.describe("signed out", () => {
     await expectNoA11yViolations(page, "/sign-in");
     await expectNoA11yViolations(page, "/forgot-password");
     await expectNoA11yViolations(page, "/reset-password");
+    await expectNoA11yViolations(page, "/verify-email?email=robin%40example.com");
+    await expectNoA11yViolations(page, "/verify-email?status=invalid");
   });
 });
 

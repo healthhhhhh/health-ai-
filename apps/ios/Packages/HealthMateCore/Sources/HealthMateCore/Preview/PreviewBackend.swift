@@ -320,6 +320,7 @@ public final class PreviewBackend: @unchecked Sendable {
                 for key in ["firstName", "lastName"] where input[key].string != nil { ctx.account["profile"]["profile"][key] = .string(text(input[key], 80)) }
                 for key in ["dateOfBirth", "sex", "timeZone"] where input.object[key] != nil { ctx.account["profile"]["profile"][key] = optionalText(input[key], 64) }
                 if input.object["heightCm"] != nil { ctx.account["profile"]["profile"]["heightCm"] = input["heightCm"].double.map { .number($0) } ?? .null }
+                if case .array(let goals) = input["goals"] { ctx.account["profile"]["profile"]["goals"] = .array(Array(goals.filter { $0.string != nil }.prefix(10))) }
                 return json(ctx.account["profile"])
             }
             if b == "conditions", c == nil, method == "POST" {

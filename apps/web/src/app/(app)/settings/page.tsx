@@ -1,11 +1,11 @@
 import Link from "next/link";
 import type { ConsentRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
-import { Download, LogOut } from "lucide-react";
+import { Download } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { signOut } from "@/features/auth/actions";
+import { SignOutButton } from "@/features/auth/sign-out-button";
 import { ConsentToggle } from "@/features/settings/consent-toggle";
 import { DeleteAccountForm } from "@/features/settings/delete-account-form";
 import { api } from "@/lib/api/server";
@@ -50,11 +50,7 @@ export default async function SettingsPage() {
             <h2 id="account" className="mb-4 text-card-title text-text-primary">
               Account
             </h2>
-            <form action={signOut}>
-              <Button type="submit" variant="secondary">
-                <LogOut aria-hidden /> Sign out
-              </Button>
-            </form>
+            <SignOutButton />
           </Card>
           <Card as="section" aria-labelledby="about">
             <h2 id="about" className="mb-2 text-card-title text-text-primary">

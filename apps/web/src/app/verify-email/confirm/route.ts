@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const auth = await publicApi<AuthResponse>("auth/verify-email", { method: "POST", json: { token } });
     writeSession(await cookies(), auth);
-    return NextResponse.redirect(new URL("/home", request.url), 303);
+    return NextResponse.redirect(new URL("/onboarding", request.url), 303);
   } catch (error) {
     const reason = error instanceof ApiError && error.code === "invalid_token" ? "invalid" : "failed";
     return NextResponse.redirect(new URL(`/verify-email?status=${reason}`, request.url), 303);

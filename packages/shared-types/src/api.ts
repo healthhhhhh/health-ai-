@@ -34,6 +34,8 @@ export interface ProfileDetails {
   sex: string | null;
   heightCm: number | null;
   timeZone: string;
+  /** What the person wants help with (onboarding); ids from HEALTH_GOALS. */
+  goals?: string[];
 }
 
 export interface ConditionRecord {
