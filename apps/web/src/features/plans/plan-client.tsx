@@ -51,9 +51,16 @@ export function DayList({ tasks, day, canComplete }: { tasks: PlanTask[]; day: s
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function AddPlanItemForm({ today }: { today: string }) {
+export interface PlanItemInitial {
+  kind: string;
+  title?: string;
+  instruction?: string;
+  fromClinician?: boolean;
+}
+
+export function AddPlanItemForm({ today, initial }: { today: string; initial?: PlanItemInitial }) {
   const [state, action, pending] = useActionState<PlanFormState, FormData>(addPlanItem, {});
-  const [kind, setKind] = useState("task");
+  const [kind, setKind] = useState(initial?.kind ?? "task");
   const [repeat, setRepeat] = useState("daily");
   return (
     <form action={action} key={state.ok} className="flex flex-col gap-4">
@@ -70,18 +77,18 @@ export function AddPlanItemForm({ today }: { today: string }) {
           </label>
         ))}
       </fieldset>
-      <Input label={kind === "medication" ? "Medication name" : "Name"} name="title" placeholder={kind === "medication" ? "e.g. Metformin" : "e.g. Evening walk"} maxLength={120} />
+      <Input label={kind === "medication" ? "Medication name" : "Name"} name="title" defaultValue={initial?.title} placeholder={kind === "medication" ? "e.g. Metformin" : "e.g. Evening walk"} maxLength={120} />
       {kind === "medication" ? (
         <div className="flex flex-col gap-1.5">
           <label htmlFor="plan-instruction" className="text-caption font-semibold text-text-primary">
             Instructions, exactly as written
           </label>
-          <textarea id="plan-instruction" name="instruction" rows={2} maxLength={1000} aria-describedby="plan-instruction-hint" className="rounded-md bg-card px-3.5 py-2.5 text-body ring-1 ring-separator outline-none focus:ring-2 focus:ring-primary" />
+          <textarea id="plan-instruction" name="instruction" defaultValue={initial?.instruction} rows={2} maxLength={1000} aria-describedby="plan-instruction-hint" className="rounded-md bg-card px-3.5 py-2.5 text-body ring-1 ring-separator outline-none focus:ring-2 focus:ring-primary" />
           <p id="plan-instruction-hint" className="text-caption text-text-secondary">
             Copy them from your prescription or label. HealthMate stores them word for word and never suggests changing a medication or dose.
           </p>
           <label className="flex items-center gap-2 text-caption text-text-primary">
-            <input type="checkbox" name="fromClinician" defaultChecked className="size-4" /> These are my clinician&apos;s instructions
+            <input type="checkbox" name="fromClinician" defaultChecked={initial?.fromClinician ?? true} className="size-4" /> These are my clinician&apos;s instructions
           </label>
         </div>
       ) : (

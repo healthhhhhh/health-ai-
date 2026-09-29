@@ -5,6 +5,10 @@ import SwiftUI
 /// chosen day, with completion tracking and reminders.
 struct PlanView: View {
     let store: PlanStore
+    /// For profile medications in Medications (nil when signed out or in previews).
+    var session: SessionStore?
+
+    @Environment(\.openURL) private var openURL
 
     @State private var kind: PlanItemKind = .task
     @State private var editor: EditorTarget?
@@ -48,6 +52,7 @@ struct PlanView: View {
                     }
                 }
             }
+            .navigationDestination(for: UUID.self) { PlanItemDetailView(store: store, itemID: $0) }
             .overlay(alignment: .bottomTrailing) { addButton }
             .overlay(alignment: .bottom) { toast }
             .animation(HMMotion.spring, value: store.actionError)
@@ -76,6 +81,16 @@ struct PlanView: View {
     }
 
     @ViewBuilder private var content: some View {
+        HStack(spacing: 12) {
+            NavigationLink { PlanOverviewView(store: store) } label: {
+                LinkTile(title: "All tasks", subtitle: "Today, coming up, not done", systemImage: "list.bullet.rectangle", tone: .blue)
+            }
+            NavigationLink { MedicationsView(store: store, session: session) } label: {
+                LinkTile(title: "Medications", subtitle: "Plan and profile", systemImage: "pills", tone: .purple)
+            }
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.97))
+
         SegmentedTabs(items: PlanItemKind.allCases.map { SegmentItem(value: $0, title: $0.title) }, selection: $kind)
 
         WeekStrip(days: store.week, selection: Binding(get: { store.selectedDay }, set: { store.selectedDay = $0 }), today: store.today, calendar: store.calendar)
@@ -124,23 +139,41 @@ struct PlanView: View {
             DisclaimerView(text: "HealthMate records medications exactly as your clinician or the label gives them. It never suggests, changes or checks doses — ask your clinician or pharmacist.")
         }
         if store.remindersDenied {
-            Label("Notifications are off, so reminders can't be delivered. You can turn them on in Settings.", systemImage: "bell.slash")
-                .font(.hmCaption)
-                .foregroundStyle(HM.Colors.warning)
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Notifications are off, so reminders can't be delivered.", systemImage: "bell.slash")
+                    .font(.hmCaption)
+                    .foregroundStyle(HM.Colors.textPrimary)
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                }
+                .font(.hmCaption.weight(.semibold))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.warningSoft))
         }
     }
 
     private func row(_ occurrence: PlanOccurrence) -> some View {
         let item = occurrence.item
         let enabled = store.canComplete(occurrence.day)
-        return TaskRow(
-            title: item.title,
-            detail: PlanPresenter.detail(item),
-            sourceLabel: PlanPresenter.sourceLabel(item),
-            time: HealthFormat.clockTime(item.time.hhmm, locale: .current),
-            completed: occurrence.completed
-        ) { Task { await store.toggle(occurrence) } }
-        .opacity(enabled ? 1 : 0.55)
+        return HStack(spacing: 4) {
+            TaskRow(
+                title: item.title,
+                detail: PlanPresenter.detail(item),
+                sourceLabel: PlanPresenter.sourceLabel(item),
+                time: HealthFormat.clockTime(item.time.hhmm, locale: .current),
+                completed: occurrence.completed
+            ) { Task { await store.toggle(occurrence) } }
+            .opacity(enabled ? 1 : 0.55)
+            NavigationLink(value: item.id) {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(HM.Colors.textMuted)
+                    .frame(width: 32, height: 44)
+            }
+            .accessibilityLabel("\(item.title) details")
+        }
         .contextMenu {
             Button { editor = EditorTarget(item: item, kind: item.kind) } label: { Label("Edit", systemImage: "pencil") }
             Button(role: .destructive) { pendingDelete = item } label: { Label("Delete", systemImage: "trash") }
@@ -200,5 +233,27 @@ struct PlanView: View {
                     store.actionError = nil
                 }
         }
+    }
+}
+
+/// A compact card that opens another plan view.
+private struct LinkTile: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let tone: Tone
+
+    var body: some View {
+        HStack(spacing: 10) {
+            IconBadge(systemName: systemImage, tone: tone, size: .small, filled: true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.hmBodyEmphasis).foregroundStyle(HM.Colors.textPrimary)
+                Text(subtitle).font(.hmMicro).foregroundStyle(HM.Colors.textSecondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hmCard()
     }
 }

@@ -65,7 +65,7 @@ struct MainTabView: View {
                 .tabItem { Label(AppTab.health.title, systemImage: AppTab.health.systemImage) }
                 .tag(AppTab.health)
 
-            PlanView(store: planStore)
+            PlanView(store: planStore, session: session)
                 .tabItem { Label(AppTab.plans.title, systemImage: AppTab.plans.systemImage) }
                 .tag(AppTab.plans)
 

@@ -483,6 +483,59 @@ test.describe("timeline, plan and profile", () => {
     await expect(page.locator("form").getByRole("alert")).toContainText("exactly as written");
   });
 
+  test.describe("plan views", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("all tasks shows today, what's coming up and what wasn't done", async ({ page }) => {
+      await signInFresh(page);
+      await page.goto("/plans", { waitUntil: "networkidle" });
+      await page.getByRole("navigation", { name: "Plan views" }).getByRole("link", { name: "All tasks" }).click();
+      await expect(page).toHaveURL(/\/plans\/tasks$/);
+      for (const section of ["Today", "Not done this week", "Coming up"]) await expect(page.getByRole("region", { name: section })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Coming up" }).getByRole("link", { name: /Morning medication/ }).first()).toBeVisible();
+      await expectCurrentPageAccessible(page);
+    });
+
+    test("medications joins the profile and the plan, and a profile medication can get a reminder", async ({ page }) => {
+      await signInFresh(page);
+      const name = `Profile med ${unique()}`;
+      const instruction = "Two drops, as written on the box";
+      await page.goto("/profile", { waitUntil: "networkidle" });
+      const form = page.locator("form", { has: page.getByRole("button", { name: "Add medication" }) });
+      await form.getByLabel("Medication name").fill(name);
+      await form.getByLabel("Instructions, exactly as written").fill(instruction);
+      await form.getByRole("button", { name: "Add medication" }).click();
+      await expect(page.getByText(name)).toBeVisible();
+
+      await page.goto("/plans/medications", { waitUntil: "networkidle" });
+      const morning = page.getByRole("article", { name: "Morning medication" });
+      await expect(morning).toContainText("Also in your profile");
+      await expect(morning).toContainText("As prescribed by your clinician");
+      await expect(morning).toContainText(/Taken on \d+ of \d+ scheduled days this week/);
+      const mine = page.getByRole("article", { name });
+      await expect(mine).toContainText(instruction);
+      await expect(mine).toContainText("not in your plan");
+      await expectCurrentPageAccessible(page);
+      await mine.getByRole("link", { name: "Add a reminder" }).click();
+      await expect(page).toHaveURL(/\/plans\?add=profile-/);
+      await expect(page.getByLabel("Medication name")).toHaveValue(name);
+      await expect(page.getByLabel("Instructions, exactly as written")).toHaveValue(instruction);
+      await page.getByRole("button", { name: "Add to plan" }).click();
+      await expect(page.getByText("Added to your plan.")).toBeVisible();
+      await page.goto("/plans/medications", { waitUntil: "networkidle" });
+      await expect(page.getByRole("article", { name })).toContainText("Reminder on");
+    });
+
+    test("plan pages show the error state", async ({ page, context }) => {
+      await signInFresh(page);
+      await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "error" })), url: page.url() }]);
+      for (const path of ["/plans", "/plans/tasks", "/plans/medications"]) {
+        await page.goto(path);
+        await expect(page.getByRole("heading", { name: "Your plan couldn't load" })).toBeVisible();
+      }
+    });
+  });
+
   test("profile shows memory with its source and lets the person forget it", async ({ page }) => {
     const fact = `Prefers evening reminders ${unique()}`;
     await page.goto("/profile", { waitUntil: "networkidle" });
@@ -707,7 +760,7 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/plans/tasks", "/plans/medications", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
   });

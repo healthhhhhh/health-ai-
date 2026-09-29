@@ -129,6 +129,23 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5), "The new task appears in the plan")
     }
 
+    /// Plan: Medications shows the instruction word for word, and an item opens its detail with its history.
+    func testPlanMedicationsAndItemDetail() {
+        let app = launch(["-hmInitialTab", "plans"])
+        let medications = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Plan and profile'")).firstMatch
+        XCTAssertTrue(medications.waitForExistence(timeout: 8), "plan: \(screen(app))")
+        medications.tap()
+        XCTAssertTrue(app.navigationBars["Medications"].waitForExistence(timeout: 5), "medications: \(screen(app))")
+        XCTAssertTrue(app.staticTexts["Instructions, exactly as entered"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["As prescribed · after breakfast"].exists, "verbatim: \(screen(app))")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let details = app.buttons["Morning medication details"]
+        XCTAssertTrue(details.waitForExistence(timeout: 5), "row: \(screen(app))")
+        details.tap()
+        XCTAssertTrue(app.staticTexts["Last 7 days"].waitForExistence(timeout: 5), "detail: \(screen(app))")
+        XCTAssertTrue(app.buttons["Remove"].exists)
+    }
+
     /// Emergency guidance must appear even without an account or network.
     func testEmergencyGuidanceWhenSignedOut() {
         let app = launch(["-hmInitialTab", "chat"])

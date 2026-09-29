@@ -23,8 +23,37 @@ real assessment.
 | 6 · Timeline | ✅ Done | See below |
 | 7 · Medical reports | ✅ Done | See below |
 | 8 · Image analysis | ✅ Done | See below |
-| 9 · Plan, tasks, medications | ⏳ Next | |
-| 10–12 | ⬜ Not started | |
+| 9 · Plan, tasks, medications | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
+| 10 · Care | ⏳ Next | |
+| 11–12 | ⬜ Not started | |
+
+### Step 9: what was built
+
+- **Plan views** on web (`/plans`, `/plans/tasks`, `/plans/medications`, with tabs) and iOS ("All tasks" and "Medications" cards at the top of My Plan).
+- **All tasks:**
+  - Today, split into "Time has passed", "Later today" and "Done", with an "Everything for today is done" state.
+  - "Not done this week", with a reminder that items can still be ticked off on their day.
+  - "Coming up", by day for the next 6 days.
+  - An empty-plan state.
+- **Medications, unified:** plan medications (with reminders) and profile medications, matched by name.
+  - Each shows its source, its instructions exactly as entered, time and repeat, reminder on/off, and "Taken on X of Y scheduled days this week".
+  - Instructions are never merged or rewritten: the plan's wording is shown, or the profile's when there's no plan item.
+  - A profile medication with no plan item offers "Add a reminder". This opens the add form with its name and instructions copied exactly (web `?add=profile-<id>`; iOS prefilled editor).
+  - The never-change-a-dose disclaimer is on every medication screen.
+- **Item detail:** iOS gains `PlanItemDetailView`, reached with the chevron on each row, matching the web detail:
+  - kind, source, the verbatim instruction card, time, repeat, reminder and notes
+  - a 7-day history with "x of y done"
+  - Mark as taken/done today (or Undo), Edit, and Remove with a confirmation that it doesn't change a prescription
+- **Reminder states:** when notifications are off, iOS shows a warning with Open Settings, on My Plan and on the item. The web says reminders are sent by the iPhone app.
+- **States:** plan pages show error/offline states with Try again (web). iOS Medications says when profile medications couldn't load and still shows the plan.
+- **Shared logic:** `lib/plan.ts` (`taskOverview`, `adherence`, `unifiedMedications`, `timeIn`) and Core `PlanOverview.swift` (`PlanSchedule.overview/history/adherence`, `PlanPresenter.describeRepeat`, `MedicationList.unify`), tested on both platforms.
+- **Sample data:** unchanged. The sample-data safety test only allows the generic sample medications, so the e2e adds a medication through the profile to exercise "Add a reminder".
+- **Verification:**
+  - web unit 94/94 and e2e 158/158 (new: all tasks + axe, profile → medications → Add a reminder with the verbatim prefill, error states)
+  - API 89/89, unchanged
+  - iOS core 113/113
+  - new iOS UI test: Medications verbatim instruction → item detail
+  - **iOS app build and UI tests could not run:** GitHub Actions stopped starting jobs ("recent account payments have failed or your spending limit needs to be increased"). They need a CI run once billing is fixed.
 
 ### Step 8: what was built
 

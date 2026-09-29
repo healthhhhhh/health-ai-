@@ -1,6 +1,6 @@
 import type { PlanItemRecord } from "@healthmate/shared-types";
 import { describe, expect, it } from "vitest";
-import { describeRepeat, itemHistory, occurs, tasksForDay, weekday, withCompletion } from "./plan";
+import { adherence, describeRepeat, itemHistory, occurs, taskOverview, tasksForDay, unifiedMedications, weekday, withCompletion } from "./plan";
 
 const item = (overrides: Partial<PlanItemRecord> = {}): PlanItemRecord => ({
   id: "a",
@@ -82,5 +82,53 @@ describe("plan item detail helpers", () => {
       { day: "2026-09-29", status: "due" },
     ]);
     expect(itemHistory({ completions: [] }, item, "2026-09-29", 2)[0]).toEqual({ day: "2026-09-28", status: "missed" });
+  });
+});
+
+describe("tasks overview, adherence and medications", () => {
+  const plan = {
+    items: [
+      item({ id: "walk", title: "Walk", time: "19:00" }),
+      item({ id: "med", title: "Example medicine", kind: "medication", time: "08:00", instruction: "As written on the label", notes: null }),
+      item({ id: "call", title: "Call clinic", kind: "task", time: "10:00", repeat: { type: "once", day: "2026-09-12" } }),
+    ],
+    completions: [
+      { itemId: "med", day: "2026-09-10", completedAt: "2026-09-10T08:01:00Z" },
+      { itemId: "med", day: "2026-09-09", completedAt: "2026-09-09T08:01:00Z" },
+      { itemId: "walk", day: "2026-09-09", completedAt: "2026-09-09T19:01:00Z" },
+    ],
+  };
+
+  it("sorts today into due earlier, later and done, with upcoming days and what wasn't done", () => {
+    const o = taskOverview(plan, "2026-09-10", "12:00");
+    expect(o.dueEarlier).toEqual([]);
+    expect(o.doneToday.map((t) => t.id)).toEqual(["med"]);
+    expect(o.laterToday.map((t) => t.id)).toEqual(["walk"]);
+    expect(o.upcoming[0]!.day).toBe("2026-09-11");
+    expect(o.upcoming.find((d) => d.day === "2026-09-12")!.tasks.map((t) => t.id)).toEqual(["med", "call", "walk"]);
+    expect(o.notDone.filter((n) => n.day === "2026-09-09")).toEqual([]);
+    expect(o.notDone.find((n) => n.day === "2026-09-08")!.task.id).toBe("med");
+    expect(taskOverview(plan, "2026-09-10", "20:00").dueEarlier.map((t) => t.id)).toEqual(["walk"]);
+  });
+
+  it("counts adherence over scheduled days only, not today while it's due", () => {
+    const med = plan.items[1]!;
+    expect(adherence(plan, med, "2026-09-10")).toMatchObject({ done: 2, scheduled: 7 });
+    const walk = plan.items[0]!;
+    expect(adherence(plan, walk, "2026-09-10")).toMatchObject({ done: 1, scheduled: 6 });
+  });
+
+  it("joins profile and plan medications by name without rewriting either instruction", () => {
+    const list = unifiedMedications(plan, [
+      { id: "p1", name: "example MEDICINE ", instruction: "Profile wording", source: "user_reported", active: true },
+      { id: "p2", name: "Other medicine", instruction: "Its own wording", source: "clinician_provided", active: true },
+      { id: "p3", name: "Stopped", instruction: "x", source: "user_reported", active: false },
+    ]);
+    expect(list.map((m) => [m.key, m.instruction])).toEqual([
+      ["med", "As written on the label"],
+      ["profile-p2", "Its own wording"],
+    ]);
+    expect(list[0]!.profile?.id).toBe("p1");
+    expect(list[1]!.planItem).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import type { PlanCompletionRecord, PlanItemRecord, PlanRecord, PlanTask } from "@healthmate/shared-types";
+import type { MedicationRecord, PlanCompletionRecord, PlanItemRecord, PlanRecord, PlanTask } from "@healthmate/shared-types";
 
 /** Calendar weekday for a "YYYY-MM-DD" day: 1 = Sunday … 7 = Saturday (same as iOS). */
 export function weekday(day: string): number {
@@ -84,4 +84,88 @@ export function itemHistory(plan: Pick<PlanRecord, "completions">, item: PlanIte
     const status: HistoryStatus = !occurs(item, day) ? "not_scheduled" : done.has(day) ? "done" : day === today ? "due" : "missed";
     return { day, status };
   });
+}
+
+/** "HH:mm" for a date in a time zone. */
+export function timeIn(date: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+  } catch {
+    return date.toISOString().slice(11, 16);
+  }
+}
+
+function shift(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+export interface TaskOverview {
+  /** Today, time has passed and not done yet. */
+  dueEarlier: PlanTask[];
+  laterToday: PlanTask[];
+  doneToday: PlanTask[];
+  /** The next days, each with its tasks (days with nothing are left out). */
+  upcoming: { day: string; tasks: PlanTask[] }[];
+  /** Earlier days in the last week that weren't done, newest first. */
+  notDone: { day: string; task: PlanTask }[];
+}
+
+/** Everything in the plan across days. Mirrors PlanSchedule.overview (Swift). */
+export function taskOverview(plan: Pick<PlanRecord, "items" | "completions">, today: string, now: string, days = 7): TaskOverview {
+  const todays = tasksForDay(plan, today);
+  const open = todays.filter((t) => !t.completed);
+  return {
+    dueEarlier: open.filter((t) => t.scheduledTime <= now),
+    laterToday: open.filter((t) => t.scheduledTime > now),
+    doneToday: todays.filter((t) => t.completed),
+    upcoming: Array.from({ length: days - 1 }, (_, i) => shift(today, i + 1))
+      .map((day) => ({ day, tasks: tasksForDay(plan, day) }))
+      .filter((d) => d.tasks.length > 0),
+    notDone: Array.from({ length: days - 1 }, (_, i) => shift(today, -(i + 1))).flatMap((day) =>
+      tasksForDay(plan, day)
+        .filter((t) => !t.completed)
+        .map((task) => ({ day, task })),
+    ),
+  };
+}
+
+/** Done / scheduled over the last `days` days, not counting today if it's still due. */
+export function adherence(plan: Pick<PlanRecord, "completions">, item: PlanItemRecord, today: string, days = 7) {
+  const history = itemHistory(plan, item, today, days);
+  const counted = history.filter((h) => h.status === "done" || h.status === "missed");
+  return { history, done: counted.filter((h) => h.status === "done").length, scheduled: counted.length };
+}
+
+export interface UnifiedMedication {
+  /** A stable key: the plan item's id, or "profile-<id>" for a profile-only medication. */
+  key: string;
+  name: string;
+  /** Exactly as entered: the plan's instruction, else the profile's. */
+  instruction: string | null;
+  planItem: PlanItemRecord | null;
+  profile: MedicationRecord | null;
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * One list of medications from the plan (with reminders) and the health profile,
+ * matched by name. Instructions are never merged or rewritten — each is shown as entered.
+ */
+export function unifiedMedications(plan: Pick<PlanRecord, "items">, profileMedications: MedicationRecord[]): UnifiedMedication[] {
+  const active = profileMedications.filter((m) => m.active);
+  const fromPlan = plan.items
+    .filter((i) => i.kind === "medication")
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map((item) => {
+      const profile = active.find((m) => sameName(m.name, item.title)) ?? null;
+      return { key: item.id, name: item.title, instruction: item.instruction ?? profile?.instruction ?? null, planItem: item, profile };
+    });
+  const profileOnly = active
+    .filter((m) => !fromPlan.some((u) => u.profile?.id === m.id))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((m) => ({ key: `profile-${m.id}`, name: m.name, instruction: m.instruction, planItem: null, profile: m }));
+  return [...fromPlan, ...profileOnly];
 }

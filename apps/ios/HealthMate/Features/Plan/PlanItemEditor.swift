@@ -13,11 +13,19 @@ struct PlanItemEditor: View {
     @State private var confirmDelete = false
     @State private var attemptedSave = false
 
-    init(store: PlanStore, existing: PlanItem?, initialKind: PlanItemKind) {
+    init(store: PlanStore, existing: PlanItem?, initialKind: PlanItemKind, fromProfile: MedicationRecord? = nil) {
         self.store = store
         self.existing = existing
         let today = store.today
-        _draft = State(initialValue: existing.map { PlanItemDraft(editing: $0, today: today) } ?? PlanItemDraft(kind: initialKind, today: today))
+        var draft = existing.map { PlanItemDraft(editing: $0, today: today) } ?? PlanItemDraft(kind: initialKind, today: today)
+        // A reminder for a profile medication starts from its name and instructions exactly as entered.
+        if existing == nil, let medication = fromProfile {
+            draft.kind = .medication
+            draft.title = medication.name
+            draft.instruction = medication.instruction
+            draft.instructionSource = medication.source == .clinicianProvided ? .clinician : .userOrLabel
+        }
+        _draft = State(initialValue: draft)
     }
 
     private var isMedication: Bool { draft.kind == .medication }
