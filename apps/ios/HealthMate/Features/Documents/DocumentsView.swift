@@ -110,8 +110,13 @@ struct DocumentsView: View {
         .refreshable { await model.load() }
         .task(id: hasConsent) {
             guard session.isSignedIn && hasConsent else { return }
-            if startWithPhotoCheck && model.state == .idle { showPhotoCheck = true }
+            let openPhotoCheck = startWithPhotoCheck && model.state == .idle
             await model.load()
+            if openPhotoCheck {
+                // A sheet can't be presented while this screen's own sheet is still animating in.
+                try? await Task.sleep(for: .milliseconds(700))
+                showPhotoCheck = true
+            }
         }
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.pdf, .jpeg, .png, .heic]) { result in
             guard case .success(let url) = result else { return }

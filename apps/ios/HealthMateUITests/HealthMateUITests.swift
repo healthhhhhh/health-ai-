@@ -239,7 +239,7 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(attach.waitForExistence(timeout: 10), "chat: \(screen(app))")
         attach.tap()
         app.buttons["Check a photo"].tap()
-        XCTAssertTrue(app.navigationBars["Photo check"].waitForExistence(timeout: 8), "photo check: \(screen(app))")
+        XCTAssertTrue(app.navigationBars["Photo check"].waitForExistence(timeout: 12), "photo check: \(screen(app))")
         XCTAssertTrue(app.staticTexts["What does the photo show?"].exists)
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'call your local emergency number now'")).firstMatch.exists, "advice: \(screen(app))")
         let next = app.buttons["Continue"]
