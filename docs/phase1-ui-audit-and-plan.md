@@ -16,9 +16,42 @@ real assessment.
 |---|---|---|
 | 0 · Preview mode foundation | ✅ Done | See below |
 | 1 · Design system components | ✅ Done | See below |
-| 2 · Auth & onboarding | ✅ Done (iOS app build confirmed by CI) | See below |
-| 3 · Home & notifications | ⏳ Next | |
-| 4–12 | ⬜ Not started | |
+| 2 · Auth & onboarding | ✅ Done | See below |
+| 3 · Home & notifications | ✅ Done | See below |
+| 4 · AI Chat | ⏳ Next | |
+| 5–12 | ⬜ Not started | |
+
+### Step 3: what was built
+
+Every item on Home now opens something; the bell opens a notification centre.
+- **Notification centre** (web `/notifications`, iOS from the Home bell):
+  - Today and Earlier groups.
+  - Filters for unread and for each category.
+  - Opening a notification marks it read and goes to what it's about.
+  - Mark all as read, mark read/unread per item, and delete (web: options menu; iOS: swipe or long-press).
+  - The unread count is shown on the bell.
+  - Links are limited to screens the app has (`lib/links.ts` on web, `AppRoute` on iOS; the rules match and are tested on both).
+- **Home:**
+  - Metrics open their detail.
+  - Activity opens its report, conversation, appointment, metric or the timeline.
+  - Today's tasks open their detail (web).
+  - Appointments come from Care and open their detail.
+  - A section that fails to load shows its own retry, not an empty state (web).
+  - A welcome note appears after onboarding.
+- **New detail screens:**
+  - Metric detail (web `/health/[kind]`, 7/30/60 days; iOS reuses the Health metric detail).
+  - Appointment detail, both platforms: add to calendar (web), directions, call, prepare with the assistant, and mark as cancelled with a confirmation that it doesn't contact the clinic.
+  - Plan item detail (web `/plans/[id]`): instructions exactly as entered, schedule, last 7 days, mark done, and remove with confirmation. Removing a medication says it doesn't change the prescription.
+  - Account (web `/settings/account`): sign-in details and change password.
+- **Found and fixed:**
+  - The web plan list removed items with one tap and no confirmation; removing now happens on the detail page and asks first.
+  - Unsigned simulator builds lost new sign-ins, because the Keychain refused the write. The session is now kept in memory for that launch.
+  - The welcome sign-in sheet could open in the previous mode; it now uses `sheet(item:)`.
+- **Verification:**
+  - web unit 72/72
+  - web e2e 92/92, including Home destinations, the notification centre, the account page, and axe on the new pages
+  - iOS core 93/93
+  - new iOS UI tests: bell → notification → appointment, and sign-up → setup → Home
 
 ### Step 2: what was built
 
