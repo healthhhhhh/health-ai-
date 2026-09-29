@@ -23,8 +23,10 @@ async function expectCurrentPageAccessible(page: Page) {
 async function expectNoA11yViolations(page: Page, path: string) {
   // Axe measures colours at a single instant; freeze entrance animations so it sees final styles.
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(path);
-  await page.waitForLoadState("networkidle");
+  // Wait for the rendered page, not "network idle": Next.js link prefetches can stay open indefinitely.
+  await page.goto(path, { waitUntil: "load" });
+  await expect(page.locator("main").first()).toBeVisible();
+  await expect(page.locator("h1").first()).toBeVisible();
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   expect(results.violations.map((v) => `${path} ${v.id}: ${v.nodes.length}`)).toEqual([]);
 }
