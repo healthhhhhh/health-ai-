@@ -21,6 +21,21 @@ export function niceMax(value: number): number {
 }
 
 /**
+ * Axis range for a chart. Columns (daily totals) start at zero; lines
+ * (averages like heart rate or weight) zoom to the data with a little room,
+ * so a 72.4 → 72.1 kg change is visible instead of a flat line.
+ */
+export function chartDomain(values: number[], kind: "bar" | "line"): [number, number] {
+  if (values.length === 0) return [0, 1];
+  const hi = Math.max(...values);
+  if (kind === "bar") return [0, niceMax(hi)];
+  const lo = Math.min(...values);
+  const room = Math.max((hi - lo) * 0.25, Math.abs(hi) * 0.02, 1);
+  const step = niceMax((hi - lo + 2 * room) / 4);
+  return [Math.max(0, Math.floor((lo - room) / step) * step), Math.ceil((hi + room) / step) * step];
+}
+
+/**
  * One metric over time: columns for daily totals, a 2px line for averages.
  * Single series (the title names it), recessive axis, hover/focus tooltip per
  * day, and the same values in a table for screen readers.
@@ -48,18 +63,20 @@ export function TrendChart({
   const pad = { top: 16, right: 12, bottom: 24, left: 44 };
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
-  const max = niceMax(Math.max(...points.map((p) => p.value), baseline ?? 0));
+  const [min, max] = chartDomain([...points.map((p) => p.value), ...(baseline != null && baseline > 0 ? [baseline] : [])], kind);
   const band = innerW / Math.max(points.length, 1);
   const barW = Math.min(24, band - 2);
   const x = (i: number) => pad.left + band * i + band / 2;
-  const y = (v: number) => pad.top + innerH - (v / max) * innerH;
+  const y = (v: number) => pad.top + innerH - ((v - min) / (max - min || 1)) * innerH;
+  // Dots help on a week or a month; beyond that the line alone reads better.
+  const showDots = points.length <= 31;
   const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   const color = toneClasses[tone].fg;
 
   return (
     <figure className="relative">
       <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="group" aria-label={`${label} chart`} aria-describedby={tableId}>
-        {[0, max / 2, max].map((t) => (
+        {[min, (min + max) / 2, max].map((t) => (
           <g key={t}>
             <line x1={pad.left} x2={W - pad.right} y1={y(t)} y2={y(t)} className="stroke-separator" strokeWidth={1} />
             <text x={pad.left - 8} y={y(t)} dy="0.32em" textAnchor="end" className="fill-text-muted text-[11px]">
@@ -79,7 +96,7 @@ export function TrendChart({
           {kind === "bar"
             ? points.map((p, i) => {
                 const top = y(p.value);
-                const h = pad.top + innerH - top;
+                const h = Math.max(pad.top + innerH - top, 1);
                 const r = Math.min(4, h, barW / 2);
                 const x0 = x(i) - barW / 2;
                 // Rounded data end, square at the baseline.
@@ -96,9 +113,9 @@ export function TrendChart({
                   strokeLinejoin="round"
                   strokeLinecap="round"
                 />
-                {points.map((p, i) => (
-                  <circle key={p.date} cx={x(i)} cy={y(p.value)} r={active === i ? 6 : 4} className="fill-current stroke-card" strokeWidth={2} />
-                ))}
+                {points.map((p, i) =>
+                  showDots || active === i ? <circle key={p.date} cx={x(i)} cy={y(p.value)} r={active === i ? 6 : 4} className="fill-current stroke-card" strokeWidth={2} /> : null,
+                )}
               </>
             )}
         </g>

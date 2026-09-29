@@ -56,3 +56,45 @@ describe("sample account", () => {
     expect(JSON.stringify(buildSampleAccount(now, "Asia/Kolkata"))).toBe(JSON.stringify(account));
   });
 });
+
+describe("sample health data", () => {
+  const d = account.measurements.daily;
+  const byDate = (kind: keyof typeof d) => new Map(d[kind]!.map((p) => [p.date, p.value]));
+  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  // Full days only (today's steps and energy are partial).
+  const fullDays = d.steps!.slice(0, -1).map((p) => p.date);
+
+  it("covers 180 days, one person, in believable ranges", () => {
+    expect(d.steps).toHaveLength(180);
+    for (const p of d.sleep!) expect(p.value).toBeGreaterThanOrEqual(300), expect(p.value).toBeLessThanOrEqual(540);
+    for (const date of fullDays) expect(byDate("steps").get(date)!).toBeGreaterThanOrEqual(1800), expect(byDate("steps").get(date)!).toBeLessThanOrEqual(16000);
+    for (const p of d.resting_heart_rate!) expect(p.value).toBeGreaterThanOrEqual(56), expect(p.value).toBeLessThanOrEqual(72);
+    for (const p of d.weight!) expect(p.value).toBeGreaterThan(71), expect(p.value).toBeLessThan(75);
+  });
+
+  it("links the metrics: activity drives energy and heart rate; average heart rate sits above resting", () => {
+    const steps = byDate("steps");
+    const energy = byDate("active_energy");
+    const hr = byDate("heart_rate");
+    const rhr = byDate("resting_heart_rate");
+    const sorted = [...fullDays].sort((a, b) => steps.get(a)! - steps.get(b)!);
+    const low = sorted.slice(0, 20);
+    const high = sorted.slice(-20);
+    expect(avg(high.map((x) => energy.get(x)!))).toBeGreaterThan(avg(low.map((x) => energy.get(x)!)) + 100);
+    expect(avg(high.map((x) => hr.get(x)!))).toBeGreaterThan(avg(low.map((x) => hr.get(x)!)));
+    for (const date of fullDays) expect(hr.get(date)!).toBeGreaterThan(rhr.get(date)!);
+  });
+
+  it("changes gradually: fitness lowers resting heart rate and weight drifts down, with no wild day-to-day jumps", () => {
+    const first = (kind: keyof typeof d) => avg(d[kind]!.slice(0, 21).map((p) => p.value));
+    const last = (kind: keyof typeof d) => avg(d[kind]!.slice(-21).map((p) => p.value));
+    expect(last("resting_heart_rate")).toBeLessThan(first("resting_heart_rate"));
+    expect(last("weight")).toBeLessThan(first("weight"));
+    const weights = d.weight!.map((p) => p.value);
+    for (let i = 1; i < weights.length; i++) expect(Math.abs(weights[i]! - weights[i - 1]!)).toBeLessThanOrEqual(0.8);
+  });
+
+  it("is the same on every run", () => {
+    expect(buildSampleAccount(now, "Asia/Kolkata").measurements).toEqual(account.measurements);
+  });
+});

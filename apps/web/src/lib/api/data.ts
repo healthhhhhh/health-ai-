@@ -2,6 +2,7 @@ import type {
   AccountSummary,
   ApiMeta,
   AppointmentRecord,
+  HealthKitConnection,
   HealthProfile,
   LatestMeasurement,
   MeasurementKind,
@@ -90,3 +91,35 @@ export async function updatePlan(change: (plan: PlanRecord) => Pick<PlanRecord, 
   }
   throw new ApiError("Your plan is being changed somewhere else. Please try again.", 409, "plan_conflict");
 }
+
+/**
+ * Daily trends for every Health metric over `days` (plus the period before, for
+ * comparison). `failed` is the first error when nothing could be loaded, so the
+ * page can show the offline or error state instead of "no data".
+ */
+export const getHealthTrends = cache(async (days: number) => {
+  const kinds: MeasurementKind[] = ["steps", "heart_rate", "resting_heart_rate", "sleep", "active_energy", "weight"];
+  let failure: ApiError | null = null;
+  const results = await Promise.all(
+    kinds.map((kind) =>
+      api<TrendResponse>(`health-data/trends?kind=${kind}&days=${days}`).catch((error) => {
+        if (error instanceof ApiError && error.status !== 401) {
+          failure ??= error;
+          return null;
+        }
+        throw error;
+      }),
+    ),
+  );
+  const trends = Object.fromEntries(kinds.map((kind, i) => [kind, results[i]])) as Record<MeasurementKind, TrendResponse | null>;
+  const failed: ApiError | null = results.every((r) => r === null) ? (failure as ApiError | null) : null;
+  return { trends, failed };
+});
+
+/** Apple Health connection (set up in the iPhone app); null when the server doesn't track it. */
+export const getHealthConnection = cache(() =>
+  api<HealthKitConnection>("healthkit/connection").catch((error) => {
+    if (error instanceof ApiError && error.status !== 401) return null;
+    throw error;
+  }),
+);

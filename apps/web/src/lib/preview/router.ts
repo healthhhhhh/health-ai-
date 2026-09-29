@@ -1,5 +1,5 @@
 import { escalationMessage, MEDICATION_CHANGE_NOTICE, triage } from "@healthmate/safety";
-import { SAMPLE_NOTICE, type SampleAccount } from "@healthmate/sample-data";
+import { localDay, SAMPLE_NOTICE, type SampleAccount } from "@healthmate/sample-data";
 import type {
   AccountSummary,
   AppointmentRecord,
@@ -431,7 +431,19 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
     if (b === "measurements" && method === "POST") {
       const list = Array.isArray(input.measurements) ? (input.measurements as { kind: MeasurementKind; value: number; recordedAt: string; source: string }[]) : [];
       for (const m of list) {
+        if (typeof m.value !== "number" || !Number.isFinite(m.value) || typeof m.recordedAt !== "string") continue;
         account.measurements.latest = [...account.measurements.latest.filter((x) => x.kind !== m.kind), { kind: m.kind, value: m.value, unit: account.measurements.latest.find((x) => x.kind === m.kind)?.unit ?? "", recordedAt: m.recordedAt, source: m.source }];
+        // A reading becomes part of that day's history (replacing the day's value, like a daily summary).
+        const date = localDay(new Date(m.recordedAt), account.profile.profile.timeZone);
+        const series = (account.measurements.daily[m.kind] ??= []);
+        const point = { date, value: m.value, min: m.value, max: m.value, count: 1 };
+        const index = series.findIndex((p) => p.date === date);
+        if (index >= 0) series[index] = point;
+        else {
+          series.push(point);
+          series.sort((x, y) => x.date.localeCompare(y.date));
+        }
+        account.timeline.unshift({ id: newId(), eventType: "measurement", title: `${measurementTitle(m.kind)} added by you`, occurredAt: m.recordedAt, sourceType: "user_entered", sourceId: null, payload: { kind: m.kind } });
       }
       return json({ inserted: list.length }, 201);
     }
@@ -620,6 +632,11 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
   return null;
 }
 
+function measurementTitle(kind: MeasurementKind) {
+  const titles: Partial<Record<MeasurementKind, string>> = { weight: "Weight", resting_heart_rate: "Resting heart rate", sleep: "Sleep", steps: "Steps", heart_rate: "Heart rate", active_energy: "Active energy" };
+  return titles[kind] ?? "Reading";
+}
+
 function pick(input: Record<string, unknown>, keys: string[]) {
   return Object.fromEntries(keys.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]));
 }
@@ -631,7 +648,7 @@ function disconnectHealthKit(account: SampleAccount) {
 
 function trend(view: SampleAccount, url: URL): TrendResponse {
   const kind = (url.searchParams.get("kind") ?? "steps") as MeasurementKind;
-  const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 7, 1), 60);
+  const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 7, 1), 90);
   const series = view.measurements.daily[kind] ?? [];
   const points = series.slice(-days);
   const previous = series.slice(-days * 2, -days);

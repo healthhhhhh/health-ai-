@@ -1,6 +1,6 @@
 import type { LatestMeasurement, MeasurementKind, TrendResponse } from "@healthmate/shared-types";
 import type { Metadata } from "next";
-import { ArrowLeft, HeartPulse, MessageCircle } from "lucide-react";
+import { ArrowLeft, ChevronRight, HeartPulse, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ButtonLink } from "@/components/ui/button";
@@ -14,9 +14,11 @@ import { getMeta } from "@/lib/api/data";
 import { api, ApiError } from "@/lib/api/server";
 import { cn } from "@/lib/cn";
 import { formatRelative } from "@/lib/format";
+import { dayLabel } from "@/lib/health-history";
 import { trendOf } from "@/lib/home";
+import { READING_TYPES } from "@/features/health/reading-types";
 
-const RANGES = [7, 30, 60] as const;
+const RANGES = [7, 30, 90] as const;
 
 export async function generateMetadata({ params }: { params: Promise<{ kind: string }> }): Promise<Metadata> {
   const { kind } = await params;
@@ -113,6 +115,35 @@ export default async function MetricDetailPage({ params, searchParams }: { param
             </p>
           </Card>
         </>
+      )}
+
+      {!(trend instanceof ApiError) && trend.points.length > 0 && (
+        <Card as="section" aria-labelledby="days-heading">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 id="days-heading" className="text-card-title text-text-primary">
+              Day by day
+            </h2>
+            {READING_TYPES.some((t) => t.kind === def.kind) && (
+              <Link href={`/health/add?kind=${def.kind}`} className="text-caption font-semibold text-primary hover:underline">
+                Add a reading
+              </Link>
+            )}
+          </div>
+          <ul className="divide-y divide-separator">
+            {[...trend.points].reverse().map((p) => (
+              <li key={p.date}>
+                <Link href={`/health/history/${p.date}`} className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-card-muted">
+                  <span className="text-body text-text-primary">{dayLabel(p.date, trend.points.at(-1)!.date)}</span>
+                  <span className="flex items-center gap-2 text-body font-semibold text-text-primary tabular-nums">
+                    {formatMetric(def.kind, p.value)}
+                    {def.unit && <span className="text-caption font-medium text-text-secondary">{def.unit}</span>}
+                    <ChevronRight aria-hidden className="size-4 text-text-muted" />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
       <Card as="section" aria-labelledby="ask-heading" className="flex flex-wrap items-center justify-between gap-4">

@@ -457,10 +457,68 @@ test.describe("reports, health and settings", () => {
     await expect(page.getByText(/^Sample result in Preview mode/)).toBeVisible({ timeout: 20_000 });
   });
 
-  test("health dashboard shows the sample trends", async ({ page }) => {
-    await page.goto("/health");
-    await expect(page.getByRole("heading", { level: 1, name: "Health Dashboard" })).toBeVisible();
-    await expect(page.getByText("No synced health data yet")).toHaveCount(0);
+  test("health dashboard: today, connection, trends, ranges and daily history", async ({ page }) => {
+    await page.goto("/health", { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { level: 1, name: "Health" })).toBeVisible();
+    await expect(page.getByText("Sample health data in Preview mode — not real readings.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Apple Health connected/ })).toBeVisible();
+    const today = page.getByRole("region", { name: "Today" }).or(page.locator("section", { has: page.getByRole("heading", { name: "Today", exact: true }) }));
+    await expect(today.getByRole("link", { name: /^Sleep last night:/ })).toBeVisible();
+    await expect(today.getByRole("link", { name: /^Resting heart rate:/ })).toBeVisible();
+
+    await page.getByRole("link", { name: "90 days" }).click();
+    await expect(page).toHaveURL(/\/health\?days=90$/);
+    await expect(page.getByRole("heading", { name: "Last 90 days" })).toBeVisible();
+
+    await page.getByRole("link", { name: "See all days" }).click();
+    await expect(page).toHaveURL(/\/health\/history$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Daily health history" })).toBeVisible();
+    await page.getByRole("link", { name: /^Yesterday/ }).click();
+    await expect(page).toHaveURL(/\/health\/history\/\d{4}-\d{2}-\d{2}$/);
+    await expect(page.getByText("Resting heart rate", { exact: true })).toBeVisible();
+    await expect(page.getByText(/^Your usual /).first()).toBeVisible();
+    await page.getByRole("link", { name: "Previous day" }).click();
+    await expect(page.getByRole("link", { name: "Next day" })).toBeVisible();
+    await expectCurrentPageAccessible(page);
+  });
+
+  test("metric detail offers 90 days and a day-by-day list", async ({ page }) => {
+    await page.goto("/health/resting_heart_rate?days=90", { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { level: 1, name: "Resting heart rate" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Last 90 days" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Day by day" })).toBeVisible();
+    await page.getByRole("link", { name: /^Yesterday/ }).click();
+    await expect(page).toHaveURL(/\/health\/history\/\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test.describe("health states and readings", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("a reading you add is saved to that day's history", async ({ page }) => {
+      await signInFresh(page);
+      await page.goto("/health/add", { waitUntil: "networkidle" });
+      await page.getByText("Weight", { exact: true }).click();
+      await page.getByLabel("Weight (kg)").fill("500");
+      await page.getByRole("button", { name: "Save reading" }).click();
+      await expect(page.getByText(/Enter a value between/)).toBeVisible();
+      await page.getByLabel("Weight (kg)").fill("71.9");
+      await page.getByRole("button", { name: "Save reading" }).click();
+      await expect(page).toHaveURL(/\/health\/history\/\d{4}-\d{2}-\d{2}\?added=weight$/);
+      await expect(page.getByRole("link", { name: /Weight\s*71\.9\s*kg/ })).toBeVisible();
+    });
+
+    for (const [state, text] of [
+      ["empty", "No health data in the last 7 days"],
+      ["error", "Your health data couldn't load"],
+      ["permission", "Health data sync is off"],
+    ] as const) {
+      test(`shows the ${state} state`, async ({ page, context }) => {
+        await signInFresh(page);
+        await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state })), url: page.url() }]);
+        await page.goto("/health");
+        await expect(page.getByRole("heading", { name: text })).toBeVisible();
+      });
+    }
   });
 
   test("privacy switches, data download and care", async ({ page }) => {
@@ -481,7 +539,7 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/health/sleep", "/settings", "/care", "/design"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
   });

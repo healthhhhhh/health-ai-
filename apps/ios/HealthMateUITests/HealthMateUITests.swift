@@ -174,6 +174,23 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Try again"].waitForExistence(timeout: 5), "unavailable row: \(screen(app))")
     }
 
+    /// Health: today's snapshot, 90-day trends, and the daily history down to one day.
+    func testHealthDailyHistory() {
+        let app = launch(["-hmInitialTab", "health", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10), "health: \(screen(app))")
+        app.buttons["90 days"].tap()
+        let history = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Daily health history'")).firstMatch
+        for _ in 0..<4 where !history.isHittable { app.swipeUp() }
+        history.tap()
+        XCTAssertTrue(app.navigationBars["Daily history"].waitForExistence(timeout: 5), "history: \(screen(app))")
+        // Row 0 is the Preview notice and row 1 is today (in progress); row 2 is a full day.
+        let row = app.cells.element(boundBy: 2)
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "rows: \(screen(app))")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["Resting heart rate"].waitForExistence(timeout: 5), "day: \(screen(app))")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Your usual'")).firstMatch.exists, "usual: \(screen(app))")
+    }
+
     /// The paperclip opens Reports & photos from chat.
     func testAttachOpensReportsFromChat() {
         let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])

@@ -78,6 +78,8 @@ export interface SampleAccount {
 
 export const SAMPLE_NOTICE = "Sample response in Preview mode — not a real AI and not medical advice.";
 export const SAMPLE_EMAIL = "alex.morgan@example.com";
+/** Days of daily measurements in the sample account: the longest chart range (90 days) plus the 90 before it to compare with. */
+export const SAMPLE_HISTORY_DAYS = 180;
 
 /** Stable, valid UUIDs: group (1–15) + index. */
 export function sampleId(group: number, index: number): string {
@@ -143,30 +145,51 @@ export function buildSampleAccount(now: Date, timeZone = "Europe/London"): Sampl
   };
   const random = prng(20260115);
 
-  // ── Measurements: 60 days of realistic wellness data ──────────────────────
-  const series = (kind: MeasurementKind, base: number, spread: number, opts: { round?: number; trend?: number; weekendBoost?: number } = {}) => {
-    const points: DailyPoint[] = [];
-    for (let d = 59; d >= 0; d--) {
-      const date = dayString(d);
-      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-      const weekend = weekday === 0 || weekday === 6 ? (opts.weekendBoost ?? 0) : 0;
-      const drift = (opts.trend ?? 0) * (59 - d);
-      const raw = base + drift + weekend + (random() - 0.5) * 2 * spread;
-      const round = opts.round ?? 1;
-      const value = Math.round(raw / round) * round;
-      points.push({ date, value, min: Math.round((value - spread * 0.6) / round) * round, max: Math.round((value + spread * 0.6) / round) * round, count: kind === "weight" ? 1 : 24 });
-    }
-    return points;
-  };
-  const daily: SampleAccount["measurements"]["daily"] = {
-    steps: series("steps", 6800, 2400, { round: 1, trend: 28, weekendBoost: 1500 }),
-    heart_rate: series("heart_rate", 74, 5),
-    resting_heart_rate: series("resting_heart_rate", 62, 3, { trend: -0.03 }),
-    sleep: series("sleep", 415, 45, { trend: 0.4, weekendBoost: 35 }),
-    active_energy: series("active_energy", 430, 140, { trend: 1.5 }),
-    weight: series("weight", 71.8, 0.4, { round: 0.1, trend: -0.012 }),
-    water: series("water", 1600, 450, { round: 50 }),
-  };
+  // ── Measurements: 180 days of one believable person ────────────────────────
+  // Every metric comes from the same day: a routine (weekday/weekend), a
+  // walking habit that slowly improves, and the odd poor night or quiet day.
+  // More activity → more active energy and a higher average heart rate; better
+  // sleep and fitness → a lower resting heart rate; weight drifts down slowly.
+  const DAYS = SAMPLE_HISTORY_DAYS;
+  const noise = (spread: number) => (random() + random() + random() - 1.5) * (2 * spread) / 3; // gentle bell curve
+  const days = Array.from({ length: DAYS }, (_, i) => {
+    const d = DAYS - 1 - i; // days before today
+    const date = dayString(d);
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay(); // 0 = Sunday
+    const progress = i / (DAYS - 1); // 0 → 1 over the period
+    return { d, date, weekday, progress, quiet: random() < 0.08, poorNight: random() < 0.07 };
+  });
+  const daily: SampleAccount["measurements"]["daily"] = {};
+  const push = (kind: MeasurementKind, point: DailyPoint) => (daily[kind] ??= []).push(point);
+  let fitness = 0; // builds with sustained activity, lowers resting heart rate over weeks
+  for (const day of days) {
+    const saturday = day.weekday === 6;
+    const sunday = day.weekday === 0;
+    // Sleep (last night): ~7h on weekdays, a lie-in at weekends, short after a poor night.
+    const sleep = Math.round(418 + day.progress * 14 + (saturday || sunday ? 32 : 0) + (day.poorNight ? -85 : 0) + noise(22));
+    // Steps: commute + a walking habit that grows; Saturdays are active, quiet days are low.
+    const walk = 1200 + day.progress * 2100;
+    let steps = 5200 + walk + (saturday ? 2600 : sunday ? 900 : 0) + noise(900);
+    if (day.quiet) steps *= 0.45;
+    if (day.poorNight) steps *= 0.85;
+    steps = Math.max(1800, Math.round(steps));
+    const exerciseMinutes = Math.max(0, Math.round((steps - 4200) / 110 + noise(4)));
+    fitness = fitness * 0.94 + exerciseMinutes * 0.06;
+    const restingHr = Math.round(67.5 - fitness * 0.09 + (day.poorNight ? 2.5 : 0) + (sleep < 400 ? 1 : 0) + noise(1.4));
+    const heartRate = Math.round(restingHr + 9 + steps / 1400 + noise(1.5));
+    const activeEnergy = Math.round(95 + steps * 0.036 + exerciseMinutes * 1.8 + noise(18));
+    const weight = Math.round((73.6 - day.progress * 1.2 + noise(0.18)) * 10) / 10;
+    const water = Math.round((1500 + exerciseMinutes * 6 + noise(180)) / 50) * 50;
+
+    push("sleep", { date: day.date, value: sleep, min: sleep, max: sleep, count: 1 });
+    push("steps", { date: day.date, value: steps, min: steps, max: steps, count: 24 });
+    push("resting_heart_rate", { date: day.date, value: restingHr, min: restingHr - 1, max: restingHr + 1, count: 1 });
+    push("heart_rate", { date: day.date, value: heartRate, min: restingHr - 3, max: Math.round(heartRate + 38 + exerciseMinutes * 0.4), count: 24 });
+    push("active_energy", { date: day.date, value: activeEnergy, min: activeEnergy, max: activeEnergy, count: 24 });
+    push("water", { date: day.date, value: water, min: water, max: water, count: 6 });
+    // Weighed most mornings (not usually on Sundays).
+    if (!sunday || day.d === 0) push("weight", { date: day.date, value: weight, min: weight, max: weight, count: 1 });
+  }
   // Today is partial: steps and energy so far.
   const partial = (kind: MeasurementKind, fraction: number) => {
     const today = daily[kind]!.at(-1)!;

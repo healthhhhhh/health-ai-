@@ -696,7 +696,7 @@ public final class PreviewBackend: @unchecked Sendable {
 
     private func trend(_ view: JSONValue, query: [String: String]) -> JSONValue {
         let kind = query["kind"] ?? "steps"
-        let days = max(1, min(Int(query["days"] ?? "") ?? 7, 60))
+        let days = max(1, min(Int(query["days"] ?? "") ?? 7, 90))
         let series = view["measurements"]["daily"][kind].array
         let points = Array(series.suffix(days))
         let previous = Array(series.dropLast(days).suffix(days))

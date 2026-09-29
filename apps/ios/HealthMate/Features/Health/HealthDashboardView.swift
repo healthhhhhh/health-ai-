@@ -6,11 +6,14 @@ import SwiftUI
 /// plus the health timeline.
 struct HealthDashboardView: View {
     let session: SessionStore
+    let reader: any HealthDataReading
     @State private var model: HealthDashboardViewModel
     @State private var confirmDisconnect = false
+    @Environment(\.openURL) private var openURL
 
     init(session: SessionStore, reader: any HealthDataReading) {
         self.session = session
+        self.reader = reader
         _model = State(initialValue: HealthDashboardViewModel(reader: reader, api: session.api))
     }
 
@@ -20,12 +23,34 @@ struct HealthDashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: HM.Spacing.lg) {
+                    if session.isPreview && model.isConnected {
+                        Label("Sample health data in Preview mode — not real readings.", systemImage: "flask")
+                            .font(.hmCaption.weight(.medium))
+                            .foregroundStyle(HM.Colors.textPrimary)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.warningSoft))
+                    }
                     switch model.state {
                     case .unavailable:
                         EmptyStateView(systemImage: "heart.slash", tone: .red, title: "Apple Health isn't available", message: "Apple Health isn't available on this device. Your plan and the AI Health Assistant still work.")
                             .hmCard()
                     case .notConnected:
-                        ConnectHealthCard { Task { await model.connect() } }
+                        ConnectHealthCard(disconnectedAt: model.disconnectedAt) { Task { await model.connect() } }
+                    case .denied(let message):
+                        PermissionPrimerView(
+                            systemImage: "heart.slash",
+                            tone: .red,
+                            title: "Apple Health access is off",
+                            message: "HealthMate can't read your health data right now.",
+                            status: .denied,
+                            deniedHelp: message
+                        ) {
+                            HStack {
+                                Button("Open Settings") { SystemSettings.open() }.buttonStyle(.hmPrimary)
+                                Button("Try again") { Task { await model.connect() } }.buttonStyle(.hmSecondary)
+                            }
+                        }
                     case .failed(let message):
                         EmptyStateView(systemImage: "exclamationmark.triangle", tone: .orange, title: "Something went wrong", message: message) {
                             Button("Try again") { Task { await model.connect() } }.buttonStyle(.hmPrimary)
@@ -39,17 +64,7 @@ struct HealthDashboardView: View {
                         NavigationLink {
                             HealthTimelineView(api: session.api, onSessionEnded: { session.handle($0) })
                         } label: {
-                            HStack(spacing: 12) {
-                                IconBadge(systemName: "clock.arrow.circlepath", tone: .blue)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Health timeline").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
-                                    Text("Reports, conversations, symptoms and notes in one place").font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(HM.Colors.textMuted)
-                            }
-                            .padding(HM.Spacing.md)
-                            .hmCard()
+                            LinkCard(systemImage: "clock.arrow.circlepath", title: "Health timeline", detail: "Reports, conversations, symptoms and notes in one place")
                         }
                         .buttonStyle(PressableButtonStyle(scale: 0.98))
                     }
@@ -64,6 +79,7 @@ struct HealthDashboardView: View {
                 if model.isConnected {
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
+                            Button { openHealthApp() } label: { Label("Add a reading in Apple Health", systemImage: "plus") }
                             if session.isSignedIn && session.hasConsent("health_data_sync") {
                                 Button { Task { await model.sync() } } label: { Label("Sync to my account", systemImage: "arrow.triangle.2.circlepath") }
                             }
@@ -90,38 +106,202 @@ struct HealthDashboardView: View {
 
     @ViewBuilder
     private var dashboard: some View {
-        Picker("Period", selection: $model.periodDays) {
-            Text("7 days").tag(7)
-            Text("30 days").tag(30)
-        }
-        .pickerStyle(.segmented)
-
-        if let message = model.lastSyncMessage {
-            Label(message, systemImage: model.syncing ? "arrow.triangle.2.circlepath" : "checkmark.circle")
-                .font(.hmCaption)
-                .foregroundStyle(HM.Colors.textSecondary)
-        }
+        SyncStatusCard(model: model, session: session)
 
         if model.state == .loaded && !model.hasAnyData {
-            EmptyStateView(systemImage: "chart.xyaxis.line", tone: .blue, title: "No data yet", message: "We didn't find any steps, heart rate, sleep or weight in Apple Health for this period. If you expected some, check Settings › Health › Data Access › HealthMate.")
-                .hmCard()
+            EmptyStateView(systemImage: "chart.xyaxis.line", tone: .blue, title: "No data yet", message: "We didn't find any steps, heart rate, sleep or weight in Apple Health for this period. If you expected some, check Settings › Health › Data Access › HealthMate.") {
+                Button("Open the Health app") { openHealthApp() }.buttonStyle(.hmSecondary)
+            }
+            .hmCard()
         } else {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(TrackedMetric.allCases) { metric in
-                    NavigationLink {
-                        MetricDetailView(metric: metric, model: model)
-                    } label: {
-                        MetricTrendCard(metric: metric, values: model.values(metric), summary: model.summary(metric))
+            TodaySnapshot(days: model.days)
+                .redacted(reason: model.state == .loading ? .placeholder : [])
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Trends").font(.hmSectionHeading).foregroundStyle(HM.Colors.textPrimary).accessibilityAddTraits(.isHeader)
+                    Spacer()
+                }
+                Picker("Period", selection: $model.periodDays) {
+                    ForEach(HealthDashboardViewModel.periods, id: \.self) { Text("\($0) days").tag($0) }
+                }
+                .pickerStyle(.segmented)
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(TrackedMetric.allCases) { metric in
+                        NavigationLink {
+                            MetricDetailView(metric: metric, model: model)
+                        } label: {
+                            MetricTrendCard(metric: metric, values: model.values(metric), summary: model.summary(metric))
+                        }
+                        .buttonStyle(PressableButtonStyle(scale: 0.97))
                     }
-                    .buttonStyle(PressableButtonStyle(scale: 0.97))
+                }
+                .redacted(reason: model.state == .loading ? .placeholder : [])
+            }
+
+            NavigationLink {
+                HealthHistoryView(reader: reader, isPreview: session.isPreview)
+            } label: {
+                LinkCard(systemImage: "calendar", title: "Daily health history", detail: "Every day you record is kept as part of your health history")
+            }
+            .buttonStyle(PressableButtonStyle(scale: 0.98))
+        }
+    }
+
+    private func openHealthApp() {
+        if let url = URL(string: "x-apple-health://") { openURL(url) }
+    }
+}
+
+/// A tappable row card leading to another screen.
+private struct LinkCard: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            IconBadge(systemName: systemImage, tone: .blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
+                Text(detail).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").foregroundStyle(HM.Colors.textMuted)
+        }
+        .padding(HM.Spacing.md)
+        .hmCard()
+    }
+}
+
+/// Apple Health is read on this iPhone; syncing copies completed days to the account.
+private struct SyncStatusCard: View {
+    let model: HealthDashboardViewModel
+    let session: SessionStore
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            IconBadge(systemName: icon, tone: tone)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.hmBodyEmphasis).foregroundStyle(HM.Colors.textPrimary)
+                Text(detail).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary).fixedSize(horizontal: false, vertical: true)
+                if case .failed = model.syncStatus {
+                    Button("Try again") { Task { await model.sync() } }
+                        .font(.hmCaption.weight(.semibold))
+                        .padding(.top, 2)
+                } else if canSync, !model.syncing {
+                    Button("Sync now") { Task { await model.sync() } }
+                        .font(.hmCaption.weight(.semibold))
+                        .padding(.top, 2)
                 }
             }
-            .redacted(reason: model.state == .loading ? .placeholder : [])
+            Spacer(minLength: 0)
+            if model.syncing { ProgressView().accessibilityLabel("Syncing") }
+        }
+        .padding(14)
+        .hmCard()
+        .accessibilityElement(children: .contain)
+    }
+
+    private var canSync: Bool { session.isSignedIn && session.hasConsent("health_data_sync") }
+
+    private var icon: String {
+        switch model.syncStatus {
+        case .syncing: "arrow.triangle.2.circlepath"
+        case .failed: "exclamationmark.icloud"
+        default: canSync ? "checkmark.icloud" : "iphone"
+        }
+    }
+
+    private var tone: Tone {
+        switch model.syncStatus {
+        case .failed: .orange
+        case .syncing: .blue
+        default: canSync ? .green : .blue
+        }
+    }
+
+    private var title: String {
+        switch model.syncStatus {
+        case .syncing: "Syncing to your account…"
+        case .failed: "Sync didn't complete"
+        default: "Apple Health connected"
+        }
+    }
+
+    private var detail: String {
+        switch model.syncStatus {
+        case .syncing: return "Copying completed days to your health history."
+        case .failed(let message): return message
+        case .succeeded(let message): return "\(message)\(lastSynced)"
+        case .idle:
+            if !session.isSignedIn { return "Readings stay on this iPhone. Sign in to keep them in your health history." }
+            if !canSync { return "Readings stay on this iPhone. Turn on Health data sync in Profile › Privacy to keep them in your health history." }
+            return model.lastSyncedAt == nil ? "Not synced to your account yet." : "Up to date\(lastSynced)"
+        }
+    }
+
+    private var lastSynced: String {
+        guard let date = model.lastSyncedAt else { return "" }
+        return " · Last synced \(date.formatted(.relative(presentation: .named)))"
+    }
+}
+
+/// Today's readings next to the person's usual (from the loaded days).
+private struct TodaySnapshot: View {
+    let days: [HealthDay]
+    private let metrics: [TrackedMetric] = [.sleep, .steps, .restingHeartRate, .activeEnergy, .weight]
+    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Today").font(.hmSectionHeading).foregroundStyle(HM.Colors.textPrimary).accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(metrics) { metric in
+                    tile(metric)
+                }
+            }
+        }
+    }
+
+    private func tile(_ metric: TrackedMetric) -> some View {
+        let today = days.first
+        let value = today?.values[metric]
+        let comparison = today.map { HealthHistory.compare(days, date: $0.date, metric: metric).trend } ?? .noBaseline
+        let context = value == nil ? "Not recorded yet" : (metric == .steps || metric == .activeEnergy) ? "So far today" : MetricPresenter.trendLabel(comparison)
+        return VStack(alignment: .leading, spacing: 4) {
+            Label(metric == .sleep ? "Sleep last night" : metric.title, systemImage: metric.symbol)
+                .font(.hmCaption.weight(.semibold))
+                .foregroundStyle(metric.tone.color)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value.map(metric.format) ?? "—").font(.hmMetric).foregroundStyle(HM.Colors.textPrimary)
+                if value != nil, let unit = metric.displayUnit { Text(unit).font(.hmMicro).foregroundStyle(HM.Colors.textSecondary) }
+            }
+            Text(context).font(.hmMicro).foregroundStyle(HM.Colors.textSecondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hmCard()
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension TrackedMetric {
+    /// SF Symbol for the metric.
+    var symbol: String {
+        switch self {
+        case .steps: "figure.walk"
+        case .heartRate: "heart.fill"
+        case .restingHeartRate: "waveform.path.ecg"
+        case .sleep: "moon.zzz.fill"
+        case .activeEnergy: "flame.fill"
+        case .weight: "scalemass.fill"
         }
     }
 }
 
 private struct ConnectHealthCard: View {
+    var disconnectedAt: Date?
     let onConnect: () -> Void
 
     var body: some View {
@@ -129,8 +309,10 @@ private struct ConnectHealthCard: View {
             HStack(spacing: 12) {
                 IconBadge(systemName: "heart.fill", tone: .red, size: .large, filled: true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Connect Apple Health").font(.hmSectionHeading)
-                    Text("See your steps, heart rate, sleep and weight over time.").font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
+                    Text(disconnectedAt == nil ? "Connect Apple Health" : "Apple Health is disconnected").font(.hmSectionHeading)
+                    Text(disconnectedAt.map { "You disconnected \($0.formatted(.relative(presentation: .named))). Readings already in your history stay there." } ?? "See your steps, heart rate, sleep and weight over time.")
+                        .font(.hmCaption)
+                        .foregroundStyle(HM.Colors.textSecondary)
                 }
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -138,7 +320,7 @@ private struct ConnectHealthCard: View {
                 point("Read-only — HealthMate never writes to Apple Health", systemImage: "eye")
                 point("Stays on your phone unless you turn on sync", systemImage: "iphone")
             }
-            Button("Connect", action: onConnect).buttonStyle(.hmPrimary(fullWidth: true))
+            Button(disconnectedAt == nil ? "Connect" : "Reconnect", action: onConnect).buttonStyle(.hmPrimary(fullWidth: true))
         }
         .padding(HM.Spacing.lg)
         .hmCard()
@@ -188,6 +370,7 @@ private struct MetricTrendCard: View {
             }
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
+            .chartYScale(domain: .automatic(includesZero: metric.isCumulative))
             .frame(height: 44)
             .accessibilityHidden(true)
             Text(MetricPresenter.trendLabel(summary.trend))
@@ -259,6 +442,7 @@ struct MetricDetailView: View {
                     }
                 }
                 .chartXSelection(value: $selectedDate)
+                .chartYScale(domain: .automatic(includesZero: metric.isCumulative))
                 .frame(height: 240)
                 // Swift Charts provides VoiceOver values and Audio Graphs automatically.
 
@@ -269,6 +453,27 @@ struct MetricDetailView: View {
                 }
                 .padding(HM.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .hmCard()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Day by day").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary).padding(.bottom, 6).accessibilityAddTraits(.isHeader)
+                    ForEach(values.reversed()) { value in
+                        HStack {
+                            Text(value.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                                .font(.hmBody)
+                                .foregroundStyle(HM.Colors.textPrimary)
+                            Spacer()
+                            Text(metric.format(value.value) + (metric.displayUnit.map { " \($0)" } ?? ""))
+                                .font(.hmBodyEmphasis)
+                                .monospacedDigit()
+                                .foregroundStyle(HM.Colors.textPrimary)
+                        }
+                        .padding(.vertical, 8)
+                        .accessibilityElement(children: .combine)
+                        Divider()
+                    }
+                }
+                .padding(HM.Spacing.md)
                 .hmCard()
 
                 Text("Source: Apple Health").font(.hmMicro).foregroundStyle(HM.Colors.textMuted)
