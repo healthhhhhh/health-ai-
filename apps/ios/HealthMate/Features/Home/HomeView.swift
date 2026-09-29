@@ -52,7 +52,7 @@ struct HomeView: View {
                 Color.clear.frame(height: 0).background(.bar, ignoresSafeAreaEdges: .top)
             }
             .overlay(alignment: .bottom) { toast }
-            .animation(HMMotion.spring, value: model.actionError ?? plan.actionError)
+            .hmAnimation(HMMotion.spring, value: model.actionError ?? plan.actionError)
             .navigationDestination(for: AppRoute.self) { route in destination(route) }
         }
         // Coming back from notifications or a detail refreshes the unread count and sections.
@@ -194,7 +194,7 @@ struct HomeView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: message) {
                     try? await Task.sleep(for: .seconds(3))
-                    withAnimation(HMMotion.spring) {
+                    withAnimation(HMMotion.respecting(HMMotion.spring)) {
                         model.actionError = nil
                         plan.actionError = nil
                     }

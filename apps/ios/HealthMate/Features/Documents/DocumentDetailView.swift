@@ -287,7 +287,7 @@ private struct FindingRow: View {
         .padding(HM.Spacing.md)
         .hmCard()
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(HMMotion.spring) { expanded.toggle() } }
+        .onTapGesture { withAnimation(HMMotion.respecting(HMMotion.spring)) { expanded.toggle() } }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(expanded ? "Hides the explanation" : "Shows what this result means")

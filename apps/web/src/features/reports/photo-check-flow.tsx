@@ -98,7 +98,7 @@ export function PhotoCheckFlow({ initialPurpose, retake = false }: { initialPurp
       {step === 0 && (
         <fieldset className="flex flex-col gap-3">
           <legend className="mb-3 text-section-heading text-text-primary">What does the photo show?</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {PHOTO_PURPOSES.map((p) => (
               <label
                 key={p.id}

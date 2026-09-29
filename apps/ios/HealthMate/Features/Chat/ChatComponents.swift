@@ -242,6 +242,7 @@ struct InfoPanel: View {
 /// Three pulsing dots while the assistant is working.
 struct TypingIndicator: View {
     @State private var phase = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -259,7 +260,11 @@ struct TypingIndicator: View {
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(HM.Colors.card).hmShadow())
             Spacer()
         }
-        .onAppear { withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = .pi * 2 } }
+        .onAppear {
+            // Reduce Motion: the dots stay still; the label still says HealthMate is thinking.
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = .pi * 2 }
+        }
         .accessibilityElement()
         .accessibilityLabel("HealthMate is thinking")
     }

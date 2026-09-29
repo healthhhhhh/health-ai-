@@ -2,6 +2,36 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 const unique = () => Math.random().toString(36).slice(2, 8);
+
+/** Every signed-in destination, for the accessibility and layout sweeps. */
+const SIGNED_IN_PAGES = [
+  "/home",
+  "/notifications",
+  "/chat",
+  "/timeline",
+  "/plans",
+  "/plans/tasks",
+  "/plans/medications",
+  "/profile",
+  "/reports",
+  "/reports?show=photos",
+  "/reports/photo-check",
+  "/health",
+  "/health/sleep",
+  "/health/weight",
+  "/health/history",
+  "/health/add",
+  "/settings",
+  "/settings/notifications",
+  "/settings/account",
+  "/care",
+  "/care/appointments",
+  "/care/appointments/new",
+  "/care/team",
+  "/care/team/new",
+  "/help",
+  "/design",
+];
 /** A tiny valid PNG (1×1 pixel). */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
@@ -912,8 +942,24 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/plans/tasks", "/plans/medications", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/settings/notifications", "/settings/account", "/care", "/care/appointments", "/care/team", "/design"]) {
+    for (const path of SIGNED_IN_PAGES) {
       await expectNoA11yViolations(page, path);
+    }
+  });
+
+  test("signed-in pages have no detectable accessibility violations in dark mode", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    for (const path of SIGNED_IN_PAGES) {
+      await expectNoA11yViolations(page, path);
+    }
+  });
+
+  test("no page scrolls sideways", async ({ page }) => {
+    for (const path of SIGNED_IN_PAGES) {
+      await page.goto(path, { waitUntil: "load" });
+      await expect(page.locator("h1").first()).toBeVisible();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, path).toBeLessThanOrEqual(0);
     }
   });
 });

@@ -265,7 +265,7 @@ struct ChatView: View {
         if reduceMotion {
             proxy.scrollTo("bottom", anchor: .bottom)
         } else {
-            withAnimation(HMMotion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
+            withAnimation(HMMotion.respecting(HMMotion.spring)) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
 }

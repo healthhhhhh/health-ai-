@@ -16,7 +16,7 @@ struct HMProgressBar: View {
             }
         }
         .frame(height: 8)
-        .animation(HMMotion.spring, value: value)
+        .hmAnimation(HMMotion.spring, value: value)
         .accessibilityElement()
         .accessibilityLabel(label)
         .accessibilityValue("\(Int((min(max(value, 0), 1) * 100).rounded())) percent")

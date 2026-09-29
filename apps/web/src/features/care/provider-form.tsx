@@ -17,7 +17,7 @@ export function ProviderForm({ provider }: { provider?: CareProviderRecord }) {
       {provider && <input type="hidden" name="id" value={provider.id} />}
       <Input label="Name" name="name" defaultValue={str("name")} placeholder="e.g. Dr. Rivera, or Riverside Health Centre" maxLength={160} required />
       <Input label="Role or specialty (optional)" name="specialty" defaultValue={str("specialty")} placeholder="e.g. Family doctor, Pharmacy" maxLength={120} />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Input label="Phone (optional)" name="phone" type="tel" defaultValue={str("phone")} maxLength={40} />
         <Input label="Website (optional)" name="website" type="url" defaultValue={str("website")} placeholder="https://" maxLength={300} />
       </div>

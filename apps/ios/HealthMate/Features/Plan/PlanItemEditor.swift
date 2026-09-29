@@ -191,6 +191,6 @@ struct WeekdayPicker: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .animation(HMMotion.bouncy, value: selection)
+        .hmAnimation(HMMotion.bouncy, value: selection)
     }
 }

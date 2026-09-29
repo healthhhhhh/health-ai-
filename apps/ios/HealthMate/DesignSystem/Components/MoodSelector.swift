@@ -59,7 +59,7 @@ struct MoodSelector: View {
                 .accessibilityAddTraits(selected ? AccessibilityTraits.isSelected : AccessibilityTraits())
             }
         }
-        .animation(HMMotion.bouncy, value: selection)
+        .hmAnimation(HMMotion.bouncy, value: selection)
         .sensoryFeedback(.selection, trigger: selection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("How are you feeling today?")
@@ -83,7 +83,7 @@ struct SegmentedTabs<Value: Hashable>: View {
             ForEach(items) { item in
                 let selected = item.value == selection
                 Button {
-                    withAnimation(HMMotion.spring) { selection = item.value }
+                    withAnimation(HMMotion.respecting(HMMotion.spring)) { selection = item.value }
                 } label: {
                     Text(item.title)
                         .font(.hmBodyEmphasis)

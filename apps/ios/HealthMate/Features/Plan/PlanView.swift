@@ -55,7 +55,7 @@ struct PlanView: View {
             .navigationDestination(for: UUID.self) { PlanItemDetailView(store: store, itemID: $0) }
             .overlay(alignment: .bottomTrailing) { addButton }
             .overlay(alignment: .bottom) { toast }
-            .animation(HMMotion.spring, value: store.actionError)
+            .hmAnimation(HMMotion.spring, value: store.actionError)
             .task {
                 await store.loadIfNeeded()
                 #if DEBUG
@@ -115,7 +115,7 @@ struct PlanView: View {
                 HMProgressBar(value: progress.ratio, label: "\(kind.title) completed")
             }
         }
-        .animation(HMMotion.spring, value: progress.done)
+        .hmAnimation(HMMotion.spring, value: progress.done)
 
         if store.state == .loading && store.items.isEmpty {
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)

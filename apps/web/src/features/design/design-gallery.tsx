@@ -64,7 +64,7 @@ export function DesignGallery({ timeZone }: { timeZone: string }) {
       </Section>
 
       <Section title="Inputs">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Input label="Email" type="email" placeholder="you@example.com" hint="We'll never share it." />
           <Input label="Name" error="Enter your first name." />
           <Select label="Reminder" options={[{ value: "08:00", label: "8:00 AM" }, { value: "20:00", label: "8:00 PM" }]} />
@@ -77,14 +77,14 @@ export function DesignGallery({ timeZone }: { timeZone: string }) {
       </Section>
 
       <Section title="Screen states">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {STATES.map((state) => (
             <Card key={state}>
               <StateView state={state} compact action={state === "error" || state === "offline" ? <Button size="sm" variant="secondary">Try again</Button> : undefined} />
             </Card>
           ))}
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SkeletonCard />
           <SkeletonList rows={3} label="Loading example list" />
         </div>
@@ -156,11 +156,11 @@ export function DesignGallery({ timeZone }: { timeZone: string }) {
       </Section>
 
       <Section title="Health cards">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Steps" value="6,428" unit="steps" icon={<Activity />} tone="green" context="In your usual range" />
           <MetricCard label="Heart rate" value="72" unit="bpm" icon={<HeartPulse />} tone="red" context="In your usual range" />
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <MedicationCard name="Morning medication" instruction="As prescribed by your clinician" sourceLabel="From your clinician" schedule="Daily · 8:00 AM" takenToday lastSevenDays={[true, true, false, true, true, true, null]} href="/design" />
           <Card>
             <TaskRow title="Evening walk" detail="30 minutes" time="18:30" completed={done} onToggle={() => setDone((v) => !v)} />
@@ -177,7 +177,7 @@ export function DesignGallery({ timeZone }: { timeZone: string }) {
       </Section>
 
       <Section title="Permissions">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <PermissionPrimer
             icon={<HeartPulse />}
             tone="red"

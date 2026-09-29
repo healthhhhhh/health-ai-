@@ -9,7 +9,7 @@ export default function HelpPage() {
   return (
     <>
       <PageHeader title="Help & Support" description="How HealthMate works and how we handle your data." />
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card as="section" aria-labelledby="about">
           <h2 id="about" className="text-section-heading">What HealthMate is</h2>
           <p className="mt-2 text-body text-text-secondary">

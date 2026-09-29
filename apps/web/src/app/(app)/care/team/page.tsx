@@ -36,7 +36,7 @@ export default async function CareTeamPage() {
           <StateView state="empty" icon={<Stethoscope />} title="No one added yet" description="Add your doctor, clinic or pharmacy to have their phone number and address to hand, and link them to appointments." />
         </Card>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[...care.providers]
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((p) => (

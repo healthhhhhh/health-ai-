@@ -75,7 +75,7 @@ export default async function HealthDayPage({ params }: { params: Promise<{ date
           <StateView state="empty" title="No readings on this day" description="Apple Health didn't sync anything for this day, and no readings were added." />
         </Card>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {HISTORY_METRICS.map((kind) => {
             const def = HEALTH_METRICS.find((m) => m.kind === kind)!;
             const value = day.values[kind];

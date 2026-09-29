@@ -16,7 +16,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .background(Capsule().fill(configuration.isPressed ? HM.Colors.primaryPressed : HM.Colors.primaryFill).hmShadow(HM.Shadow.raised))
             .opacity(isEnabled ? 1 : 0.5)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(HMMotion.bouncy, value: configuration.isPressed)
+            .hmAnimation(HMMotion.bouncy, value: configuration.isPressed)
             .contentShape(Capsule())
     }
 }
@@ -36,7 +36,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .background(Capsule().fill(configuration.isPressed ? HM.Colors.primarySoft : HM.Colors.card))
             .overlay(Capsule().strokeBorder(HM.Colors.separator))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(HMMotion.bouncy, value: configuration.isPressed)
+            .hmAnimation(HMMotion.bouncy, value: configuration.isPressed)
     }
 }
 

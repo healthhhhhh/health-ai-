@@ -27,7 +27,7 @@ function Feedback({ state, success }: { state: FormState; success?: string }) {
 export function DetailsForm({ firstName, lastName, dateOfBirth }: { firstName: string; lastName: string; dateOfBirth: string | null }) {
   const [state, action, pending] = useActionState(updateDetails, {});
   return (
-    <form action={action} className="grid gap-3 sm:grid-cols-2">
+    <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Input label="First name" name="firstName" defaultValue={firstName} autoComplete="given-name" required />
       <Input label="Last name" name="lastName" defaultValue={lastName} autoComplete="family-name" />
       <Input label="Date of birth" name="dateOfBirth" type="date" defaultValue={dateOfBirth ?? ""} autoComplete="bday" />
@@ -61,7 +61,7 @@ export function AddConditionForm() {
 export function AddAllergyForm() {
   const [state, action, pending] = useActionState(addAllergy, {});
   return (
-    <form action={action} key={state.ok} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+    <form action={action} key={state.ok} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
       <Input label="Allergy" name="substance" placeholder="e.g. Penicillin" />
       <Input label="Reaction (optional)" name="reaction" placeholder="e.g. Rash" />
       <Button type="submit" variant="soft" disabled={pending}>

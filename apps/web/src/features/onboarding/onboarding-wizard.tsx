@@ -129,7 +129,7 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
         {step === "about" && (
           <div className="flex flex-col gap-4">
             <p className="text-body text-text-secondary">This helps the assistant speak to you personally. Only your first name is needed.</p>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input label="First name" value={data.firstName} onChange={(e) => update({ firstName: e.target.value })} autoComplete="given-name" error={firstNameError} maxLength={80} />
               <Input label="Last name (optional)" value={data.lastName} onChange={(e) => update({ lastName: e.target.value })} autoComplete="family-name" maxLength={80} />
             </div>
@@ -149,7 +149,7 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
         {step === "goals" && (
           <div className="flex flex-col gap-4">
             <p className="text-body text-text-secondary">Choose any that apply. We&apos;ll shape your Home screen and suggestions around them.</p>
-            <ul className="grid gap-3 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {HEALTH_GOALS.map((goal) => {
                 const selected = data.goals.includes(goal.id);
                 return (
@@ -363,7 +363,7 @@ function HealthDetailsStep({ data, update }: { data: OnboardingInput; update: (p
             ))}
           </ul>
         )}
-        <div className="grid gap-3 sm:grid-cols-[1fr_1.4fr]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1.4fr]">
           <Input label="Medication name" value={medName} onChange={(e) => setMedName(e.target.value)} maxLength={120} />
           <Input
             label="Instructions exactly as written"

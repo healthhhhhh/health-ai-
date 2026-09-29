@@ -35,7 +35,7 @@ export function AppointmentForm({ values, providers, timeZone }: { values: Appoi
         defaultValue={str("careProviderId")}
         options={[{ value: "", label: "Not in my care team" }, ...providers.map((p) => ({ value: p.id, label: p.specialty ? `${p.name} · ${p.specialty}` : p.name }))]}
       />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Input label="Date" name="day" type="date" defaultValue={str("day")} required />
         <Input label="Time" name="time" type="time" defaultValue={str("time")} required />
         <Select

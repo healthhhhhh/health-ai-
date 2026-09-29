@@ -33,7 +33,7 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .scale(scale: 1.02)))
             }
         }
-        .animation(.easeInOut(duration: 0.45), value: screen)
+        .hmAnimation(.easeInOut(duration: 0.45), value: screen)
         .task { await session.restore() }
     }
 }

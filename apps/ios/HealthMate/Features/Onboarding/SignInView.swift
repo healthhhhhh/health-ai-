@@ -119,7 +119,7 @@ struct SignInView: View {
                     }
                 }
                 .padding(24)
-                .animation(HMMotion.spring, value: mode)
+                .hmAnimation(HMMotion.spring, value: mode)
             }
             .background(HMGradient.appBackground.ignoresSafeArea())
             .toolbar {

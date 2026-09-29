@@ -63,7 +63,7 @@ struct CheckBox: View {
         }
         .frame(width: 26, height: 26)
         .scaleEffect(checked ? 1 : 0.94)
-        .animation(HMMotion.bouncy, value: checked)
+        .hmAnimation(HMMotion.bouncy, value: checked)
     }
 }
 

@@ -26,7 +26,57 @@ real assessment.
 | 9 · Plan, tasks, medications | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
 | 10 · Care | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
 | 11 · Profile, settings, privacy | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
-| 12 · Final polish | ⏳ Next | |
+| 12 · Final polish | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
+
+### Step 12: what was done
+
+- **Dark mode:**
+  - New automated axe sweep of every signed-in page in dark mode (26 pages × 3 viewports).
+  - It found three dark-mode token contrast failures. Each was fixed in `tokens.json` and regenerated with `npm run tokens`, for web and iOS:
+    - `primaryFill` #3F6FF0 → #3765E0: white text was 4.42:1, now 5.1:1
+    - `primaryPressed` #A3BBFF → #2B55C8: the pressed/hover button background under white text was about 1.9:1, now 6.5:1
+    - `textMuted` #7C8699 → #8A94A7: 4.36:1 on cards, now 5.2:1
+- **Layout:**
+  - New sweep: no page scrolls sideways at phone width.
+  - It found the design gallery's grids growing past the viewport (an implicit `auto` column track). All responsive grids now start from `grid-cols-1` (`minmax(0,1fr)`), so long content can't widen a page.
+- **Reduce Motion:**
+  - Web already neutralised all CSS animation, and animated numbers check `prefers-reduced-motion`.
+  - iOS now does the same everywhere, via two helpers in `Motion.swift`:
+    - `hmAnimation(_:value:)` replaces `.animation(_:value:)`
+    - `HMMotion.respecting(_:)` wraps `withAnimation`
+  - The chat typing dots now stay still with Reduce Motion (they were the one looping animation without a guard). The mascot, skeleton pulse, onboarding halo and celebration were already guarded.
+- **Dynamic Type and dark mode on iOS:** a new UI test launches at the largest accessibility text size (AX XXXL) in dark mode and opens every tab. The CI screenshot step already captures light and dark.
+- **VoiceOver:** the new screens label the elements that matter:
+  - details chevrons ("… details")
+  - checklist items with an Asked / Not asked value
+  - urgent banners ("Emergency guidance" / "Urgent guidance")
+  - step progress ("Step 2 of 3")
+  - history days ("date: Done")
+- **Verification (local):**
+  - web unit 99/99, sample-data 12/12, design-tokens check green
+  - e2e: see the final report
+  - API 89/89 (6 skipped need Supabase, which runs in CI)
+  - iOS core 118/118
+  - **iOS app build, unit and UI tests (17 UI tests) need a CI run once GitHub Actions billing is fixed**
+
+## Phase 1: parity review (iOS ↔ web)
+
+| Area | iOS | Web | Notes |
+|---|---|---|---|
+| Auth & onboarding | ✅ | ✅ | Email verification, Apple/Google, account setup |
+| Home | ✅ | ✅ | Every card opens its detail; notifications bell |
+| Notifications centre | ✅ | ✅ | |
+| AI Chat | ✅ | ✅ | Sample answers labelled; emergency triage on-device first |
+| Health dashboard & history | ✅ | ✅ | iOS reads Apple Health; web has manual readings |
+| Timeline | ✅ | ✅ | Filters, detail, add/edit/delete (edit is Preview-only on the API) |
+| Reports | ✅ | ✅ | Upload confirm, steps, results, questions, original viewer |
+| Photo check | ✅ | ✅ | Purpose → guidance → review; emergency note shows guidance first |
+| Plan, tasks, medications | ✅ | ✅ | All tasks, unified medications, item detail |
+| Care | ✅ | ✅ | Hub, appointments, questions checklist, care team |
+| Settings | ✅ | ✅ | Notifications, display (appearance, weight units), privacy, data, account, about |
+| Voice input | ✅ | — | Not planned for web |
+| Apple Health connection | ✅ | explainer | Web can't read HealthKit |
+| Camera capture | ✅ | `capture=` input | |
 
 ### Step 11: what was built
 

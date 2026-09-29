@@ -36,8 +36,8 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --hm-primary: #8AA8FF;
-    --hm-primary-pressed: #A3BBFF;
-    --hm-primary-fill: #3F6FF0;
+    --hm-primary-pressed: #2B55C8;
+    --hm-primary-fill: #3765E0;
     --hm-primary-soft: #1C2744;
     --hm-primary-tint: #243357;
     --hm-success: #4CC47E;
@@ -58,7 +58,7 @@
     --hm-separator: #262F44;
     --hm-text-primary: #F2F5FA;
     --hm-text-secondary: #AAB3C5;
-    --hm-text-muted: #7C8699;
+    --hm-text-muted: #8A94A7;
     --hm-on-primary: #FFFFFF;
     --hm-success-fill: #1F9D55;
     --hm-teal-fill: #0FA396;
@@ -70,8 +70,8 @@
 
 :root[data-theme="dark"] {
   --hm-primary: #8AA8FF;
-  --hm-primary-pressed: #A3BBFF;
-  --hm-primary-fill: #3F6FF0;
+  --hm-primary-pressed: #2B55C8;
+  --hm-primary-fill: #3765E0;
   --hm-primary-soft: #1C2744;
   --hm-primary-tint: #243357;
   --hm-success: #4CC47E;
@@ -92,7 +92,7 @@
   --hm-separator: #262F44;
   --hm-text-primary: #F2F5FA;
   --hm-text-secondary: #AAB3C5;
-  --hm-text-muted: #7C8699;
+  --hm-text-muted: #8A94A7;
   --hm-on-primary: #FFFFFF;
   --hm-success-fill: #1F9D55;
   --hm-teal-fill: #0FA396;

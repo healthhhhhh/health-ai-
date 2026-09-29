@@ -7,9 +7,9 @@ enum DesignTokens {
         /// Primary blue accent — buttons, active nav, links
         static let primary = Color(light: 0x2A5CE0, dark: 0x8AA8FF)
         /// Pressed / hover state for primary
-        static let primaryPressed = Color(light: 0x224CC2, dark: 0xA3BBFF)
+        static let primaryPressed = Color(light: 0x224CC2, dark: 0x2B55C8)
         /// Filled button / active tab background (white text sits on it)
-        static let primaryFill = Color(light: 0x2F64EC, dark: 0x3F6FF0)
+        static let primaryFill = Color(light: 0x2F64EC, dark: 0x3765E0)
         /// Soft blue fills — active nav background, chips
         static let primarySoft = Color(light: 0xEAF0FF, dark: 0x1C2744)
         /// Stronger soft blue for gradients and borders
@@ -43,7 +43,7 @@ enum DesignTokens {
         /// Body copy and captions
         static let textSecondary = Color(light: 0x5B6474, dark: 0xAAB3C5)
         /// Placeholders and tertiary text
-        static let textMuted = Color(light: 0x646D80, dark: 0x7C8699)
+        static let textMuted = Color(light: 0x646D80, dark: 0x8A94A7)
         static let onPrimary = Color(light: 0xFFFFFF, dark: 0xFFFFFF)
         /// Solid icon-circle fills (white glyph on top, ≥3:1)
         static let successFill = Color(light: 0x1F9D55, dark: 0x1F9D55)

@@ -16,7 +16,7 @@ struct WeekStrip: View {
                 let selected = day == selection
                 let date = day.date(in: calendar) ?? Date()
                 Button {
-                    withAnimation(HMMotion.spring) { selection = day }
+                    withAnimation(HMMotion.respecting(HMMotion.spring)) { selection = day }
                 } label: {
                     VStack(spacing: 4) {
                         Text(date, format: .dateTime.weekday(.abbreviated))

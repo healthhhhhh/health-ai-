@@ -59,7 +59,7 @@ export default async function PlanItemPage({ params }: { params: Promise<{ id: s
         </Card>
       )}
 
-      <Card as="section" aria-label="Schedule" className="grid gap-4 sm:grid-cols-3">
+      <Card as="section" aria-label="Schedule" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <p className="flex items-start gap-3 text-body text-text-primary">
           <Clock aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
           <span>

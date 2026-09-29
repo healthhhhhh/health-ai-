@@ -182,6 +182,22 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["alex.morgan@example.com"].waitForExistence(timeout: 8), "account: \(screen(app))")
     }
 
+    /// Largest accessibility text size in dark mode: every tab still loads its main content.
+    func testLargestTextInDarkMode() {
+        let app = launch(["-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password",
+                          "-hmAppearance", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        let tabs = app.tabBars
+        XCTAssertTrue(tabs.buttons["Home"].waitForExistence(timeout: 10), "home: \(screen(app))")
+        tabs.buttons["Chat"].tap()
+        XCTAssertTrue(messageField(app).waitForExistence(timeout: 8), "chat: \(screen(app))")
+        tabs.buttons["Health"].tap()
+        XCTAssertTrue(app.navigationBars["Health"].waitForExistence(timeout: 8), "health: \(screen(app))")
+        tabs.buttons["Plans"].tap()
+        XCTAssertTrue(app.navigationBars["My Plan"].waitForExistence(timeout: 8), "plan: \(screen(app))")
+        tabs.buttons["Profile"].tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: 8), "profile: \(screen(app))")
+    }
+
     /// Emergency guidance must appear even without an account or network.
     func testEmergencyGuidanceWhenSignedOut() {
         let app = launch(["-hmInitialTab", "chat"])

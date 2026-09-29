@@ -90,7 +90,7 @@ struct MoodCheckInCard: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(HMMotion.spring, value: mood)
+        .hmAnimation(HMMotion.spring, value: mood)
         .hmCard()
     }
 }
@@ -174,7 +174,7 @@ struct TodaysPlanCard: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 2)
         }
-        .animation(HMMotion.spring, value: progress.done)
+        .hmAnimation(HMMotion.spring, value: progress.done)
         .hmCard()
     }
 }

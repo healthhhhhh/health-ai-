@@ -41,6 +41,6 @@ struct AskBar: View {
             RoundedRectangle(cornerRadius: HM.Radius.md, style: .continuous)
                 .strokeBorder(focused ? HM.Colors.primary : HM.Colors.separator.opacity(0.6), lineWidth: focused ? 2 : 1)
         )
-        .animation(HMMotion.spring, value: focused)
+        .hmAnimation(HMMotion.spring, value: focused)
     }
 }

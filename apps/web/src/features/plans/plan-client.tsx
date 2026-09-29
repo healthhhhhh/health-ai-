@@ -94,7 +94,7 @@ export function AddPlanItemForm({ today, initial }: { today: string; initial?: P
       ) : (
         <Input label="Details (optional)" name="notes" placeholder="e.g. 30 minutes" maxLength={500} />
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Input label="Time" name="time" type="time" defaultValue="09:00" />
         <label className="flex flex-col gap-1.5 text-caption font-semibold text-text-primary">
           Repeats
