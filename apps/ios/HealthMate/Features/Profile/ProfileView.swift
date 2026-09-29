@@ -191,6 +191,11 @@ struct ProfileView: View {
                 } label: {
                     Label("Reports & photos", systemImage: "doc.text.magnifyingglass")
                 }
+                NavigationLink {
+                    CareHubView(api: session.api)
+                } label: {
+                    Label("Care: appointments and care team", systemImage: "stethoscope")
+                }
             } footer: {
                 Text("What the AI Health Assistant remembers about you. You can edit or delete anything.")
             }

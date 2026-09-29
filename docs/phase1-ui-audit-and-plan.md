@@ -24,8 +24,42 @@ real assessment.
 | 7 · Medical reports | ✅ Done | See below |
 | 8 · Image analysis | ✅ Done | See below |
 | 9 · Plan, tasks, medications | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
-| 10 · Care | ⏳ Next | |
-| 11–12 | ⬜ Not started | |
+| 10 · Care | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
+| 11 · Profile, settings, privacy | ⏳ Next | |
+| 12 | ⬜ Not started | |
+
+### Step 10: what was built
+
+Everything here uses the existing care endpoints (providers and appointments), and nothing in the backend changed. HealthMate keeps the person's own record: it never books, changes or cancels anything with a clinic, and the screens say so.
+- **Care hub** (web `/care`, now labelled "Care" in the nav; iOS `CareHubView` from Profile › "Care: appointments and care team", and from Home/notification links):
+  - the emergency call banner always comes first, and stays visible even when care details fail to load (tested)
+  - upcoming appointments and the care team, each with "See all" and Add
+  - find care nearby (web map searches; iOS `CareFinderView`)
+  - the crisis section
+- **Appointments** (web `/care/appointments`, iOS `AppointmentsListView`):
+  - Upcoming (soonest first) and Past (newest first, including cancelled)
+  - empty states and an Add action
+- **Add/edit appointment** (web `/care/appointments/new` and `/[id]/edit`, iOS `AppointmentEditorView`):
+  - name, care team member, date and time (in the person's time zone), length, mode (in person / video / phone), place and notes
+  - edits can clear fields (explicit nulls)
+- **Appointment detail additions:**
+  - Edit
+  - **Questions to ask**, a checklist with suggested starters (add, tick off, remove). It's saved inside the appointment's notes as a "Questions to ask:" block (`- [ ]` / `- [x]`), in the same format on both platforms, so no storage changes were needed. It survives editing the notes.
+  - "Mark as done" for a past appointment still marked scheduled
+  - the provider links to their detail
+  - "Prepare with the AI Health Assistant" goes to Chat
+- **Care team** (web `/care/team`, `/new`, `/[id]`, `/[id]/edit`; iOS `CareTeamView`, `ProviderDetailView`, `ProviderEditorView`):
+  - contact actions: call, directions, website
+  - notes, and the appointments with them, with "Add appointment" preselecting them
+  - edit, and remove with a confirmation that appointments stay
+  - the website must be a full https:// address (same check on both platforms)
+- **Shared logic:** `lib/care.ts` (`splitAppointments`, `parsePrep`/`serializePrep`, `zonedIso`/`zonedParts`) and Core `CarePresentation.swift` (`AppointmentList`, `AppointmentPrep`, `AppointmentDraft`, `CareProviderDraft`), plus new Core endpoints (`careProviders`, `saveCareProvider`, `deleteCareProvider`, `saveAppointment`, `setAppointmentNotes`). Tested on both platforms, including a round trip through the iOS Preview client.
+- **Verification:**
+  - web unit 97/97 and e2e 170/170 (new: hub order + axe, past/upcoming, add → questions → reload → edit → cancel, care team add/validate/link/edit/remove, the error state keeps emergency help)
+  - API 89/89, unchanged
+  - iOS core 117/117
+  - new iOS UI test: Profile › Care → emergency first → appointment questions saved
+  - **iOS app build/UI tests are still blocked by GitHub Actions billing**
 
 ### Step 9: what was built
 

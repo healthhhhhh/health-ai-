@@ -13,6 +13,7 @@ struct MainTabView: View {
     @State private var chatModel: ChatViewModel
     @State private var pendingQuestion: String?
     @State private var showCareFinder = false
+    @State private var showCare = false
     @State private var showVoice = false
     @Environment(\.scenePhase) private var scenePhase
 
@@ -91,6 +92,12 @@ struct MainTabView: View {
         .sheet(isPresented: $showCareFinder) {
             CareFinderView()
         }
+        .sheet(isPresented: $showCare) {
+            NavigationStack {
+                CareHubView(api: session.api)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showCare = false } } }
+            }
+        }
         .sheet(isPresented: $showVoice) {
             VoiceInputView { transcript in
                 pendingQuestion = transcript
@@ -110,7 +117,9 @@ struct MainTabView: View {
             Task { await chatModel.openConversation(id: id) }
         case .health, .metric, .timeline, .reports, .report: selection = .health
         case .plans, .planItem: selection = .plans
-        case .care, .appointment: showCareFinder = true
+        // Signed in: the care hub (appointments, care team, find care). Signed out: finding care nearby.
+        case .care, .appointment:
+            if session.isSignedIn { showCare = true } else { showCareFinder = true }
         case .profile, .settings, .account: selection = .profile
         }
     }

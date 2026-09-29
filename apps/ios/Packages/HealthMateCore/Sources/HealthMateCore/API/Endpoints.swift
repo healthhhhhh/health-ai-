@@ -167,6 +167,49 @@ extension APIClient {
         try await send(Endpoint("GET", "care/providers/\(id)"))
     }
 
+    public func careProviders() async throws -> [CareProviderRecord] {
+        try await send(Endpoint("GET", "care/providers"))
+    }
+
+    /// Adds (`id == nil`) or edits a care team member; returns its id.
+    @discardableResult
+    public func saveCareProvider(id: String?, _ draft: CareProviderDraft) async throws -> String {
+        if let id {
+            try await sendNoContent(.json("PATCH", "care/providers/\(id)", draft))
+            return id
+        }
+        struct Created: Decodable { let id: String }
+        return try await send(.json("POST", "care/providers", draft), as: Created.self).id
+    }
+
+    public func deleteCareProvider(_ id: String) async throws {
+        try await sendNoContent(Endpoint("DELETE", "care/providers/\(id)"))
+    }
+
+    /// Adds (`id == nil`) or edits an appointment in HealthMate's record; returns its id.
+    @discardableResult
+    public func saveAppointment(id: String?, _ draft: AppointmentDraft) async throws -> String {
+        if let id {
+            try await sendNoContent(.json("PATCH", "care/appointments/\(id)", draft))
+            return id
+        }
+        struct Created: Decodable { let id: String }
+        return try await send(.json("POST", "care/appointments", draft), as: Created.self).id
+    }
+
+    /// Saves the appointment's notes (including its questions checklist).
+    public func setAppointmentNotes(_ id: String, _ notes: String?) async throws {
+        struct Body: Encodable {
+            let notes: String?
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(notes, forKey: .notes)
+            }
+            enum CodingKeys: String, CodingKey { case notes }
+        }
+        try await sendNoContent(.json("PATCH", "care/appointments/\(id)", Body(notes: notes)))
+    }
+
     public func consents() async throws -> [ConsentRecord] {
         try await send(Endpoint("GET", "me/consents"))
     }

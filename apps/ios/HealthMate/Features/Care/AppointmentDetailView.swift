@@ -13,7 +13,10 @@ struct AppointmentDetailView: View {
     @State private var state: ScreenState? = .loading
     @State private var confirmCancel = false
     @State private var errorMessage: String?
+    @State private var editing = false
+    @State private var care: CareModel?
     @Environment(\.openURL) private var openURL
+    @Environment(\.askAssistant) private var askAssistant
 
     var body: some View {
         ScrollView {
@@ -32,6 +35,21 @@ struct AppointmentDetailView: View {
         .navigationTitle("Appointment")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .toolbar {
+            if let appointment, appointment.status != .cancelled {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Edit") {
+                        let model = CareModel(api: api)
+                        care = model
+                        Task { await model.load() }
+                        editing = true
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $editing, onDismiss: { Task { await load() } }) {
+            if let care, let appointment { AppointmentEditorView(model: care, existing: appointment) }
+        }
         .confirmationDialog("Mark “\(appointment?.title ?? "this appointment")” as cancelled?", isPresented: $confirmCancel, titleVisibility: .visible) {
             Button("Mark as cancelled", role: .destructive) { Task { await cancel() } }
         } message: {
@@ -46,6 +64,8 @@ struct AppointmentDetailView: View {
 
     private func content(_ appointment: AppointmentRecord) -> some View {
         let upcoming = appointment.status == .scheduled && appointment.startsAt > Date()
+        let pastButScheduled = appointment.status == .scheduled && appointment.startsAt <= Date()
+        let prep = AppointmentPrep.parse(appointment.notes)
         return VStack(alignment: .leading, spacing: HM.Spacing.lg) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(appointment.title)
@@ -82,10 +102,10 @@ struct AppointmentDetailView: View {
                         Image(systemName: mode == .inPerson ? "mappin" : mode == .video ? "video" : "phone").foregroundStyle(HM.Colors.primary)
                     }
                 }
-                if let notes = appointment.notes, !notes.isEmpty {
+                if !prep.notes.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Your notes").font(.hmCaption.weight(.semibold)).foregroundStyle(HM.Colors.textSecondary)
-                        Text(notes).font(.hmBody).foregroundStyle(HM.Colors.textPrimary)
+                        Text(prep.notes).font(.hmBody).foregroundStyle(HM.Colors.textPrimary)
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -105,18 +125,23 @@ struct AppointmentDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .hmCard()
 
-            if upcoming {
+            if appointment.status != .cancelled {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Prepare for this visit").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
-                    Text("Write down questions and what you'd like to mention, with help from the AI Health Assistant.")
+                    Label("Questions to ask", systemImage: "checklist").font(.hmCardTitle).foregroundStyle(HM.Colors.textPrimary)
+                    Text(upcoming ? "Write them down now and tick them off during the visit." : "What you planned to ask at this visit.")
                         .font(.hmCaption)
                         .foregroundStyle(HM.Colors.textSecondary)
-                    Button {
-                        onAsk("Help me prepare questions for my appointment: \(appointment.title).")
-                    } label: {
-                        Label("Prepare with the assistant", systemImage: "sparkles")
+                    PrepChecklistView(api: api, appointmentID: appointment.id, notes: prep.notes, questions: prep.questions)
+                        .id(appointment.notes ?? "")
+                    if upcoming {
+                        Button {
+                            let question = "Help me prepare questions for my appointment: \(appointment.title)."
+                            if let askAssistant { askAssistant(question) } else { onAsk(question) }
+                        } label: {
+                            Label("Prepare with the AI Health Assistant", systemImage: "sparkles")
+                        }
+                        .buttonStyle(.hmSecondary)
                     }
-                    .buttonStyle(.hmSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .hmCard()
@@ -137,6 +162,14 @@ struct AppointmentDetailView: View {
                 }
             }
 
+            if pastButScheduled {
+                Button {
+                    Task { await setStatus(.completed) }
+                } label: {
+                    Label("Mark as done", systemImage: "checkmark.circle")
+                }
+                .buttonStyle(.hmSecondary)
+            }
             if upcoming {
                 Button(role: .destructive) { confirmCancel = true } label: {
                     Label("Mark as cancelled", systemImage: "calendar.badge.minus")
@@ -168,10 +201,12 @@ struct AppointmentDetailView: View {
         }
     }
 
-    private func cancel() async {
+    private func cancel() async { await setStatus(.cancelled) }
+
+    private func setStatus(_ status: AppointmentRecord.Status) async {
         do {
-            try await api.setAppointmentStatus(appointmentID, .cancelled)
-            appointment?.status = .cancelled
+            try await api.setAppointmentStatus(appointmentID, status)
+            appointment?.status = status
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Couldn't update the appointment."
         }

@@ -759,8 +759,110 @@ test.describe("reports, health and settings", () => {
     await expect(page.getByRole("link", { name: /In an emergency, call/ })).toHaveAttribute("href", /^tel:/);
   });
 
+  test.describe("care", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("care hub: emergency first, then appointments and the care team", async ({ page }) => {
+      await signInFresh(page);
+      await page.goto("/care", { waitUntil: "networkidle" });
+      const emergency = page.getByRole("link", { name: /In an emergency, call/ });
+      const appointments = page.getByRole("heading", { name: "Upcoming appointments" });
+      expect((await emergency.boundingBox())!.y).toBeLessThan((await appointments.boundingBox())!.y);
+      await expect(page.getByRole("link", { name: /Annual check-up/ })).toBeVisible();
+      await expectCurrentPageAccessible(page);
+      await page.getByRole("link", { name: "See all" }).first().click();
+      await expect(page).toHaveURL(/\/care\/appointments$/);
+      await page.getByRole("link", { name: "Past", exact: true }).click();
+      await expect(page).toHaveURL(/when=past/);
+      await expect(page.getByRole("link", { name: /Skin check/ })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Blood test/ })).toBeVisible();
+    });
+
+    test("add, prepare, edit and cancel an appointment", async ({ page }) => {
+      await signInFresh(page);
+      const title = `Physio ${unique()}`;
+      await page.goto("/care/appointments/new", { waitUntil: "networkidle" });
+      await page.getByLabel("What is it?").fill(title);
+      const next = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+      await page.getByLabel("Date").fill(next);
+      await page.getByLabel("Time").fill("14:15");
+      await page.getByText("Video call", { exact: true }).click();
+      await expectCurrentPageAccessible(page);
+      await page.getByRole("button", { name: "Add appointment" }).click();
+      await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+      await expect(page.getByText("Video call", { exact: true })).toBeVisible();
+
+      const suggestions = page.getByRole("group", { name: "Suggested questions" });
+      await suggestions.getByRole("button", { name: /What should I expect from this visit/ }).click();
+      await expect(page.getByText("Saved.")).toBeVisible();
+      await page.getByLabel("Add a question").fill("Can I keep exercising?");
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("checkbox", { name: "Can I keep exercising?" }).check();
+      await expect(page.getByText("Saved.")).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole("checkbox", { name: "Can I keep exercising?" })).toBeChecked();
+      await expect(page.getByRole("checkbox", { name: "What should I expect from this visit?" })).not.toBeChecked();
+
+      await page.getByRole("link", { name: "Edit" }).click();
+      await page.getByLabel("What is it?").fill(`${title} (moved)`);
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page.getByRole("heading", { level: 1, name: `${title} (moved)` })).toBeVisible();
+      // The checklist survives an edit of the notes form.
+      await expect(page.getByRole("checkbox", { name: "Can I keep exercising?" })).toBeChecked();
+
+      await page.getByRole("button", { name: "Mark as cancelled" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Mark as cancelled" }).click();
+      await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+    });
+
+    test("care team: add, validate, link an appointment, edit and remove", async ({ page }) => {
+      await signInFresh(page);
+      const name = `Dr. Test ${unique()}`;
+      await page.goto("/care/team", { waitUntil: "networkidle" });
+      await page.getByRole("link", { name: "Add to care team" }).click();
+      await page.getByLabel("Name").fill(name);
+      await page.getByLabel("Role or specialty (optional)").fill("Family doctor");
+      await page.getByLabel("Phone (optional)").fill("020 7946 0000");
+      await page.getByLabel("Website (optional)").fill("not a website");
+      await page.getByRole("button", { name: "Add to care team" }).click();
+      // The browser's own URL check or ours stops it.
+      await expect(page).toHaveURL(/\/care\/team\/new$/);
+      await page.getByLabel("Website (optional)").fill("https://example.com");
+      await page.getByRole("button", { name: "Add to care team" }).click();
+      await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Call 020 7946 0000" })).toHaveAttribute("href", "tel:02079460000");
+      await expectCurrentPageAccessible(page);
+
+      await page.getByRole("link", { name: "Add appointment" }).click();
+      await expect(page.getByLabel("With")).toHaveValue(/.+/);
+      await page.getByLabel("What is it?").fill("First visit");
+      await page.getByRole("button", { name: "Add appointment" }).click();
+      await expect(page.getByText(`With ${name}`)).toBeVisible();
+      await page.getByRole("link", { name: new RegExp(name) }).first().click();
+      await expect(page.getByRole("link", { name: /First visit/ })).toBeVisible();
+
+      await page.getByRole("link", { name: "Edit" }).click();
+      await page.getByLabel("Role or specialty (optional)").fill("GP");
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page.getByText("GP", { exact: true })).toBeVisible();
+
+      await page.getByRole("button", { name: "Remove from care team" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
+      await expect(page).toHaveURL(/\/care\/team$/);
+      await expect(page.getByText(name)).toHaveCount(0);
+    });
+
+    test("care still shows emergency help when details can't load", async ({ page, context }) => {
+      await signInFresh(page);
+      await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "error" })), url: page.url() }]);
+      await page.goto("/care");
+      await expect(page.getByRole("heading", { name: "Your care details couldn't load" })).toBeVisible();
+      await expect(page.getByRole("link", { name: /In an emergency, call/ })).toBeVisible();
+    });
+  });
+
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/plans/tasks", "/plans/medications", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/plans/tasks", "/plans/medications", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/care/appointments", "/care/team", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
   });
@@ -814,7 +916,7 @@ test.describe("navigation", () => {
       ["Health Dashboard", "/health"],
       ["Medical Reports", "/reports"],
       ["Medications & Tasks", "/plans"],
-      ["Find Care", "/care"],
+      ["Care", "/care"],
       ["Health Timeline", "/timeline"],
       ["Settings", "/settings"],
       ["Home", "/home"],

@@ -1,6 +1,6 @@
 import type { AppointmentRecord, CareProviderRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
-import { ArrowLeft, CalendarPlus, Clock, MapPin, MessageCircle, Navigation, Phone, Video } from "lucide-react";
+import { ArrowLeft, CalendarPlus, Clock, ListChecks, MapPin, MessageCircle, Navigation, Pencil, Phone, Video } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { buttonVariants, ButtonLink } from "@/components/ui/button";
@@ -9,6 +9,9 @@ import { Disclaimer } from "@/components/ui/disclaimer";
 import { ProviderCard } from "@/components/ui/provider-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { CancelAppointmentButton } from "@/features/care/cancel-appointment-button";
+import { MarkCompletedButton } from "@/features/care/mark-completed-button";
+import { PrepChecklist } from "@/features/care/prep-checklist";
+import { parsePrep } from "@/lib/care";
 import { getProfile } from "@/lib/api/data";
 import { api, ApiError } from "@/lib/api/server";
 
@@ -37,12 +40,21 @@ export default async function AppointmentPage({ params }: { params: Promise<{ id
   const minutes = appointment.endsAt ? Math.round((new Date(appointment.endsAt).getTime() - start.getTime()) / 60_000) : null;
   const upcoming = appointment.status === "scheduled" && start > new Date();
   const mode = appointment.mode ? MODE[appointment.mode] : null;
+  const prep = parsePrep(appointment.notes);
+  const pastButScheduled = appointment.status === "scheduled" && start <= new Date();
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <Link href="/care" className="inline-flex items-center gap-1 self-start text-caption font-semibold text-primary hover:underline">
-        <ArrowLeft aria-hidden className="size-4" /> Care
-      </Link>
+      <div className="flex items-center gap-3">
+        <Link href="/care/appointments" className="inline-flex items-center gap-1 text-caption font-semibold text-primary hover:underline">
+          <ArrowLeft aria-hidden className="size-4" /> Appointments
+        </Link>
+        {appointment.status !== "cancelled" && (
+          <Link href={`/care/appointments/${encodeURIComponent(appointment.id)}/edit`} className={buttonVariants({ variant: "secondary", size: "sm", className: "ml-auto" })}>
+            <Pencil aria-hidden /> Edit
+          </Link>
+        )}
+      </div>
       <div>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-page-heading text-text-primary">{appointment.title}</h1>
@@ -73,10 +85,10 @@ export default async function AppointmentPage({ params }: { params: Promise<{ id
             </span>
           </p>
         )}
-        {appointment.notes && (
+        {prep.notes && (
           <div className="rounded-md bg-card-muted p-3">
             <p className="text-caption font-semibold text-text-secondary">Your notes</p>
-            <p className="mt-1 text-body whitespace-pre-line text-text-primary">{appointment.notes}</p>
+            <p className="mt-1 text-body whitespace-pre-line text-text-primary">{prep.notes}</p>
           </div>
         )}
         <div className="flex flex-wrap gap-2">
@@ -98,17 +110,20 @@ export default async function AppointmentPage({ params }: { params: Promise<{ id
         </div>
       </Card>
 
-      {upcoming && (
-        <Card as="section" aria-labelledby="prepare" className="flex flex-wrap items-center justify-between gap-4">
+      {appointment.status !== "cancelled" && (
+        <Card as="section" aria-labelledby="prepare" className="flex flex-col gap-4">
           <div>
-            <h2 id="prepare" className="text-card-title text-text-primary">
-              Prepare for this visit
+            <h2 id="prepare" className="flex items-center gap-2 text-card-title text-text-primary">
+              <ListChecks aria-hidden className="size-5 text-primary" /> Questions to ask
             </h2>
-            <p className="text-caption text-text-secondary">Write down questions and what you&apos;d like to mention, with help from the AI Health Assistant.</p>
+            <p className="text-caption text-text-secondary">{upcoming ? "Write them down now and tick them off during the visit." : "What you planned to ask at this visit."}</p>
           </div>
-          <ButtonLink href={`/chat?q=${encodeURIComponent(`Help me prepare questions for my appointment: ${appointment.title}.`)}`} variant="soft">
-            <MessageCircle aria-hidden /> Prepare with the assistant
-          </ButtonLink>
+          <PrepChecklist id={appointment.id} notes={prep.notes} initial={prep.questions} />
+          {upcoming && (
+            <ButtonLink href={`/chat?q=${encodeURIComponent(`Help me prepare questions for my appointment: ${appointment.title}.`)}`} variant="soft" className="self-start">
+              <MessageCircle aria-hidden /> Prepare with the AI Health Assistant
+            </ButtonLink>
+          )}
         </Card>
       )}
 
@@ -117,13 +132,14 @@ export default async function AppointmentPage({ params }: { params: Promise<{ id
           <h2 id="provider-heading" className="text-card-title text-text-primary">
             Provider
           </h2>
-          <ProviderCard name={provider.name} specialty={provider.specialty} phone={provider.phone} address={provider.address} />
+          <ProviderCard name={provider.name} specialty={provider.specialty} phone={provider.phone} address={provider.address} href={`/care/team/${provider.id}`} />
         </section>
       )}
 
-      {upcoming && (
-        <div>
-          <CancelAppointmentButton id={appointment.id} title={appointment.title} />
+      {(upcoming || pastButScheduled) && (
+        <div className="flex flex-wrap gap-2">
+          {pastButScheduled && <MarkCompletedButton id={appointment.id} />}
+          {upcoming && <CancelAppointmentButton id={appointment.id} title={appointment.title} />}
         </div>
       )}
       <Disclaimer>HealthMate keeps your own record of appointments. For changes, contact the clinic directly.</Disclaimer>

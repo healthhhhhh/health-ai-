@@ -146,6 +146,24 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Remove"].exists)
     }
 
+    /// Care: the hub puts emergency help first, and an appointment's questions checklist saves.
+    func testCareHubAndAppointmentQuestions() {
+        let app = launch(["-hmInitialTab", "profile", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        let care = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Care: appointments and care team'")).firstMatch
+        for _ in 0..<6 where !care.isHittable { app.swipeUp() }
+        XCTAssertTrue(care.waitForExistence(timeout: 10), "profile: \(screen(app))")
+        care.tap()
+        XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'In an emergency, call'")).firstMatch.waitForExistence(timeout: 8), "care: \(screen(app))")
+        let checkUp = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Annual check-up'")).firstMatch
+        XCTAssertTrue(checkUp.waitForExistence(timeout: 8), "appointments: \(screen(app))")
+        checkUp.tap()
+        let suggestion = app.buttons["What should I expect from this visit?"]
+        for _ in 0..<4 where !suggestion.isHittable { app.swipeUp() }
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 5), "checklist: \(screen(app))")
+        suggestion.tap()
+        XCTAssertTrue(app.staticTexts["Saved."].waitForExistence(timeout: 5), "saved: \(screen(app))")
+    }
+
     /// Emergency guidance must appear even without an account or network.
     func testEmergencyGuidanceWhenSignedOut() {
         let app = launch(["-hmInitialTab", "chat"])
