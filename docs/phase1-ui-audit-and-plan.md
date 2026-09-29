@@ -18,8 +18,39 @@ real assessment.
 | 1 · Design system components | ✅ Done | See below |
 | 2 · Auth & onboarding | ✅ Done | See below |
 | 3 · Home & notifications | ✅ Done | See below |
-| 4 · AI Chat | ⏳ Next | |
-| 5–12 | ⬜ Not started | |
+| 4 · AI Chat | ✅ Done | See below |
+| 5 · Health & HealthKit | ⏳ Next | |
+| 6–12 | ⬜ Not started | |
+
+### Step 4: what was built
+
+The chat is a complete UI in Preview mode. All replies are deterministic samples (keyword-matched sample conversations), and the real AI gateway was not changed.
+- **Clearly sample:**
+  - In Preview, every answer carries "Sample response in Preview mode · not a real AI, not medical advice", on both platforms.
+  - The chat footer says the same.
+  - Outside Preview, answers keep "AI-generated · not a diagnosis".
+- **Safety first:** the on-device triage still runs before anything else. Emergency guidance appears instantly even when signed out, offline, without consent, or when AI is unavailable.
+- **States:**
+  - Welcome with suggested questions, and typing (dots that stay still with Reduce Motion).
+  - Follow-up options, and the consent gate.
+  - **AI unavailable:** a banner; messages aren't sent; Try again.
+  - **Offline:** its own message and Retry.
+  - A server error with Retry.
+  - A deleted conversation's link explains itself instead of opening a blank chat.
+  - Web: if the list can't load, the chat still works and the list offers a retry. If consent can't be checked, the page shows the offline/error state rather than breaking.
+- **History:** open, rename (web inline; iOS swipe or long-press), and delete with confirmation, with relative dates. iOS shows a load-error state.
+- **Attach:** the paperclip offers "Upload a report" or "Check a photo".
+  - Web opens the Reports upload with that option chosen.
+  - iOS opens Reports & photos.
+  - The upload flows themselves are Steps 7–8.
+- **Preview controls:** a new state, "AI unavailable", on web and iOS. Preview chat timeline entries are now titled after the conversation.
+- **Not changed:** services/api, the AI gateway, report and image analysis, and health-data processing.
+- **Verification:**
+  - web unit 74/74 and e2e 107/107 (new: rename/delete, AI unavailable + emergency, offline, deleted-conversation link, attach, axe)
+  - API 89/89, unchanged
+  - iOS core 95/95
+  - iOS app unit tests: offline and AI-unavailable chat
+  - iOS UI tests: AI unavailable with emergency guidance, and attach → Reports & photos
 
 ### Step 3: what was built
 
