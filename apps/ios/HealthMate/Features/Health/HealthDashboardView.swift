@@ -62,7 +62,7 @@ struct HealthDashboardView: View {
 
                     if session.isSignedIn {
                         NavigationLink {
-                            HealthTimelineView(api: session.api, onSessionEnded: { session.handle($0) })
+                            HealthTimelineView(api: session.api, onSessionEnded: { session.handle($0) }, session: session, reader: reader)
                         } label: {
                             LinkCard(systemImage: "clock.arrow.circlepath", title: "Health timeline", detail: "Reports, conversations, symptoms and notes in one place")
                         }

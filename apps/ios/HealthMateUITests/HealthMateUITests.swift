@@ -191,6 +191,24 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Your usual'")).firstMatch.exists, "usual: \(screen(app))")
     }
 
+    /// Timeline: a filter narrows the list, and an entry opens with its details and edit actions.
+    func testTimelineFilterOpensEntry() {
+        let app = launch(["-hmInitialTab", "health", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10), "health: \(screen(app))")
+        let timeline = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Health timeline'")).firstMatch
+        for _ in 0..<5 where !timeline.isHittable { app.swipeUp() }
+        timeline.tap()
+        XCTAssertTrue(app.navigationBars["Timeline"].waitForExistence(timeout: 5), "timeline: \(screen(app))")
+        let symptoms = app.buttons["Symptoms"]
+        XCTAssertTrue(symptoms.waitForExistence(timeout: 5), "filters: \(screen(app))")
+        symptoms.tap()
+        let headache = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Headache'")).firstMatch
+        XCTAssertTrue(headache.waitForExistence(timeout: 5), "symptoms: \(screen(app))")
+        headache.tap()
+        XCTAssertTrue(app.navigationBars["Entry"].waitForExistence(timeout: 5), "entry: \(screen(app))")
+        XCTAssertTrue(app.buttons["Edit entry"].exists, "edit: \(screen(app))")
+    }
+
     /// The paperclip opens Reports & photos from chat.
     func testAttachOpensReportsFromChat() {
         let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])

@@ -107,3 +107,36 @@ final class PreviewChatTests: XCTestCase {
         XCTAssertFalse(history.isEmpty)
     }
 }
+
+final class PreviewTimelineTests: XCTestCase {
+    func testFiltersAddEditAndDelete() async throws {
+        PreviewURLProtocol.backend = PreviewBackend()
+        PreviewURLProtocol.state = { .normal }
+        let api = APIClient(baseURL: PreviewURLProtocol.baseURL, tokens: InMemoryTokenStore(), session: PreviewURLProtocol.makeSession())
+        _ = try await api.login(email: "alex.morgan@example.com", password: "preview-password")
+
+        let symptoms = try await api.timeline(types: TimelineFilter.symptoms.eventTypes)
+        XCTAssertFalse(symptoms.events.isEmpty)
+        XCTAssertTrue(symptoms.events.allSatisfy { $0.eventType == "symptom" })
+        let reports = try await api.timeline(types: TimelineFilter.reports.eventTypes)
+        XCTAssertTrue(reports.events.allSatisfy { ["report", "image"].contains($0.eventType) })
+
+        try await api.addTimelineEntry(type: "note", title: "Felt dizzy after standing", occurredAt: Date(), details: "Passed after a minute")
+        let notes = try await api.timeline(types: ["note"])
+        let added = try XCTUnwrap(notes.events.first { $0.title == "Felt dizzy after standing" })
+        XCTAssertEqual(added.details, "Passed after a minute")
+        XCTAssertTrue(added.isEditable)
+
+        try await api.updateTimelineEntry(added.id, title: "Felt lightheaded after standing", occurredAt: added.occurredAt, details: nil)
+        let editedNotes = try await api.timeline(types: ["note"])
+        let edited = try XCTUnwrap(editedNotes.events.first { $0.id == added.id })
+        XCTAssertEqual(edited.title, "Felt lightheaded after standing")
+        XCTAssertNil(edited.details)
+
+        let fromReport = try XCTUnwrap(reports.events.first)
+        XCTAssertFalse(fromReport.isEditable, "entries from reports can't be edited")
+        try await api.deleteTimelineEntry(added.id)
+        let after = try await api.timeline(types: ["note"])
+        XCTAssertFalse(after.events.contains { $0.id == added.id })
+    }
+}

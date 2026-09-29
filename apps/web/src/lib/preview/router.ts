@@ -469,13 +469,24 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
       return json({ events: page, nextCursor: events.length > limit ? page.at(-1)!.occurredAt : null });
     }
     if (!b && method === "POST") {
-      const entry: TimelineEventRecord = { id: newId(), eventType: (input.eventType as TimelineEventRecord["eventType"]) ?? "note", title: text(input.title, 200), occurredAt: optionalText(input.occurredAt, 40) ?? nowIso(), sourceType: "user_entered", sourceId: null, payload: (input.payload as Record<string, unknown>) ?? null };
+      const entry: TimelineEventRecord = { id: newId(), eventType: (input.eventType as TimelineEventRecord["eventType"]) ?? "note", title: text(input.title, 200), occurredAt: optionalText(input.occurredAt, 40) ?? nowIso(), sourceType: "user_entered", sourceId: null, payload: optionalText(input.details, 1000) ? { details: optionalText(input.details, 1000) } : ((input.payload as Record<string, unknown>) ?? null) };
       account.timeline.unshift(entry);
       return json({ id: entry.id }, 201);
     }
     const entry = account.timeline.find((e) => e.id === b);
     if (b && !entry) return fail(404, "not_found", "Entry not found.");
     if (entry && method === "GET") return json(entry);
+    // Editing is Preview-only for now (the Phase 2 API adds it); only entries the person added can change.
+    if (entry && method === "PATCH") {
+      if (entry.sourceType !== "user_entered") return fail(403, "forbidden", "Only entries you added can be edited.");
+      if (typeof input.title === "string" && text(input.title, 200)) entry.title = text(input.title, 200);
+      if (typeof input.occurredAt === "string" && !Number.isNaN(Date.parse(input.occurredAt))) entry.occurredAt = new Date(input.occurredAt).toISOString();
+      if (input.details !== undefined) {
+        const details = optionalText(input.details, 1000);
+        entry.payload = details ? { ...(entry.payload ?? {}), details } : Object.fromEntries(Object.entries(entry.payload ?? {}).filter(([k]) => k !== "details"));
+      }
+      return json(entry);
+    }
     if (entry && method === "DELETE") {
       if (entry.sourceType !== "user_entered") return fail(403, "forbidden", "Only entries you added can be deleted.");
       account.timeline.splice(account.timeline.indexOf(entry), 1);

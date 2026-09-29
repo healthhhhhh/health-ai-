@@ -87,7 +87,7 @@ struct HomeView: View {
             case .reports:
                 DocumentsView(session: session)
             case .timeline:
-                HealthTimelineView(api: session.api, onSessionEnded: { session.handle($0) })
+                HealthTimelineView(api: session.api, onSessionEnded: { session.handle($0) }, session: session, reader: healthReader)
             case .metric(let metric):
                 if let healthReader {
                     MetricDestination(metric: metric, reader: healthReader, api: session.api)
@@ -204,7 +204,7 @@ struct HomeView: View {
 }
 
 /// A report or photo opened from Home, with its own list model.
-private struct ReportDestination: View {
+struct ReportDestination: View {
     let session: SessionStore
     let documentID: String
     @State private var model: DocumentsViewModel
@@ -232,7 +232,7 @@ private struct ReportDestination: View {
 }
 
 /// A metric opened from Home, with the same data and comparison as the Health tab.
-private struct MetricDestination: View {
+struct MetricDestination: View {
     let metric: TrackedMetric
     @State private var model: HealthDashboardViewModel
 

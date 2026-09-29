@@ -380,21 +380,68 @@ test.describe("chat", () => {
 });
 
 test.describe("timeline, plan and profile", () => {
-  test("shows the sample timeline with sources", async ({ page }) => {
-    await page.goto("/timeline");
+  test("shows the sample timeline with sources, day labels and filters", async ({ page }) => {
+    await page.goto("/timeline", { waitUntil: "networkidle" });
     await expect(page.getByText("Started a morning walking habit")).toBeVisible();
     await expect(page.getByText("Added by you").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+    await page.getByRole("link", { name: "Symptoms", exact: true }).click();
+    await expect(page).toHaveURL(/\/timeline\?show=symptoms$/);
+    await expect(page.getByText("Headache").first()).toBeVisible();
+    await expect(page.getByText("Started a morning walking habit")).toHaveCount(0);
+    await page.getByRole("link", { name: "Appointments", exact: true }).click();
+    await expect(page.getByText(/Annual check-up|Skin check|Blood test/).first()).toBeVisible();
   });
 
-  test("adds a note to the timeline and deletes it", async ({ page }) => {
-    const title = `Tried a new stretching routine ${unique()}`;
-    await page.goto("/timeline", { waitUntil: "networkidle" });
-    await page.getByText("Note", { exact: true }).click();
-    await page.getByLabel("Title").fill(title);
-    await page.getByRole("button", { name: "Add to timeline" }).click();
-    await expect(page.getByText(title)).toBeVisible();
-    await page.getByRole("button", { name: `Delete entry: ${title}` }).click();
-    await expect(page.getByText(title)).toHaveCount(0);
+  test("an entry opens its detail and the item it came from", async ({ page }) => {
+    await page.goto("/timeline?show=reports", { waitUntil: "networkidle" });
+    await page.getByRole("link", { name: /Example blood test analysed/ }).click();
+    await expect(page).toHaveURL(/\/timeline\/[\w-]+$/);
+    await expect(page.getByText("From a report", { exact: true })).toBeVisible();
+    await expect(page.getByText(/can't be edited here/)).toBeVisible();
+    await page.getByRole("link", { name: "Open the report" }).click();
+    await expect(page).toHaveURL(/\/reports\/[\w-]+$/);
+  });
+
+  test.describe("timeline entries you add", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("add, edit and delete a note", async ({ page }) => {
+      await signInFresh(page);
+      const title = `Tried a new stretching routine ${unique()}`;
+      await page.goto("/timeline", { waitUntil: "networkidle" });
+      await page.getByText("Note", { exact: true }).click();
+      await page.getByLabel("Title").fill(title);
+      await page.getByLabel("Details (optional)").fill("Ten minutes before bed");
+      await page.getByRole("button", { name: "Add to timeline" }).click();
+      await expect(page.getByText(title)).toBeVisible();
+      await page.getByRole("link", { name: new RegExp(title) }).click();
+      await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+      await expect(page.getByText("Ten minutes before bed")).toBeVisible();
+
+      await page.getByRole("button", { name: "Edit entry" }).click();
+      await page.getByLabel("Title").fill(`${title} (edited)`);
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page.getByRole("heading", { level: 1, name: `${title} (edited)` })).toBeVisible();
+
+      await page.getByRole("button", { name: "Delete entry" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+      await expect(page).toHaveURL(/\/timeline$/);
+      await expect(page.getByText(title)).toHaveCount(0);
+      await expectCurrentPageAccessible(page);
+    });
+
+    test("filters with nothing show a helpful empty state; errors show the error state", async ({ page, context }) => {
+      await signInFresh(page);
+      await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "empty" })), url: page.url() }]);
+      await page.goto("/timeline?show=symptoms");
+      await expect(page.getByRole("heading", { name: "No symptoms yet" })).toBeVisible();
+      await page.getByRole("link", { name: "Show everything" }).click();
+      await expect(page.getByRole("heading", { name: "Your timeline is empty" })).toBeVisible();
+      await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "error" })), url: page.url() }]);
+      await page.goto("/timeline");
+      await expect(page.getByRole("heading", { name: "Your timeline couldn't load" })).toBeVisible();
+    });
   });
 
   test("flags emergencies while a symptom is typed", async ({ page }) => {

@@ -535,12 +535,26 @@ public final class PreviewBackend: @unchecked Sendable {
             if b == nil, method == "POST" {
                 let id = newId()
                 let occurredAt = optionalText(input["occurredAt"], 40)
-                ctx.account["timeline"].items.insert(["id": .string(id), "eventType": input["eventType"].isNull ? "note" : input["eventType"], "title": .string(text(input["title"], 200)), "occurredAt": occurredAt.isNull ? .string(ctx.now) : occurredAt, "sourceType": "user_entered", "sourceId": nil, "payload": input["payload"]], at: 0)
+                ctx.account["timeline"].items.insert(["id": .string(id), "eventType": input["eventType"].isNull ? "note" : input["eventType"], "title": .string(text(input["title"], 200)), "occurredAt": occurredAt.isNull ? .string(ctx.now) : occurredAt, "sourceType": "user_entered", "sourceId": nil, "payload": optionalText(input["details"], 1000).isNull ? input["payload"] : ["details": optionalText(input["details"], 1000)]], at: 0)
                 return json(["id": .string(id)], 201)
             }
             if let id = b {
                 guard let index = ctx.account["timeline"].array.firstIndex(where: { $0["id"].string == id }) else { return fail(404, "not_found", "Entry not found.") }
                 if method == "GET" { return json(ctx.account["timeline"].array[index]) }
+                // Editing is Preview-only for now (the Phase 2 API adds it); only entries the person added can change.
+                if method == "PATCH" {
+                    guard ctx.account["timeline"].array[index]["sourceType"].string == "user_entered" else { return fail(403, "forbidden", "Only entries you added can be edited.") }
+                    let title = text(input["title"], 200)
+                    if !title.isEmpty { ctx.account["timeline"].items[index]["title"] = .string(title) }
+                    if let when = input["occurredAt"].string, JSONCoding.parseISO8601(when) != nil { ctx.account["timeline"].items[index]["occurredAt"] = .string(when) }
+                    if input.object["details"] != nil {
+                        let details = optionalText(input["details"], 1000)
+                        var payload = ctx.account["timeline"].array[index]["payload"].object
+                        payload["details"] = details.isNull ? nil : details
+                        ctx.account["timeline"].items[index]["payload"] = payload.isEmpty ? .null : .object(payload)
+                    }
+                    return json(ctx.account["timeline"].array[index])
+                }
                 if method == "DELETE" {
                     guard ctx.account["timeline"].array[index]["sourceType"].string == "user_entered" else { return fail(403, "forbidden", "Only entries you added can be deleted.") }
                     ctx.account["timeline"].items.remove(at: index)

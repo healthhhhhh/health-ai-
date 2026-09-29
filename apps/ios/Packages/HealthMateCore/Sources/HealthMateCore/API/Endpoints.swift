@@ -270,8 +270,16 @@ extension APIClient {
         let _: Result = try await send(Endpoint("DELETE", "health-data/apple-health"))
     }
 
-    public func timeline(before: String? = nil) async throws -> TimelinePage {
-        try await send(Endpoint("GET", "timeline", query: before.map { [URLQueryItem(name: "before", value: $0)] } ?? []))
+    public func timeline(before: String? = nil, types: [String] = []) async throws -> TimelinePage {
+        var query = before.map { [URLQueryItem(name: "before", value: $0)] } ?? []
+        if !types.isEmpty { query.append(URLQueryItem(name: "types", value: types.joined(separator: ","))) }
+        return try await send(Endpoint("GET", "timeline", query: query))
+    }
+
+    /// Edits an entry the person added. Preview mode only in Phase 1 (the API adds it in Phase 2).
+    public func updateTimelineEntry(_ id: String, title: String, occurredAt: Date, details: String?) async throws {
+        struct Body: Encodable { let title: String; let occurredAt: Date; let details: String? }
+        let _: TimelineEventRecord = try await send(.json("PATCH", "timeline/\(id)", Body(title: title, occurredAt: occurredAt, details: details ?? "")))
     }
 
     /// Only entries the person added themselves can be deleted.
