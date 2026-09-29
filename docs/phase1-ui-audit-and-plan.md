@@ -16,8 +16,43 @@ real assessment.
 |---|---|---|
 | 0 · Preview mode foundation | ✅ Done | See below |
 | 1 · Design system components | ✅ Done | See below |
-| 2 · Auth & onboarding | ⏳ Next | |
-| 3–12 | ⬜ Not started | |
+| 2 · Auth & onboarding | ✅ Done (iOS app build confirmed by CI) | See below |
+| 3 · Home & notifications | ⏳ Next | |
+| 4–12 | ⬜ Not started | |
+
+### Step 2: what was built
+
+Sign-up → confirm email → account setup → Home now works end to end in Preview mode on both platforms.
+- **Sign in / create account:** Continue with Apple and Continue with Google. In Preview mode these sign in to
+  a new sample account; real OAuth is Phase 2. Signed-out and account-deleted notices.
+- **Email verification:** a "Check your email" screen (web `/verify-email`, iOS inside the sign-in sheet) with:
+  - resend, with a 30-second cooldown
+  - use a different email
+  - the Preview inbox
+  - states for an expired link and a failed confirmation
+  Signing in before confirming returns to this screen instead of showing an error.
+- **Account setup** (web `/onboarding`, iOS `AccountSetupView`), in six steps:
+  1. About you. Only a first name is required.
+  2. Goals.
+  3. Optional health details. These are saved as "you added" (`user_reported`), and medication instructions are kept word for word.
+  4. Privacy consents. All start off.
+  5. Reminders, with the notification permission primer.
+  6. The Apple Health primer.
+  A summary follows; nothing is saved until the last step. The app routes accounts that haven't finished setup here (`me/account.onboardingCompleted`).
+- **Welcome (iOS):**
+  - "Get Started" now opens Create account.
+  - "Explore without an account" keeps the signed-out, on-device plan.
+- **Sign out:** a confirmation dialog on web (iOS already had one), then the sign-in screen.
+- **Shared logic:** in HealthMateCore (`HealthGoal`, `AccountSetupStep`, `AccountSetupDraft`: validation and save), with tests.
+- **Found and fixed:**
+  - Both Preview routers returned the whole health profile from `PATCH me/profile`; they now return just the profile details, as the real API does.
+  - Onboarding now saves reminder choices to `me/notification-preferences`.
+  - The CI embeddings check now waits for an authenticated 200 before it runs.
+- **Verification:**
+  - web unit 67/67
+  - web e2e 83/83, including the full sign-up → onboarding → sign-out flow, social sign-in, and axe on every onboarding step and the verify-email states
+  - iOS core 88/88
+  - new iOS UI test: sign-up → setup → Home
 
 ### Step 1: what was built
 

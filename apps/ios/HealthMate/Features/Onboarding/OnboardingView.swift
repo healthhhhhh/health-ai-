@@ -6,6 +6,7 @@ struct OnboardingView: View {
     var onFinish: () -> Void
 
     @State private var showSignIn = false
+    @State private var signUp = false
     @State private var haloPulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -51,7 +52,7 @@ struct OnboardingView: View {
         .background(HMGradient.appBackground.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) { actions }
         .sheet(isPresented: $showSignIn) {
-            SignInView(session: session, onSignedIn: onFinish)
+            SignInView(session: session, startInSignUp: signUp, onSignedIn: onFinish)
         }
     }
 
@@ -83,10 +84,19 @@ struct OnboardingView: View {
 
     private var actions: some View {
         VStack(spacing: 6) {
-            Button("Get Started", action: onFinish)
-                .buttonStyle(.hmPrimary(fullWidth: true))
-            Button("Sign In") { showSignIn = true }
-                .buttonStyle(.hmLink)
+            Button("Get Started") {
+                signUp = true
+                showSignIn = true
+            }
+            .buttonStyle(.hmPrimary(fullWidth: true))
+            HStack(spacing: 16) {
+                Button("Sign In") {
+                    signUp = false
+                    showSignIn = true
+                }
+                Button("Explore without an account", action: onFinish)
+            }
+            .buttonStyle(.hmLink)
             Text(legalText)
                 .font(.hmMicro)
                 .foregroundStyle(HM.Colors.textSecondary)

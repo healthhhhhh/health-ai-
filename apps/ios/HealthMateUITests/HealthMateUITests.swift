@@ -32,12 +32,33 @@ final class HealthMateUITests: XCTestCase {
         return textView.exists ? textView : app.textFields["Message"]
     }
 
-    func testOnboardingGetStartedOpensHome() {
+    func testExploreWithoutAnAccountOpensHome() {
         let app = launch(onboarded: false)
+        let explore = app.buttons["Explore without an account"]
+        XCTAssertTrue(explore.waitForExistence(timeout: 10))
+        explore.tap()
+        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
+    }
+
+    /// Preview mode: Get Started → Continue with Apple → account setup → Home, with no server.
+    func testSignUpRunsAccountSetupThenOpensHome() {
+        let app = launch(onboarded: false, ["-hmPreviewState", "normal"])
         let getStarted = app.buttons["Get Started"]
         XCTAssertTrue(getStarted.waitForExistence(timeout: 10))
         getStarted.tap()
-        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Create your account"].waitForExistence(timeout: 5))
+        app.buttons["Continue with Apple"].tap()
+
+        XCTAssertTrue(app.staticTexts["About you"].waitForExistence(timeout: 10))
+        for heading in ["What would help most?", "Your health details", "Your privacy choices", "Reminders", "Apple Health"] {
+            app.buttons["Continue"].tap()
+            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5), heading)
+        }
+        app.buttons["Continue"].tap()
+        let goHome = app.buttons["Go to Home"]
+        XCTAssertTrue(goHome.waitForExistence(timeout: 5))
+        goHome.tap()
+        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10))
     }
 
     func testEveryTabOpens() {

@@ -87,8 +87,10 @@ struct SampleContentLabel: View {
 
 /// Explains a permission before the system prompt, and covers the denied and
 /// unavailable states (with how to change it). Mirrors the web `PermissionPrimer`.
+enum PermissionStatus { case prompt, granted, denied, unavailable }
+
 struct PermissionPrimerView<Actions: View>: View {
-    enum Status { case prompt, granted, denied, unavailable }
+    typealias Status = PermissionStatus
 
     let systemImage: String
     var tone: Tone = .blue

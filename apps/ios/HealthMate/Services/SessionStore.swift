@@ -18,9 +18,14 @@ final class SessionStore {
     private(set) var isPreview = false
     private(set) var consents: [String: Bool] = [:]
     private(set) var busy = false
+    private var lastError: Error?
     var errorMessage: String?
     /// Non-error status to show on the sign-in screen (e.g. "check your email").
     var notice: String?
+    /// Set after sign-up (or a sign-in before confirming): the address waiting for its confirmation link.
+    var pendingVerificationEmail: String?
+    /// The signed-in account hasn't finished first-run setup (goals, privacy, reminders).
+    private(set) var needsAccountSetup = false
 
     let api: APIClient
 
@@ -41,7 +46,7 @@ final class SessionStore {
         }
         #endif
         await refreshMeta()
-        if isSignedIn { await loadConsents() }
+        if isSignedIn { await loadAccount() }
     }
 
     func refreshMeta() async {
@@ -52,7 +57,13 @@ final class SessionStore {
     }
 
     func signIn(email: String, password: String) async -> Bool {
-        await perform { _ = try await self.api.login(email: email, password: password) }
+        let ok = await perform { _ = try await self.api.login(email: email, password: password) }
+        if !ok, case .server(_, "email_not_confirmed", _)? = lastError as? APIError {
+            // Not confirmed yet: go back to "check your email" rather than showing an error.
+            errorMessage = nil
+            pendingVerificationEmail = email.trimmingCharacters(in: .whitespaces)
+        }
+        return ok
     }
 
     /// Returns true when signed in. With email confirmation on, returns false and sets `notice`.
@@ -67,7 +78,7 @@ final class SessionStore {
         }
         if pending {
             errorMessage = nil
-            notice = "We've sent a confirmation link to \(email). Open it, then sign in."
+            pendingVerificationEmail = email.trimmingCharacters(in: .whitespaces)
         }
         return ok
     }
@@ -92,7 +103,41 @@ final class SessionStore {
 
     /// Confirms an email address from the confirmation email and signs in.
     func verifyEmail(token: String) async -> Bool {
-        await perform { _ = try await self.api.verifyEmail(token: token) }
+        let ok = await perform { _ = try await self.api.verifyEmail(token: token) }
+        if ok { pendingVerificationEmail = nil }
+        return ok
+    }
+
+    /// Sends the confirmation email again (always "sent", so it can't reveal who has an account).
+    func resendVerification() async -> Bool {
+        guard let email = pendingVerificationEmail else { return false }
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            try await api.resendVerification(email: email)
+            return true
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "We couldn't send the email. Please try again."
+            return false
+        }
+    }
+
+    /// Saves first-run setup; on success the app continues to Home.
+    func completeAccountSetup(_ draft: AccountSetupDraft) async -> Bool {
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            try await draft.save(using: api)
+            needsAccountSetup = false
+            await loadConsents()
+            return true
+        } catch {
+            handle(error)
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "We couldn't save your choices. Please try again."
+            return false
+        }
     }
 
     /// Continue with Apple or Google (Phase 1: mocked in Preview mode).
@@ -103,6 +148,7 @@ final class SessionStore {
     func signOut() async {
         await api.logout()
         consents = [:]
+        needsAccountSetup = false
         state = .signedOut
     }
 
@@ -136,6 +182,12 @@ final class SessionStore {
         if (error as? APIError) == .unauthorized { state = .signedOut }
     }
 
+    /// Consents plus whether first-run setup is still to do (an older server without the endpoint counts as done).
+    private func loadAccount() async {
+        await loadConsents()
+        needsAccountSetup = (try? await api.accountSummary())?.onboardingCompleted == false
+    }
+
     private func loadConsents() async {
         if let list = try? await api.consents() {
             consents = Dictionary(uniqueKeysWithValues: list.map { ($0.kind, $0.granted) })
@@ -146,12 +198,14 @@ final class SessionStore {
         busy = true
         errorMessage = nil
         defer { busy = false }
+        lastError = nil
         do {
             try await work()
             state = .signedIn
-            await loadConsents()
+            await loadAccount()
             return true
         } catch {
+            lastError = error
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Something went wrong. Please try again."
             return false
         }

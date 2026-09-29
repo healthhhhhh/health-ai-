@@ -24,6 +24,23 @@ describe("preview API", () => {
     expect((await call("me", "GET", undefined, "pv.unknown")).status).toBe(401);
   });
 
+  it("starts a new account with no goals or consents, and saves onboarding", async () => {
+    const { body } = await call<{ accessToken: string; isNewUser: boolean }>("auth/oauth", "POST", { provider: "apple", timeZone: "UTC" });
+    const token = body.accessToken;
+    expect(body.isNewUser).toBe(true);
+    expect((await call<HealthProfile>("me", "GET", undefined, token)).body.profile.goals).toEqual([]);
+    const consents = await call<{ granted: boolean }[]>("me/consents", "GET", undefined, token);
+    expect(consents.body.every((c) => !c.granted)).toBe(true);
+    // Same shape as the real API: the profile details, not the whole health profile.
+    const patched = await call<Record<string, unknown>>("me/profile", "PATCH", { firstName: "Sam", goals: ["be_active"] }, token);
+    expect(patched.body).toMatchObject({ firstName: "Sam", goals: ["be_active"] });
+    expect(patched.body).not.toHaveProperty("conditions");
+    await call("me/notification-preferences", "PUT", { task: false }, token);
+    expect((await call<{ task: boolean }>("me/notification-preferences", "GET", undefined, token)).body.task).toBe(false);
+    expect((await call("me/onboarding", "POST", undefined, token)).status).toBe(204);
+    expect((await call<{ onboardingCompleted: boolean }>("me/account", "GET", undefined, token)).body.onboardingCompleted).toBe(true);
+  });
+
   it("rejects the documented wrong password and short passwords", async () => {
     expect((await call("auth/login", "POST", { email: "a@b.co", password: "wrong-password" })).status).toBe(401);
     expect((await call("auth/login", "POST", { email: "a@b.co", password: "short" })).status).toBe(401);

@@ -191,6 +191,11 @@ public final class PreviewBackend: @unchecked Sendable {
         }
         if let method { account["account"]["signInMethods"] = [.string(method)] }
         account["account"]["onboardingCompleted"] = .bool(onboarded)
+        if !onboarded {
+            // A brand-new account picks its own goals and privacy choices during onboarding.
+            account["profile"]["profile"]["goals"] = []
+            account["consents"] = .array(account["consents"].array.map { var c = $0; c["granted"] = false; return c })
+        }
         sessions[sid] = account
         return (sid, account)
     }
@@ -321,7 +326,7 @@ public final class PreviewBackend: @unchecked Sendable {
                 for key in ["dateOfBirth", "sex", "timeZone"] where input.object[key] != nil { ctx.account["profile"]["profile"][key] = optionalText(input[key], 64) }
                 if input.object["heightCm"] != nil { ctx.account["profile"]["profile"]["heightCm"] = input["heightCm"].double.map { .number($0) } ?? .null }
                 if case .array(let goals) = input["goals"] { ctx.account["profile"]["profile"]["goals"] = .array(Array(goals.filter { $0.string != nil }.prefix(10))) }
-                return json(ctx.account["profile"])
+                return json(ctx.account["profile"]["profile"])
             }
             if b == "conditions", c == nil, method == "POST" {
                 let id = newId()

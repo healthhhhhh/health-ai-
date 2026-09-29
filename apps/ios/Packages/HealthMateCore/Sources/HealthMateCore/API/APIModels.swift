@@ -73,6 +73,52 @@ public struct ProfileDetails: Codable, Equatable, Sendable {
     public var sex: String?
     public var heightCm: Double?
     public var timeZone: String
+    /// What the person wants help with (onboarding); ids from `HealthGoal`.
+    public var goals: [String]?
+}
+
+/// Sign-in details for the account (not health data).
+public struct AccountSummary: Codable, Equatable, Sendable {
+    public let email: String
+    public let emailVerified: Bool
+    public let signInMethods: [String]
+    public let createdAt: Date
+    public let onboardingCompleted: Bool
+}
+
+/// Which reminders and updates the person wants, and how private they are.
+public struct NotificationPreferences: Codable, Equatable, Sendable {
+    public struct QuietHours: Codable, Equatable, Sendable {
+        public var enabled: Bool
+        public var start: String
+        public var end: String
+        public init(enabled: Bool, start: String, end: String) {
+            self.enabled = enabled
+            self.start = start
+            self.end = end
+        }
+    }
+
+    public var medication: Bool
+    public var task: Bool
+    public var appointment: Bool
+    public var report: Bool
+    public var insight: Bool
+    public var account: Bool
+    /// Show health details on the lock screen / in notification previews.
+    public var showDetails: Bool
+    public var quietHours: QuietHours
+
+    public init(medication: Bool = true, task: Bool = true, appointment: Bool = true, report: Bool = true, insight: Bool = true, account: Bool = true, showDetails: Bool = false, quietHours: QuietHours = QuietHours(enabled: false, start: "22:00", end: "07:00")) {
+        self.medication = medication
+        self.task = task
+        self.appointment = appointment
+        self.report = report
+        self.insight = insight
+        self.account = account
+        self.showDetails = showDetails
+        self.quietHours = quietHours
+    }
 }
 
 public struct ConditionRecord: Codable, Equatable, Identifiable, Sendable {

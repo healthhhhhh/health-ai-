@@ -110,6 +110,23 @@ extension APIClient {
         await clearSession()
     }
 
+    public func accountSummary() async throws -> AccountSummary {
+        try await send(Endpoint("GET", "me/account"))
+    }
+
+    /// Marks first-run setup as done for this account (on every device).
+    public func completeOnboarding() async throws {
+        try await sendNoContent(Endpoint("POST", "me/onboarding"))
+    }
+
+    public func notificationPreferences() async throws -> NotificationPreferences {
+        try await send(Endpoint("GET", "me/notification-preferences"))
+    }
+
+    public func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws {
+        try await sendNoContent(.json("PUT", "me/notification-preferences", preferences))
+    }
+
     public func consents() async throws -> [ConsentRecord] {
         try await send(Endpoint("GET", "me/consents"))
     }

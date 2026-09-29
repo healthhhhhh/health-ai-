@@ -27,6 +27,13 @@ struct SignInView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if session.pendingVerificationEmail != nil {
+                        VerifyEmailView(session: session, onUseDifferentEmail: {
+                            session.pendingVerificationEmail = nil
+                            session.errorMessage = nil
+                            mode = .signUp
+                        }, onSignedIn: finishSignIn)
+                    } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(mode == .signIn ? "Welcome back" : "Create your account")
                             .font(.hmPageHeading)
@@ -36,6 +43,8 @@ struct SignInView: View {
                             .foregroundStyle(HM.Colors.textSecondary)
                     }
                     SegmentedTabs(items: [SegmentItem(value: Mode.signIn, title: "Sign in"), SegmentItem(value: Mode.signUp, title: "Create account")], selection: $mode)
+
+                    SocialSignInButtons(session: session, onSignedIn: finishSignIn)
 
                     if mode == .signUp {
                         field("First name", error: nameError, field: .name) {
@@ -107,6 +116,7 @@ struct SignInView: View {
                     }
 
                     DisclaimerView(text: "By creating an account you agree to our Terms and Privacy Policy. HealthMate is not a substitute for a doctor.")
+                    }
                 }
                 .padding(24)
                 .animation(HMMotion.spring, value: mode)
@@ -165,15 +175,19 @@ struct SignInView: View {
             ? await session.signIn(email: email, password: password)
             : await session.signUp(email: email, password: password, firstName: firstName.trimmingCharacters(in: .whitespaces), lastName: "")
         if ok {
-            onSignedIn()
-            dismiss()
-        } else if session.notice != nil {
-            // Account created; waiting for the emailed confirmation.
+            finishSignIn()
+        } else if session.pendingVerificationEmail != nil {
+            // Account created (or not confirmed yet): the sheet now shows "Check your email".
             mode = .signIn
             password = ""
         } else {
             shakes += 1
         }
+    }
+
+    private func finishSignIn() {
+        onSignedIn()
+        dismiss()
     }
 }
 

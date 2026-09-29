@@ -65,8 +65,8 @@ export async function completeOnboarding(input: OnboardingInput): Promise<{ erro
       await api("me/consents", { method: "POST", json: { kind, granted: Boolean(input.consents[kind]) } });
     }
     await optional(async () => {
-      const current = await api<NotificationPreferences>("notification-preferences");
-      await api("notification-preferences", { method: "PUT", json: { ...current, ...input.reminders } });
+      const current = await api<NotificationPreferences>("me/notification-preferences");
+      await api("me/notification-preferences", { method: "PUT", json: { ...current, ...input.reminders } });
     });
     await optional(() => api("me/onboarding", { method: "POST" }));
   } catch (error) {
