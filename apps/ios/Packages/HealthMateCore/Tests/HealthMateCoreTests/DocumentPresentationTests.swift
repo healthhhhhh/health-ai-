@@ -60,3 +60,19 @@ final class DocumentPresentationTests: XCTestCase {
         XCTAssertEqual(DocumentPresentation.byteSize(1_204_551), "1.1 MB")
     }
 }
+
+final class PhotoCheckTests: XCTestCase {
+    func testANoteDescribingAnEmergencyShowsGuidanceBeforeSending() {
+        XCTAssertEqual(PhotoCheck.escalation(forNote: "It won't stop bleeding and I can't breathe")?.level, .emergency)
+        XCTAssertNil(PhotoCheck.escalation(forNote: "Itchy for 3 days"))
+        XCTAssertNil(PhotoCheck.escalation(forNote: ""))
+    }
+
+    func testEveryPurposeHasGuidance() {
+        for purpose in ImagePurpose.allCases {
+            XCTAssertFalse(purpose.detail.isEmpty)
+            XCTAssertFalse(purpose.tip.isEmpty)
+        }
+        XCTAssertTrue(PhotoCheck.getHelpNow.contains("emergency number"))
+    }
+}

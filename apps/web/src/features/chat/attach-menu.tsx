@@ -43,7 +43,7 @@ export function AttachMenu() {
               <span className="text-xs text-text-secondary">Lab results or a clinic letter</span>
             </span>
           </Link>
-          <Link role="menuitem" href="/reports?upload=photo#upload" className={item}>
+          <Link role="menuitem" href="/reports/photo-check" className={item}>
             <Camera aria-hidden className="size-4 text-purple" />
             <span>
               <span className="block font-semibold">Check a photo</span>

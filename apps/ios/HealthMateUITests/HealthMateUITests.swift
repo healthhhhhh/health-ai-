@@ -232,6 +232,25 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Ask the AI Health Assistant"].exists, "ask: \(screen(app))")
     }
 
+    /// Photo check: chat's "Check a photo" opens the guided flow, with the emergency advice first.
+    func testPhotoCheckGuidesThePhoto() {
+        let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        let attach = app.buttons["Add a report or photo"]
+        XCTAssertTrue(attach.waitForExistence(timeout: 10), "chat: \(screen(app))")
+        attach.tap()
+        app.buttons["Check a photo"].tap()
+        XCTAssertTrue(app.navigationBars["Photo check"].waitForExistence(timeout: 8), "photo check: \(screen(app))")
+        XCTAssertTrue(app.staticTexts["What does the photo show?"].exists)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'call your local emergency number now'")).firstMatch.exists, "advice: \(screen(app))")
+        let next = app.buttons["Continue"]
+        XCTAssertFalse(next.isEnabled, "a purpose comes first")
+        app.buttons.containing(NSPredicate(format: "label CONTAINS 'Skin or rash'")).firstMatch.tap()
+        next.tap()
+        XCTAssertTrue(app.staticTexts["Take a clear photo"].waitForExistence(timeout: 5), "take: \(screen(app))")
+        XCTAssertTrue(app.staticTexts["Show the whole rash or spot, not just part of it."].exists, "tips: \(screen(app))")
+        XCTAssertTrue(app.buttons["Choose a photo"].exists)
+    }
+
     /// The paperclip opens Reports & photos from chat.
     func testAttachOpensReportsFromChat() {
         let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])

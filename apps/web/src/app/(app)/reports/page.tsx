@@ -2,6 +2,7 @@ import type { ConsentRecord, DocumentRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
 import { ChevronRight, FileText, Image as ImageIcon, Search } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { IconBadge } from "@/components/ui/icon-badge";
@@ -21,6 +22,8 @@ export const dynamic = "force-dynamic";
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ upload?: string; show?: string; q?: string }> }) {
   const { upload, show, q = "" } = await searchParams;
+  // Old links to the photo upload open the dedicated photo check.
+  if (upload === "photo") redirect("/reports/photo-check");
   const filter = reportFilter(show);
   const query = q.slice(0, 100);
   const loaded = await Promise.all([api<DocumentRecord[]>("documents"), api<ConsentRecord[]>("me/consents")]).catch((error) => {
@@ -38,7 +41,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   if (loaded instanceof ApiError) {
     return (
       <>
-        <PageHeader title="Medical Reports" description="Upload a report or a photo and get a plain-language, AI-generated summary." />
+        <PageHeader title="Medical Reports" description="Upload a report or check a photo and get a plain-language, AI-generated summary." />
         <Card>
           <StateView
             state={loaded.code === "network" ? "offline" : "error"}
@@ -60,14 +63,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="Medical Reports" description="Upload a report or a photo and get a plain-language, AI-generated summary." />
+      <PageHeader title="Medical Reports" description="Upload a report or check a photo and get a plain-language, AI-generated summary." />
       <RefreshWhileProcessing active={documents.some((d) => d.status === "processing" || d.status === "awaiting_upload")} />
       <div className="grid gap-6 lg:grid-cols-[1fr_1fr] [&>*]:min-w-0">
         <Card as="section" aria-labelledby="upload" className="h-fit">
           <h2 id="upload" className="mb-4 text-card-title text-text-primary">
             Upload
           </h2>
-          {hasConsent ? <UploadPanel initialMode={upload === "photo" ? "image" : "report"} /> : <DocumentsConsent />}
+          {hasConsent ? <UploadPanel /> : <DocumentsConsent />}
           {hasConsent && isPreviewMode() && (
             <p className="mt-4 rounded-md bg-card-muted p-3 text-caption text-text-secondary">
               Preview tip: files aren&apos;t analysed. Put &ldquo;blurry&rdquo; in a file name to see the unreadable result, or &ldquo;damaged&rdquo; to see a failed upload.

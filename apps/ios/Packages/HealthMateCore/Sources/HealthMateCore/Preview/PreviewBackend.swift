@@ -75,6 +75,8 @@ public final class PreviewBackend: @unchecked Sendable {
     private let lock = NSLock()
     private var sessions: [String: JSONValue] = [:]
     private var processing: [String: [String: Date]] = [:]
+    /// Photo notes waiting for their sample result (document id → note), for the triage floor.
+    private var imageNotes: [String: String] = [:]
     private var pending: [String: Pending] = [:]
     private var resets: [String: String] = [:]
     private var emails: [PreviewEmail] = []
@@ -217,6 +219,19 @@ public final class PreviewBackend: @unchecked Sendable {
 
     public static let failureReason = "We couldn't open this file. It may be damaged or password-protected. Try saving it again, or upload a photo of the pages."
 
+    /// The real API's deterministic floor for photo checks: an emergency note always
+    /// results in emergency guidance, and an urgent note in at least urgent guidance.
+    static func withNoteTriage(_ result: JSONValue, note: String?) -> JSONValue {
+        guard let note, !note.isEmpty else { return result }
+        var result = result
+        switch SafetyEngine.triage(note).level {
+        case .emergency: result["careUrgency"] = "emergency"
+        case .urgent where result["careUrgency"].string != "emergency": result["careUrgency"] = "urgent"
+        default: break
+        }
+        return result
+    }
+
     /// Sample analyses finish a few seconds after upload.
     private func settleProcessing(_ sid: String) {
         guard var pendingDocs = processing[sid], var account = sessions[sid] else { return }
@@ -236,7 +251,7 @@ public final class PreviewBackend: @unchecked Sendable {
                 doc["status"] = "failed"
                 doc["failureReason"] = .string(Self.failureReason)
             } else {
-                doc["result"] = isImage ? (unclear ? analyses["poorImage"] : analyses["image"]) : (unclear ? analyses["unreadableReport"] : analyses["report"])
+                doc["result"] = isImage ? Self.withNoteTriage(unclear ? analyses["poorImage"] : analyses["image"], note: imageNotes.removeValue(forKey: id)) : (unclear ? analyses["unreadableReport"] : analyses["report"])
                 doc["status"] = "ready"
             }
             doc["processedAt"] = .string(PreviewClock.iso(current))
@@ -489,6 +504,7 @@ public final class PreviewBackend: @unchecked Sendable {
                 if c == "process", method == "POST" {
                     ctx.account["documents"].items[index]["status"] = "processing"
                     processing[ctx.sid, default: [:]][id] = now().addingTimeInterval(4)
+                    if let note = input["note"].string, !note.isEmpty { imageNotes[id] = String(note.prefix(500)) }
                     return json(ctx.account["documents"].array[index], 202)
                 }
                 if c == "file", method == "GET" {

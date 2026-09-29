@@ -18,6 +18,7 @@ struct ChatView: View {
     @State private var showHistory = false
     @State private var gateEscalation: Escalation?
     @State private var showReports = false
+    @State private var reportsStartWithPhoto = false
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -107,7 +108,7 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showReports) {
                 NavigationStack {
-                    DocumentsView(session: session)
+                    DocumentsView(session: session, startWithPhotoCheck: reportsStartWithPhoto)
                         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showReports = false } } }
                 }
             }
@@ -184,8 +185,8 @@ struct ChatView: View {
         VStack(spacing: 6) {
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    Button { showReports = true } label: { Label("Upload a report", systemImage: "doc.text") }
-                    Button { showReports = true } label: { Label("Check a photo", systemImage: "camera") }
+                    Button { reportsStartWithPhoto = false; showReports = true } label: { Label("Upload a report", systemImage: "doc.text") }
+                    Button { reportsStartWithPhoto = true; showReports = true } label: { Label("Check a photo", systemImage: "camera") }
                 } label: {
                     Image(systemName: "paperclip")
                         .font(.system(size: 17, weight: .semibold))
@@ -243,6 +244,8 @@ struct ChatView: View {
 
     private func consumePendingQuestion() {
         guard let question = pendingQuestion else { return }
+        // "Ask the AI Health Assistant" from a report brings the question back here.
+        showReports = false
         if canChat {
             pendingQuestion = nil
             Task { await model.send(question) }

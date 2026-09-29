@@ -8,8 +8,8 @@ import type { OAuthProvider } from "@healthmate/shared-types";
 export interface PreviewSession {
   id: string;
   account: SampleAccount;
-  /** Documents being "analysed": id → time the sample result becomes ready. */
-  processing: Map<string, number>;
+  /** Documents being "analysed": id → when the sample result becomes ready, and the photo note (for triage). */
+  processing: Map<string, { readyAt: number; note?: string }>;
 }
 
 interface PendingSignup {

@@ -125,6 +125,23 @@ final class PreviewBackendTests: XCTestCase {
         XCTAssertEqual(ready["result"]["model"].string, "sample", "results are marked as samples")
     }
 
+    func testAnEmergencyPhotoNoteAlwaysGetsEmergencyGuidance() {
+        final class Clock: @unchecked Sendable { var now = Date() }
+        let clock = Clock()
+        backend = PreviewBackend(now: { clock.now })
+        let token = signIn()
+        var urgency: [String: String] = [:]
+        for (label, note) in [("none", nil), ("emergency", "It's spreading fast and I can't breathe")] as [(String, String?)] {
+            let created = call("POST", "documents", ["kind": "image", "purpose": "skin", "filename": "arm.jpg", "contentType": "image/jpeg", "byteSize": 1000], token: token).1
+            let id = created["document"]["id"].string ?? ""
+            _ = call("POST", "documents/\(id)/process", note.map { ["note": .string($0)] }, token: token)
+            clock.now = clock.now.addingTimeInterval(5)
+            urgency[label] = call("GET", "documents/\(id)", token: token).1["result"]["careUrgency"].string
+        }
+        XCTAssertEqual(urgency, ["none": "routine", "emergency": "emergency"])
+        XCTAssertEqual(PreviewBackend.withNoteTriage(["careUrgency": "emergency"], note: "a bit itchy")["careUrgency"].string, "emergency", "never lowered")
+    }
+
     func testADamagedFileFailsWithAReasonAndANotification() {
         final class Clock: @unchecked Sendable { var now = Date() }
         let clock = Clock()

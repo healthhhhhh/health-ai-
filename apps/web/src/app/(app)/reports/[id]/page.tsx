@@ -1,12 +1,11 @@
 import type { AnalysisResult, DocumentRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
-import { ArrowLeft, Eye, FileSearch, FileUp, ListChecks, ShieldAlert, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Camera, Eye, FileSearch, FileUp, ListChecks, MessageCircle, ShieldAlert, Sparkles, Stethoscope, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AIGeneratedLabel, SampleContentLabel } from "@/components/ui/content-labels";
-import { EmptyState } from "@/components/ui/empty-state";
 import { StateView } from "@/components/ui/state-view";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { StepProgress } from "@/components/ui/step-progress";
@@ -16,6 +15,7 @@ import { documentTitle, findingFlag } from "@/features/reports/labels";
 import { QuestionsCard } from "@/features/reports/questions-card";
 import { RefreshWhileProcessing } from "@/features/reports/refresh-while-processing";
 import { api, ApiError } from "@/lib/api/server";
+import { CAPTURE_TIPS, photoCheckHref } from "@/lib/photo-check";
 import { askPrompt, byteSize, countsLine, currentStep, findingCounts, orderedFindings, PROCESSING_STEPS, questionsText } from "@/lib/reports";
 
 export const metadata: Metadata = { title: "Report" };
@@ -50,7 +50,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
   const processing = doc.status === "processing" || doc.status === "awaiting_upload";
   const sample = doc.result?.model === "sample";
-  const uploadAgain = `/reports${doc.kind === "image" ? "?upload=photo" : ""}`;
+  const uploadAgain = doc.kind === "image" ? photoCheckHref(doc.purpose, true) : "/reports";
   const date = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
   const unreadable = doc.status === "ready" && doc.result?.type === "report" && doc.result.readable === false;
 
@@ -110,6 +110,8 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       )}
       {doc.status === "ready" && doc.result && !unreadable && (
         <>
+          {/* Urgent guidance always comes first. */}
+          {doc.result.type === "image" && <UrgentGuidance level={doc.result.careUrgency} />}
           {sample && <SampleContentLabel>Sample result in Preview mode — this file wasn&apos;t analysed and nothing here is about you.</SampleContentLabel>}
           {doc.result.injectionDetected && (
             <p className="flex gap-2 rounded-md bg-warning-soft p-3 text-caption text-text-primary">
@@ -117,7 +119,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               This file contained text that looked like instructions to the AI. It was ignored and only the medical content was read.
             </p>
           )}
-          {doc.result.type === "report" ? <ReportResult doc={doc} result={doc.result} sample={sample} /> : <ImageResult result={doc.result} />}
+          {doc.result.type === "report" ? <ReportResult doc={doc} result={doc.result} sample={sample} /> : <ImageResult doc={doc} result={doc.result} sample={sample} />}
           {sample ? (
             <p className="text-xs text-text-muted">Sample content for Preview mode · {date.format(new Date(doc.processedAt ?? doc.createdAt))}. Not a diagnosis.</p>
           ) : (
@@ -193,47 +195,77 @@ function ReportResult({ doc, result, sample }: { doc: DocumentRecord; result: An
   );
 }
 
-function ImageResult({ result }: { result: AnalysisResult }) {
-  const urgent = result.careUrgency === "urgent" || result.careUrgency === "emergency";
+function UrgentGuidance({ level }: { level: AnalysisResult["careUrgency"] }) {
+  if (level !== "urgent" && level !== "emergency") return null;
+  return (
+    <EscalationCard
+      escalation={
+        level === "emergency"
+          ? {
+              level: "emergency",
+              title: "Get emergency help now",
+              body: "Based on what you described, call your local emergency number or go to the nearest emergency department.",
+              actions: [
+                { kind: "call_emergency", label: "Call emergency services" },
+                { kind: "find_care", label: "Find the nearest emergency department" },
+              ],
+            }
+          : {
+              level: "urgent",
+              title: "Please get this checked today",
+              body: "Contact a doctor or urgent-care service today. If it gets worse, call your local emergency number.",
+              actions: [
+                { kind: "contact_clinician", label: "Contact a clinician" },
+                { kind: "find_care", label: "Find urgent care" },
+              ],
+            }
+      }
+    />
+  );
+}
+
+function ImageResult({ doc, result, sample }: { doc: DocumentRecord; result: AnalysisResult; sample: boolean }) {
+  const retakeNeeded = result.quality === "poor" || result.supported === false;
   return (
     <>
-      {urgent && (
-        <EscalationCard
-          escalation={
-            result.careUrgency === "emergency"
-              ? {
-                  level: "emergency",
-                  title: "Get emergency help now",
-                  body: "Based on what you described, call your local emergency number or go to the nearest emergency department.",
-                  actions: [
-                    { kind: "call_emergency", label: "Call emergency services" },
-                    { kind: "find_care", label: "Find the nearest emergency department" },
-                  ],
-                }
-              : {
-                  level: "urgent",
-                  title: "Please get this checked today",
-                  body: "Contact a doctor or urgent-care service today. If it gets worse, call your local emergency number.",
-                  actions: [
-                    { kind: "contact_clinician", label: "Contact a clinician" },
-                    { kind: "find_care", label: "Find urgent care" },
-                  ],
-                }
-          }
-        />
-      )}
-      {result.quality === "poor" || result.supported === false ? (
+      <figure className="flex items-center gap-4 rounded-lg bg-card p-3 ring-1 ring-separator">
+        {/* eslint-disable-next-line @next/next/no-img-element -- a signed, short-lived link to a private file */}
+        <img src={`/reports/${doc.id}/file`} alt={sample ? "Example image (Preview mode doesn't keep photos)" : `Your photo: ${documentTitle(doc).toLowerCase()}`} className="size-20 shrink-0 rounded-md bg-card-muted object-cover" />
+        <figcaption className="min-w-0 text-caption text-text-secondary">
+          <span className="block text-body font-semibold text-text-primary">{result.bodyArea ?? documentTitle(doc)}</span>
+          {documentTitle(doc)}
+          {sample ? " · example image" : ""}
+        </figcaption>
+      </figure>
+      {retakeNeeded ? (
         <Card>
-          <EmptyState
+          <StateView
+            state="error"
             icon={<Eye />}
-            tone="orange"
             title={result.supported === false ? "We can't assess this kind of photo" : "The photo isn't clear enough"}
             description={result.qualityIssue ?? "Try again in good light, holding the camera steady and close."}
+            action={
+              result.supported === false ? (
+                <Link href="/care" className={buttonVariants({ size: "sm" })}>
+                  Find care
+                </Link>
+              ) : (
+                <Link href={photoCheckHref(doc.purpose, true)} className={buttonVariants({ size: "sm" })}>
+                  <Camera aria-hidden /> Retake photo
+                </Link>
+              )
+            }
           />
+          {result.supported !== false && (
+            <ul className="mx-auto mt-2 max-w-md list-disc pl-5 text-caption text-text-secondary">
+              {CAPTURE_TIPS.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          )}
         </Card>
       ) : (
         <>
-          {result.bodyArea && <p className="text-section-heading text-text-primary">{result.bodyArea}</p>}
           <List title="What we can see" icon={<Eye aria-hidden className="size-5" />} items={result.observations ?? []} />
           {(result.possibleCauses?.length ?? 0) > 0 && (
             <Card as="section" aria-labelledby="causes">
@@ -266,6 +298,17 @@ function ImageResult({ result }: { result: AnalysisResult }) {
           </ul>
         </section>
       )}
+      <nav aria-label="Next steps" className="flex flex-wrap gap-2">
+        <Link href={photoCheckHref(doc.purpose)} className={buttonVariants({ variant: "secondary", size: "sm" })}>
+          <Camera aria-hidden /> Check another photo
+        </Link>
+        <Link href={`/chat?q=${encodeURIComponent(askPrompt(doc))}`} className={buttonVariants({ variant: "soft", size: "sm" })}>
+          <MessageCircle aria-hidden /> Ask the AI Health Assistant
+        </Link>
+        <Link href="/care" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+          <Stethoscope aria-hidden /> Find care
+        </Link>
+      </nav>
     </>
   );
 }

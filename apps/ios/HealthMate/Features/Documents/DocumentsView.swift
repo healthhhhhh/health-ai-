@@ -15,8 +15,12 @@ struct DocumentsView: View {
     @State private var showReportCamera = false
     @State private var openedID: String?
 
-    init(session: SessionStore) {
+    /// Opens the photo check straight away (from Chat's "Check a photo").
+    private let startWithPhotoCheck: Bool
+
+    init(session: SessionStore, startWithPhotoCheck: Bool = false) {
         self.session = session
+        self.startWithPhotoCheck = startWithPhotoCheck
         _model = State(initialValue: DocumentsViewModel(api: session.api, isPreview: session.isPreview, onSessionEnded: { [session] in session.handle($0) }))
     }
 
@@ -104,7 +108,11 @@ struct DocumentsView: View {
         .navigationTitle("Reports & photos")
         .searchable(text: $model.query, prompt: "Search by name")
         .refreshable { await model.load() }
-        .task(id: hasConsent) { if session.isSignedIn && hasConsent { await model.load() } }
+        .task(id: hasConsent) {
+            guard session.isSignedIn && hasConsent else { return }
+            if startWithPhotoCheck && model.state == .idle { showPhotoCheck = true }
+            await model.load()
+        }
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.pdf, .jpeg, .png, .heic]) { result in
             guard case .success(let url) = result else { return }
             importFile(url)
@@ -209,92 +217,6 @@ private struct DocumentRow: View {
     }
 
     private var title: String { DocumentPresentation.title(document) }
-}
-
-/// Pick a photo, say what it shows, optionally add a note.
-private struct PhotoCheckView: View {
-    let model: DocumentsViewModel
-    var onSubmitted: (DocumentRecord) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var item: PhotosPickerItem?
-    @State private var showCamera = false
-    @State private var imageData: Data?
-    @State private var purpose: ImagePurpose = .skin
-    @State private var note = ""
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    PhotosPicker(selection: $item, matching: .images) {
-                        if let imageData, let image = UIImage(data: imageData) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 200)
-                                .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: HM.Radius.md))
-                                .accessibilityLabel("Selected photo. Tap to choose another.")
-                        } else {
-                            Label("Choose a photo", systemImage: "photo.on.rectangle")
-                        }
-                    }
-                    if CameraPicker.isAvailable {
-                        Button { showCamera = true } label: {
-                            Label(imageData == nil ? "Take a photo" : "Retake with camera", systemImage: "camera")
-                        }
-                    }
-                } footer: {
-                    Text("Use good light and hold the camera close. Location data is removed before upload.")
-                }
-                Section("What does it show?") {
-                    Picker("Area", selection: $purpose) {
-                        ForEach(ImagePurpose.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    TextField("Anything else? e.g. itchy for 3 days", text: $note, axis: .vertical)
-                        .lineLimit(2...4)
-                }
-                if let error = model.errorMessage {
-                    Section { Label(error, systemImage: "exclamationmark.circle.fill").foregroundStyle(HM.Colors.error) }
-                }
-                Section {
-                    DisclaimerView(text: "Photo checks describe what's visible and suggest next steps. They can't diagnose — a clinician needs to examine you for that.")
-                }
-            }
-            .navigationTitle("Check a photo")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    if model.uploading {
-                        ProgressView()
-                    } else {
-                        Button("Analyse") {
-                            guard let imageData else { return }
-                            Task {
-                                let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-                                if let record = await model.submitPhoto(data: imageData, purpose: purpose, note: trimmed.isEmpty ? nil : trimmed) {
-                                    dismiss()
-                                    onSubmitted(record)
-                                }
-                            }
-                        }
-                        .disabled(imageData == nil)
-                    }
-                }
-            }
-            .fullScreenCover(isPresented: $showCamera) {
-                CameraPicker { data in imageData = data }
-                    .ignoresSafeArea()
-            }
-            .onChange(of: item) { _, item in
-                Task { imageData = try? await item?.loadTransferable(type: Data.self) }
-            }
-            .onAppear { model.errorMessage = nil }
-        }
-    }
 }
 
 /// Shows the chosen file before it's uploaded, then the upload's progress.

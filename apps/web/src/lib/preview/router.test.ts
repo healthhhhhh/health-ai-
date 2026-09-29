@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ConversationDetail, DocumentCreation, DocumentRecord, HealthProfile, PlanRecord } from "@healthmate/shared-types";
 import { SAMPLE_NOTICE } from "@healthmate/sample-data";
 import { DEFAULT_CONTROLS, type PreviewControls } from "./controls";
-import { PREVIEW_FAILURE_REASON, previewFetch } from "./router";
+import { PREVIEW_FAILURE_REASON, previewFetch, withNoteTriage } from "./router";
 
 const normal = DEFAULT_CONTROLS;
 async function call<T>(path: string, method = "GET", body?: unknown, token?: string, controls: PreviewControls = normal) {
@@ -95,6 +95,27 @@ describe("preview API", () => {
     expect((await call("documents", "POST", { kind: "report", filename: "x.exe", contentType: "application/x-msdownload", byteSize: 10 }, token)).status).toBe(415);
     const processing = await call<{ status: string }>(`documents/${created.body.document.id}/process`, "POST", {}, token);
     expect(processing.body.status).toBe("processing");
+  });
+
+  it("a photo note describing an emergency always gets emergency guidance, like the real API", async () => {
+    const token = await signIn();
+    const results: Record<string, string | undefined> = {};
+    for (const [label, note] of [
+      ["none", undefined],
+      ["emergency", "It's spreading fast and I can't breathe"],
+    ] as const) {
+      const created = await call<DocumentCreation>("documents", "POST", { kind: "image", purpose: "skin", filename: "arm.jpg", contentType: "image/jpeg", byteSize: 1000 }, token);
+      const id = created.body.document.id;
+      await call(`documents/${id}/process`, "POST", note ? { note } : {}, token);
+      vi.useFakeTimers({ now: Date.now() + 5000 });
+      try {
+        results[label] = (await call<DocumentRecord>(`documents/${id}`, "GET", undefined, token)).body.result?.careUrgency;
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+    expect(results).toEqual({ none: "routine", emergency: "emergency" });
+    expect(withNoteTriage({ type: "image", model: "sample", injectionDetected: false, careUrgency: "emergency" }, "a bit itchy").careUrgency).toBe("emergency");
   });
 
   it("a damaged file fails with a reason, so the failed state can be tried", async () => {

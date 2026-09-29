@@ -8,7 +8,18 @@ struct DocumentDetailView: View {
     let documentID: String
     @State private var confirmDelete = false
     @State private var showOriginal = false
+    @State private var photoCheck: PhotoCheckRequest?
+    @State private var newResultID: String?
+    @State private var showCareFinder = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.askAssistant) private var askAssistant
+
+    /// Opens the photo check again, e.g. to retake a photo that wasn't clear.
+    struct PhotoCheckRequest: Identifiable {
+        let id = UUID()
+        let purpose: ImagePurpose?
+        let retake: Bool
+    }
 
     var body: some View {
         ScrollView {
@@ -42,6 +53,11 @@ struct DocumentDetailView: View {
         .navigationDestination(isPresented: $showOriginal) {
             if let document = model.document(documentID) { OriginalFileView(model: model, document: document) }
         }
+        .sheet(item: $photoCheck) { request in
+            PhotoCheckView(model: model, initialPurpose: request.purpose, retake: request.retake) { record in newResultID = record.id }
+        }
+        .sheet(isPresented: $showCareFinder) { CareFinderView() }
+        .navigationDestination(item: $newResultID) { id in DocumentDetailView(model: model, documentID: id) }
         .confirmationDialog("Delete this file and its summary?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Task {
@@ -87,6 +103,10 @@ struct DocumentDetailView: View {
         case .ready:
             if let result = document.result {
                 let sample = result.model == "sample"
+                // Urgent guidance always comes first.
+                if result.type == .image, let urgency = result.careUrgency, urgency == .urgent || urgency == .emergency {
+                    UrgentCareBanner(emergency: urgency == .emergency, onFindCare: { showCareFinder = true })
+                }
                 if sample {
                     SampleContentLabel(text: "Sample result in Preview mode — this file wasn't analysed and nothing here is about you.")
                 }
@@ -101,7 +121,8 @@ struct DocumentDetailView: View {
                 if result.type == .report {
                     ReportResultView(document: document, result: result, sample: sample)
                 } else {
-                    ImageResultView(document: document, result: result)
+                    ImageResultView(document: document, result: result, onRetake: { photoCheck = .init(purpose: document.purpose, retake: true) }, onFindCare: { showCareFinder = true })
+                    nextSteps(document)
                 }
                 let read = (document.processedAt ?? document.createdAt).formatted(.dateTime.day().month().year())
                 if sample {
@@ -113,11 +134,33 @@ struct DocumentDetailView: View {
         }
     }
 
+    private func nextSteps(_ document: DocumentRecord) -> some View {
+        VStack(spacing: 8) {
+            Button { photoCheck = .init(purpose: document.purpose, retake: false) } label: {
+                Label("Check another photo", systemImage: "camera").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.hmSecondary)
+            if let askAssistant {
+                Button { askAssistant(DocumentPresentation.askPrompt(document)) } label: {
+                    Label("Ask the AI Health Assistant", systemImage: "bubble.left.and.text.bubble.right").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.hmSecondary)
+            }
+            Button { showCareFinder = true } label: {
+                Label("Find care", systemImage: "stethoscope").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.hmSecondary)
+        }
+    }
+
     private func couldNotRead(_ document: DocumentRecord, title: String, message: String) -> some View {
         VStack(spacing: HM.Spacing.md) {
             EmptyStateView(systemImage: "doc.questionmark", tone: .orange, title: title, message: message) {
                 VStack(spacing: 8) {
-                    Button("Upload again") { dismiss() }.buttonStyle(.hmPrimary)
+                    Button("Upload again") {
+                        if document.kind == .image { photoCheck = .init(purpose: document.purpose, retake: true) } else { dismiss() }
+                    }
+                    .buttonStyle(.hmPrimary)
                     Button("Check the original") { showOriginal = true }.buttonStyle(.hmSecondary)
                 }
             }
@@ -256,19 +299,32 @@ private struct FindingRow: View {
 private struct ImageResultView: View {
     let document: DocumentRecord
     let result: AnalysisResult
+    var onRetake: () -> Void
+    var onFindCare: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: HM.Spacing.lg) {
-            if let urgency = result.careUrgency, urgency == .urgent || urgency == .emergency {
-                UrgentCareBanner(emergency: urgency == .emergency)
-            }
             if result.quality == "poor" || result.supported == false {
-                EmptyStateView(
-                    systemImage: "camera.metering.unknown",
-                    tone: .orange,
-                    title: result.supported == false ? "We can't assess this kind of photo" : "The photo isn't clear enough",
-                    message: result.qualityIssue ?? "Try again in good light, holding the camera steady and close."
-                )
+                VStack(alignment: .leading, spacing: HM.Spacing.md) {
+                    EmptyStateView(
+                        systemImage: "camera.metering.unknown",
+                        tone: .orange,
+                        title: result.supported == false ? "We can't assess this kind of photo" : "The photo isn't clear enough",
+                        message: result.qualityIssue ?? "Try again in good light, holding the camera steady and close."
+                    ) {
+                        if result.supported == false {
+                            Button("Find care", action: onFindCare).buttonStyle(.hmPrimary)
+                        } else {
+                            Button("Retake photo", action: onRetake).buttonStyle(.hmPrimary)
+                        }
+                    }
+                    if result.supported != false {
+                        ForEach(PhotoCheck.captureTips, id: \.self) { tip in
+                            Label(tip, systemImage: "lightbulb").font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
+                        }
+                    }
+                }
+                .padding(HM.Spacing.md)
                 .hmCard()
             } else {
                 section("What we can see", systemImage: "eye", tone: .blue, items: result.observations ?? [])
@@ -319,6 +375,7 @@ private struct ImageResultView: View {
 
 private struct UrgentCareBanner: View {
     let emergency: Bool
+    var onFindCare: () -> Void = {}
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -339,10 +396,15 @@ private struct UrgentCareBanner: View {
                 }
                 .buttonStyle(.hmPrimary(fullWidth: true, compact: true))
             }
+            Button(action: onFindCare) {
+                Label(emergency ? "Find the nearest emergency department" : "Find urgent care", systemImage: "mappin.and.ellipse").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.hmSecondary)
         }
         .padding(HM.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: HM.Radius.lg).fill(emergency ? HM.Colors.errorSoft : HM.Colors.warningSoft))
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(emergency ? "Emergency guidance" : "Urgent guidance")
     }
 }

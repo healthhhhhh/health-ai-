@@ -21,9 +21,39 @@ real assessment.
 | 4 · AI Chat | ✅ Done | See below |
 | 5 · Health & HealthKit | ✅ Done | See below |
 | 6 · Timeline | ✅ Done | See below |
-| 7 · Medical reports | ✅ Done | See below (CI pending at the time of writing) |
-| 8 · Image analysis | ⏳ Next | |
-| 9–12 | ⬜ Not started | |
+| 7 · Medical reports | ✅ Done | See below |
+| 8 · Image analysis | ✅ Done | See below |
+| 9 · Plan, tasks, medications | ⏳ Next | |
+| 10–12 | ⬜ Not started | |
+
+### Step 8: what was built
+
+Photo check now has its own guided flow. Photos are never analysed in Preview, and the real image-analysis backend was not changed.
+- **Entry points:**
+  - web `/reports/photo-check`, from the Reports page ("Check a photo instead"), chat's paperclip, and "Check another photo" on a result
+  - iOS: a sheet from Reports & photos, chat's paperclip (it opens straight into the flow), and result screens
+  - old `/reports?upload=photo` links redirect to the new page
+- **Flow:**
+  1. What it shows: skin or rash, cut or wound, swelling or bruise, something else.
+  2. Take the photo, with guidance for that kind of photo plus general capture tips. iOS offers "Take a photo" or "Choose a photo"; web does the same with `capture="environment"`.
+  3. Check and send: the photo, an optional note with a counter, and upload steps.
+- **Safety first:**
+  - "When not to wait" (call emergency services, don't wait for a photo check) is the first thing on every step.
+  - A note describing an emergency or urgent problem shows the escalation card immediately, before anything is sent. It's the same on-device triage as chat.
+  - After upload, Preview applies the real API's deterministic floor: an emergency note always produces emergency guidance. That guidance is always the first thing on the result, above the Sample label. There are tests on web, iOS and in the router.
+- **States:**
+  - camera permission denied, with Open Settings; no camera on the device
+  - unsupported file, too large, offline (the photo is kept), upload error with Try again
+  - processing steps
+  - a poor-quality photo offers "Retake photo", which reopens the flow for the same purpose with a retake note and the tips
+  - "We can't assess this kind of photo" offers Find care
+- **Result:** your photo (labelled as an example image in Preview), what we can see, possible explanations ("not a diagnosis"), what you can do, warning signs, then next steps (Check another photo, Ask the AI Health Assistant, Find care).
+- **Shared content:** in `lib/photo-check.ts` and Core `PhotoCheck` / `ImagePurpose.detail/tip`.
+- **Verification:**
+  - web unit 91/91 and e2e 149/149 (new: the full flow with axe, emergency note → guidance before sending and first on the result, blurry → retake, the old link redirect)
+  - API 89/89, unchanged
+  - iOS core 109/109
+  - iOS UI test: chat → Check a photo → purpose → guidance
 
 ### Step 7: what was built
 
@@ -44,6 +74,7 @@ Reports are a complete UI in Preview mode. Files are never analysed: every resul
   - iOS core 106/106
   - iOS app tests: `DocumentsViewModelTests`
   - iOS UI test: filters → report → labelled sample result and questions
+  - CI note: web e2e first failed on a test race (search submitted before the filter navigation finished), fixed in Step 8. One iOS UI test (`testAddATaskToThePlan`) failed because the simulator couldn't launch the app ("Failed to get background assertion… pid 0"), before any test code ran. It re-ran with Step 8.
 
 ### Step 6: what was built
 

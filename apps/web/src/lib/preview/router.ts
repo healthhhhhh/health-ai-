@@ -2,6 +2,7 @@ import { escalationMessage, MEDICATION_CHANGE_NOTICE, triage } from "@healthmate
 import { localDay, SAMPLE_NOTICE, type SampleAccount } from "@healthmate/sample-data";
 import type {
   AccountSummary,
+  AnalysisResult,
   AppointmentRecord,
   AssistantAnswer,
   AssistantPayload,
@@ -126,10 +127,20 @@ function viewOf(account: SampleAccount, controls: PreviewControls): SampleAccoun
 
 export const PREVIEW_FAILURE_REASON = "We couldn't open this file. It may be damaged or password-protected. Try saving it again, or upload a photo of the pages.";
 
+/**
+ * The real API's deterministic floor for photo checks: an emergency note always
+ * results in emergency guidance, and an urgent note in at least urgent guidance.
+ */
+export function withNoteTriage(result: AnalysisResult, note: string | undefined): AnalysisResult {
+  const level = note ? triage(note).level : null;
+  const careUrgency = level === "emergency" ? "emergency" : level === "urgent" && result.careUrgency !== "emergency" ? "urgent" : result.careUrgency;
+  return { ...result, careUrgency };
+}
+
 /** Sample analyses finish a few seconds after upload. */
 function settleProcessing(session: PreviewSession) {
   const now = Date.now();
-  for (const [id, readyAt] of session.processing) {
+  for (const [id, { readyAt, note }] of session.processing) {
     if (readyAt > now) continue;
     session.processing.delete(id);
     const doc = session.account.documents.find((d) => d.id === id);
@@ -142,7 +153,7 @@ function settleProcessing(session: PreviewSession) {
       doc.status = "failed";
       doc.failureReason = PREVIEW_FAILURE_REASON;
     } else {
-      doc.result = doc.kind === "image" ? (unclear ? sampleAnalyses.poorImage : sampleAnalyses.image) : unclear ? sampleAnalyses.unreadableReport : sampleAnalyses.report;
+      doc.result = doc.kind === "image" ? withNoteTriage(unclear ? sampleAnalyses.poorImage : sampleAnalyses.image, note) : unclear ? sampleAnalyses.unreadableReport : sampleAnalyses.report;
       doc.status = "ready";
     }
     doc.processedAt = nowIso();
@@ -420,7 +431,7 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
     if (b && !doc) return fail(404, "not_found", "File not found.");
     if (doc && c === "process" && method === "POST") {
       doc.status = "processing";
-      session.processing.set(doc.id, Date.now() + 4000);
+      session.processing.set(doc.id, { readyAt: Date.now() + 4000, note: typeof input.note === "string" ? input.note.slice(0, 500) : undefined });
       return json(doc, 202);
     }
     if (doc && c === "file" && method === "GET") {

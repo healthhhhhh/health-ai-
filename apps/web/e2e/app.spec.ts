@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 const unique = () => Math.random().toString(36).slice(2, 8);
+/** A tiny valid PNG (1×1 pixel). */
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
 /** Signs in to a new sample account, so tests that change data don't affect each other. */
 async function signInFresh(page: Page) {
@@ -322,12 +324,12 @@ test.describe("chat", () => {
     await expect(page.getByRole("group", { name: "Suggested questions" })).toBeVisible();
   });
 
-  test("attach opens the Reports upload with photo chosen", async ({ page }) => {
+  test("attach opens the photo check", async ({ page }) => {
     await page.goto("/chat", { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Add a report or photo" }).click();
     await page.getByRole("menuitem", { name: /Check a photo/ }).click();
-    await expect(page).toHaveURL(/\/reports\?upload=photo#upload$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Medical Reports" })).toBeVisible();
+    await expect(page).toHaveURL(/\/reports\/photo-check$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Photo check" })).toBeVisible();
   });
 
   test.describe("history and states", () => {
@@ -494,16 +496,55 @@ test.describe("timeline, plan and profile", () => {
 });
 
 test.describe("reports, health and settings", () => {
-  test("uploads a photo; Preview mode shows a clearly labelled sample result", async ({ page }) => {
+  test("photo check: purpose, guidance, review and a clearly labelled sample result", async ({ page }) => {
     await page.goto("/reports", { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Photo check" }).click();
-    // A tiny valid PNG (1×1 pixel).
-    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
-    await page.locator("input[type=file]").setInputFiles({ name: "arm.png", mimeType: "image/png", buffer: png });
-    await expect(page.getByRole("region", { name: "Selected file" })).toContainText("arm.png");
-    await page.getByRole("button", { name: "Upload and check" }).click();
+    await page.getByRole("link", { name: /Check a photo instead/ }).click();
+    await expect(page).toHaveURL(/\/reports\/photo-check$/);
+    await expect(page.getByRole("complementary", { name: "When not to wait" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled();
+    await page.getByText("Skin or rash", { exact: true }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { name: "Take a clear photo" })).toBeVisible();
+    await expect(page.getByText("Show the whole rash or spot, not just part of it.")).toBeVisible();
+    await page.getByLabel("Choose a photo").setInputFiles({ name: "arm.png", mimeType: "image/png", buffer: PNG });
+    await expect(page.getByRole("heading", { name: "Check your photo" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Your photo: skin or rash" })).toBeVisible();
+    await page.getByLabel(/Anything else to mention/).fill("Itchy for 3 days");
+    await expectCurrentPageAccessible(page);
+    await page.getByRole("button", { name: "Check this photo" }).click();
     await expect(page).toHaveURL(/\/reports\/[0-9a-f-]+$/, { timeout: 20_000 });
     await expect(page.getByText(/^Sample result in Preview mode/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "What we can see" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Next steps" }).getByRole("link", { name: "Check another photo" })).toBeVisible();
+    await expect(page.getByRole("region", { name: /Emergency guidance|Urgent guidance/ })).toHaveCount(0);
+    await expectCurrentPageAccessible(page);
+  });
+
+  test("photo check: an emergency note shows guidance before sending, and first on the result", async ({ page }) => {
+    await page.goto("/reports/photo-check?purpose=wound", { waitUntil: "networkidle" });
+    await page.getByLabel("Choose a photo").setInputFiles({ name: "cut.png", mimeType: "image/png", buffer: PNG });
+    await page.getByLabel(/Anything else to mention/).fill("It won't stop bleeding and I can't breathe");
+    await expect(page.getByRole("region", { name: "Emergency guidance" })).toBeVisible();
+    await page.getByRole("button", { name: "Check this photo" }).click();
+    await expect(page).toHaveURL(/\/reports\/[0-9a-f-]+$/, { timeout: 20_000 });
+    const guidance = page.getByRole("region", { name: "Emergency guidance" });
+    await expect(guidance).toBeVisible({ timeout: 20_000 });
+    const sampleLabel = page.getByText(/^Sample result in Preview mode/);
+    expect((await guidance.boundingBox())!.y).toBeLessThan((await sampleLabel.boundingBox())!.y);
+  });
+
+  test("photo check: a blurry photo asks for a retake with tips", async ({ page }) => {
+    await page.goto("/reports/photo-check?purpose=skin", { waitUntil: "networkidle" });
+    await page.getByLabel("Choose a photo").setInputFiles({ name: "blurry arm.png", mimeType: "image/png", buffer: PNG });
+    await page.getByRole("button", { name: "Check this photo" }).click();
+    await expect(page.getByRole("heading", { name: "The photo isn't clear enough" })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("link", { name: "Retake photo" }).click();
+    await expect(page).toHaveURL(/\/reports\/photo-check\?purpose=skin&retake=1$/);
+    await expect(page.getByText(/The last photo wasn't clear enough/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Take a clear photo" })).toBeVisible();
+    // Old links to the photo upload still work.
+    await page.goto("/reports?upload=photo");
+    await expect(page).toHaveURL(/\/reports\/photo-check$/);
   });
 
   test("report upload: confirm, progress steps, labelled sample summary, questions and original file", async ({ page, context }) => {
@@ -555,9 +596,11 @@ test.describe("reports, health and settings", () => {
     await expect(list.getByRole("link", { name: /Skin or rash/ }).first()).toBeVisible();
     await expect(list.getByRole("link", { name: /Example blood test/ })).toHaveCount(0);
     await page.getByRole("link", { name: "All", exact: true }).click();
+    await expect(page).toHaveURL(/\/reports$/);
+    await expect(page.getByRole("link", { name: "All", exact: true })).toHaveAttribute("aria-current", "page");
     await page.getByRole("searchbox", { name: "Search reports and photos" }).fill("clinic");
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/q=clinic/);
+    await expect(page).toHaveURL(/\/reports\?q=clinic$/);
     await expect(list.getByRole("link", { name: /Example clinic letter/ })).toBeVisible();
     await expect(list.getByRole("link", { name: /Example blood test/ })).toHaveCount(0);
     await page.goto("/reports?q=zzzz", { waitUntil: "networkidle" });
@@ -664,7 +707,7 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
   });
