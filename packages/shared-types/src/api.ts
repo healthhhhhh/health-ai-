@@ -21,6 +21,8 @@ export type RegisterResponse = AuthResponse | { confirmationRequired: true };
 export interface ApiMeta {
   apiVersion: number;
   ai: { available: boolean; demo?: boolean };
+  /** Phase 1 Preview mode: sample data, no backend. */
+  preview?: boolean;
 }
 
 export type ProfileSource = "user_reported" | "clinician_provided" | "document_extracted";
@@ -265,4 +267,115 @@ export interface PlanRecord {
   revision: number;
   items: PlanItemRecord[];
   completions: PlanCompletionRecord[];
+}
+
+// ── Care, symptoms, HealthKit, reminders (API: services/api) ────────────────
+
+export interface CareProviderRecord {
+  id: string;
+  name: string;
+  specialty: string | null;
+  phone: string | null;
+  address: string | null;
+  website: string | null;
+  notes: string | null;
+  createdAt: ISO;
+}
+
+export type AppointmentMode = "in_person" | "video" | "phone";
+export type AppointmentStatus = "scheduled" | "completed" | "cancelled";
+
+export interface AppointmentRecord {
+  id: string;
+  title: string;
+  careProviderId: string | null;
+  providerName: string | null;
+  startsAt: ISO;
+  endsAt: ISO | null;
+  location: string | null;
+  mode: AppointmentMode | null;
+  status: AppointmentStatus;
+  notes: string | null;
+}
+
+export interface SymptomRecord {
+  id: string;
+  name: string;
+  bodyArea: string | null;
+  status: "active" | "resolved";
+  notes: string | null;
+  firstNotedOn: string | null;
+  createdAt: ISO;
+  lastLoggedAt: ISO | null;
+  lastSeverity: number | null;
+}
+
+export interface SymptomEventRecord {
+  id: string;
+  severity: number | null;
+  occurredAt: ISO;
+  notes: string | null;
+  triageLevel: TriageLevel | null;
+}
+
+export interface HealthKitConnection {
+  status: "never_connected" | "connected" | "disconnected";
+  deviceName: string | null;
+  scopes: MeasurementKind[];
+  connectedAt: ISO | null;
+  disconnectedAt: ISO | null;
+  lastSyncAt: ISO | null;
+}
+
+export interface ReminderRecord {
+  id: string;
+  planItemId: string;
+  title: string;
+  time: string;
+  enabled: boolean;
+  channel: "device" | "push";
+}
+
+// ── Contracts first defined by Preview mode (Phase 1); served by the API in Phase 2 ──
+
+export type NotificationCategory = "medication" | "task" | "appointment" | "report" | "insight" | "account";
+
+export interface NotificationRecord {
+  id: string;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+  createdAt: ISO;
+  readAt: ISO | null;
+  /** In-app destination, e.g. "/reports/<id>" (web path; iOS maps it to a screen). */
+  link: string | null;
+  /** AI-written content is labelled in the UI. */
+  aiGenerated: boolean;
+}
+
+export interface NotificationPreferences {
+  medication: boolean;
+  task: boolean;
+  appointment: boolean;
+  report: boolean;
+  insight: boolean;
+  account: boolean;
+  /** Show health details on the lock screen / in push previews. */
+  showDetails: boolean;
+  quietHours: { enabled: boolean; start: string; end: string };
+}
+
+export type OAuthProvider = "google" | "apple";
+
+export interface AccountSummary {
+  email: string;
+  emailVerified: boolean;
+  signInMethods: ("password" | OAuthProvider)[];
+  createdAt: ISO;
+  onboardingCompleted: boolean;
+}
+
+export interface NotificationList {
+  notifications: NotificationRecord[];
+  unreadCount: number;
 }

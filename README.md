@@ -10,17 +10,27 @@ Monorepo: native iOS app (Swift/SwiftUI), web app (Next.js) and a NestJS API bac
 [`docs/design-system.md`](docs/design-system.md), [`docs/roadmap.md`](docs/roadmap.md) and the rules
 in [`CLAUDE.md`](CLAUDE.md).
 
-## Quick start (no accounts needed)
+## Quick start: Preview mode (no backend, no accounts)
+
+Phase 1 is UI/UX only. Both apps run in **Preview mode** by default: a built-in sample account
+("Alex Morgan"), sample AI responses and sample report results, clearly labelled. Nothing needs a
+server, and nothing is real AI or medical advice.
 
 ```bash
 npm install
-npm run build -w @healthmate/safety && npm run build -w @healthmate/api
-npm run demo -w @healthmate/api     # API on :4000 with an embedded database and a scripted, labelled demo AI
-npm run dev                         # web on http://localhost:3000 — sign in as demo@healthmate.example / demo-password-123
+npm run dev            # web on http://localhost:3000 — sign in with any email and a password of 8+ characters
+cd apps/ios && xcodegen generate && open HealthMate.xcodeproj   # ⌘R: the iOS app runs on the same sample account
 ```
 
-Without any configuration the API uses an embedded PostgreSQL (PGlite with pgvector), local file
-storage, local accounts and in-process jobs.
+- **Preview panel** (web: the "Preview" pill, bottom left; iOS: Profile › Preview mode): show every
+  screen as loading, slow, empty, error, offline or with permissions off; reset the sample account.
+- **Preview inbox** (web: `/preview/inbox`; iOS: Profile › Preview mode): the emails HealthMate would
+  send (email confirmation, password reset), so those flows can be completed.
+- The password `wrong-password` shows the sign-in error.
+
+To run against the real API instead: web `HEALTHMATE_DATA_SOURCE=api`, iOS `HM_DATA_SOURCE: live`
+in `apps/ios/project.yml`, and start the API (below; `npm run demo -w @healthmate/api` runs a local
+demo server).
 
 ## Set up with Supabase
 

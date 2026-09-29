@@ -10,6 +10,44 @@ backend uses. Phase 2 then only has to switch the data source; no screen needs r
 Sample AI content is always marked "Sample response — not real AI". It is never presented as a
 real assessment.
 
+## Progress
+
+| Step | Status | Notes |
+|---|---|---|
+| 0 · Preview mode foundation | ✅ Done | See below |
+| 1 · Design system components | ⏳ Next | |
+| 2–12 | ⬜ Not started | |
+
+### Step 0: what was built
+
+- **One sample dataset** (`packages/sample-data`): "Alex Morgan", 60 days of wellness data, plan and
+  3 weeks of completions, conversations, reports and photos, timeline, symptoms, care team,
+  appointments, notifications and HealthKit connection. It is time-zone aware (morning medication is
+  in the morning wherever you are). Clinical fields stay generic per CLAUDE.md ("Morning
+  medication — as prescribed", "Example marker A"), and every AI text is labelled a sample response.
+  iOS gets a generated JSON copy (`npm run sample:export`, checked in `npm test`).
+- **Preview API at the network boundary, on both platforms.** It serves the same REST paths and
+  shapes as `services/api`, so screens don't know the difference and Phase 2 is a switch:
+  - Web: `lib/preview/router.ts`, answered inside the Next.js server (`HEALTHMATE_DATA_SOURCE=preview`, the default).
+  - iOS: `PreviewBackend` + `PreviewURLProtocol` in HealthMateCore, on the device (`HM_DATA_SOURCE: preview`, the default).
+  - Chat keeps the real safety order: deterministic triage → fixed emergency guidance → fixed sample reply. There is no AI.
+  - Uploads produce a sample result a few seconds later, marked "Sample result".
+- **Mocked auth**: email/password (any 8+ character password; `wrong-password` fails), sign-up with
+  email confirmation, Continue with Google/Apple, forgot/reset password, logout and delete. The emails
+  go to a **Preview inbox**.
+- **Debug states**: Normal, Loading (3 s), Slow, Empty (new account), Server error, Offline,
+  Permissions off. Web: the floating "Preview" panel. iOS: Profile › Preview mode.
+- **New contracts** defined by Preview (served by the API in Phase 2): notifications and preferences,
+  account summary and onboarding flag, OAuth, email verification, provider/appointment detail and
+  edit, conversation rename.
+- **Why not per-feature Swift protocols** (as first planned): intercepting at the network boundary gives
+  the same guarantee — screens depend only on the API contract — with no screen changes and one
+  implementation per platform. It is tested end to end through the app's real `APIClient`.
+- **Verification:** web unit tests including 8 preview-router tests; **web e2e runs entirely in
+  Preview mode (74/74, 3 viewports + axe), no server**; iOS core: 80/80 `swift test` on Linux
+  including the Preview backend and the client going through `PreviewURLProtocol`. The iOS app
+  target (SwiftUI) needs Xcode: build it on the Mac.
+
 ---
 
 ## 1. Screens already implemented (complete, both platforms unless noted)

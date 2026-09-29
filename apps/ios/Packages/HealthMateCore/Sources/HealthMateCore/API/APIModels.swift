@@ -46,6 +46,8 @@ public struct APIMeta: Codable, Sendable {
     }
     public let apiVersion: Int
     public let ai: AI
+    /// Phase 1 Preview mode: sample account, no backend.
+    public let preview: Bool?
 }
 
 // MARK: Profile

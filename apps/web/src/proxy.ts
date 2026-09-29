@@ -2,9 +2,10 @@ import type { TokenPair } from "@healthmate/shared-types";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiBaseUrl } from "@/lib/api/config";
 import { ACCESS_COOKIE, clearSession, EXPIRES_COOKIE, needsRefresh, REFRESH_COOKIE, writeSession } from "@/lib/api/session";
+import { PREVIEW_REFRESH_PREFIX, previewTokens } from "@/lib/preview/mode";
 
 /** Pages anyone can see. Everything else holds personal health data and needs a session. */
-const PUBLIC_PATHS = new Set(["/", "/sign-in", "/help", "/forgot-password", "/reset-password"]);
+const PUBLIC_PATHS = new Set(["/", "/sign-in", "/help", "/forgot-password", "/reset-password", "/verify-email", "/verify-email/confirm", "/preview/inbox"]);
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -37,6 +38,8 @@ export async function proxy(request: NextRequest) {
 }
 
 async function refreshTokens(refreshToken: string): Promise<TokenPair | null> {
+  // Preview mode: tokens name the local preview session; nothing to call.
+  if (refreshToken.startsWith(PREVIEW_REFRESH_PREFIX)) return previewTokens(refreshToken.slice(PREVIEW_REFRESH_PREFIX.length));
   try {
     const res = await fetch(`${apiBaseUrl()}/auth/refresh`, {
       method: "POST",

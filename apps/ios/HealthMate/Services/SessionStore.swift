@@ -14,6 +14,8 @@ final class SessionStore {
     private(set) var aiAvailable: Bool?
     /// The server gives scripted demo answers; the UI must say so.
     private(set) var isDemo = false
+    /// Phase 1 Preview mode: sample account and sample AI responses, no server.
+    private(set) var isPreview = false
     private(set) var consents: [String: Bool] = [:]
     private(set) var busy = false
     var errorMessage: String?
@@ -46,6 +48,7 @@ final class SessionStore {
         let meta = try? await api.meta()
         aiAvailable = meta?.ai.available
         isDemo = meta?.ai.demo == true
+        isPreview = meta?.preview == true
     }
 
     func signIn(email: String, password: String) async -> Bool {
@@ -85,6 +88,16 @@ final class SessionStore {
         }
         notice = "If an account uses \(email), we've sent a link to reset the password."
         return true
+    }
+
+    /// Confirms an email address from the confirmation email and signs in.
+    func verifyEmail(token: String) async -> Bool {
+        await perform { _ = try await self.api.verifyEmail(token: token) }
+    }
+
+    /// Continue with Apple or Google (Phase 1: mocked in Preview mode).
+    func signIn(with provider: String) async -> Bool {
+        await perform { _ = try await self.api.signIn(with: provider) }
     }
 
     func signOut() async {

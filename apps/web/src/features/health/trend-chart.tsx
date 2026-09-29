@@ -58,7 +58,7 @@ export function TrendChart({
 
   return (
     <figure className="relative">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${label} chart`} aria-describedby={tableId}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="group" aria-label={`${label} chart`} aria-describedby={tableId}>
         {[0, max / 2, max].map((t) => (
           <g key={t}>
             <line x1={pad.left} x2={W - pad.right} y1={y(t)} y2={y(t)} className="stroke-separator" strokeWidth={1} />
@@ -121,6 +121,7 @@ export function TrendChart({
             height={innerH}
             fill="transparent"
             tabIndex={0}
+            role="img"
             aria-label={`${day(p.date)}: ${format(p.value)}`}
             onMouseEnter={() => setActive(i)}
             onMouseLeave={() => setActive(null)}

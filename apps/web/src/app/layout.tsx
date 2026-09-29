@@ -1,6 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/inter";
 import "./globals.css";
+import { cookies } from "next/headers";
+import { PreviewPanel } from "@/features/preview/preview-panel";
+import { REFRESH_COOKIE } from "@/lib/api/session";
+import { isPreviewMode } from "@/lib/preview/mode";
 
 export const metadata: Metadata = {
   title: { default: "HealthMate — Your AI Health Companion", template: "%s · HealthMate" },
@@ -14,10 +18,15 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const preview = isPreviewMode();
+  const signedIn = preview && Boolean((await cookies()).get(REFRESH_COOKIE)?.value);
   return (
     <html lang="en">
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh">
+        {children}
+        {preview && <PreviewPanel signedIn={signedIn} />}
+      </body>
     </html>
   );
 }

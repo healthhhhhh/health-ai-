@@ -1,6 +1,6 @@
 import type { AnalysisResult, DocumentRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
-import { ArrowLeft, Eye, FileDown, ListChecks, ShieldAlert, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Eye, FileDown, FlaskConical, ListChecks, ShieldAlert, Sparkles, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Mascot } from "@/components/illustrations/mascot";
@@ -69,10 +69,16 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               This file contained text that looked like instructions to the AI. It was ignored and only the medical content was read.
             </p>
           )}
+          {doc.result.model === "sample" && (
+            <p className="flex gap-2 rounded-md bg-warning-soft p-3 text-caption font-medium text-text-primary">
+              <FlaskConical aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+              Sample result in Preview mode — this file wasn&apos;t analysed and nothing here is about you.
+            </p>
+          )}
           {doc.result.type === "report" ? <ReportResult result={doc.result} /> : <ImageResult result={doc.result} />}
           <p className="text-xs text-text-muted">
-            AI-generated from your {doc.kind === "report" ? "report" : "photo"} on {new Date(doc.processedAt ?? doc.createdAt).toLocaleDateString("en-US", { dateStyle: "medium" })}. Not a
-            diagnosis.
+            {doc.result.model === "sample" ? "Sample content for Preview mode" : `AI-generated from your ${doc.kind === "report" ? "report" : "photo"}`} ·{" "}
+            {new Date(doc.processedAt ?? doc.createdAt).toLocaleDateString("en-US", { dateStyle: "medium" })}. Not a diagnosis.
           </p>
         </>
       )}

@@ -27,7 +27,7 @@ struct ProfileView: View {
         NavigationStack {
             List {
                 if session.isSignedIn && session.isDemo {
-                    Section { SampleDataBanner(text: "Demo account — example content, not real health data") }
+                    Section { SampleDataBanner(text: session.isPreview ? "Preview mode — sample account, not real health data" : "Demo account — example content, not real health data") }
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
                 }
@@ -57,6 +57,13 @@ struct ProfileView: View {
                 }
 
                 Section("App") {
+                    if session.isPreview {
+                        NavigationLink {
+                            PreviewControlsView(session: session)
+                        } label: {
+                            Label("Preview mode", systemImage: "flask")
+                        }
+                    }
                     NavigationLink {
                         DesignSystemGallery()
                     } label: {

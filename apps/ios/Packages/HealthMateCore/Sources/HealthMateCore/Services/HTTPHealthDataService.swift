@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Client for the shared HealthMate REST API (same endpoints as the web app).
 /// Authentication (Phase 2) will add a bearer token from the Keychain here.

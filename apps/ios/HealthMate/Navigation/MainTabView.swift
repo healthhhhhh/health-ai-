@@ -42,7 +42,8 @@ struct MainTabView: View {
                 },
                 onNavigate: { selection = $0 },
                 onVoice: { showVoice = true },
-                isDemoAccount: session.isSignedIn && session.isDemo
+                isDemoAccount: session.isSignedIn && session.isDemo,
+                isPreview: session.isPreview
             )
             .tabItem { Label(AppTab.home.title, systemImage: AppTab.home.systemImage) }
             .tag(AppTab.home)

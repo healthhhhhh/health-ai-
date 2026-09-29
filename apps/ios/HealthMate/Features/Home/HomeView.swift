@@ -10,6 +10,7 @@ struct HomeView: View {
     var onVoice: () -> Void = {}
     /// Signed in to a demo server: account content is seeded demo data.
     var isDemoAccount = false
+    var isPreview = false
 
     @State private var question = ""
 
@@ -53,7 +54,9 @@ struct HomeView: View {
     private func content(_ summary: HomeSummary) -> some View {
         VStack(alignment: .leading, spacing: HM.Spacing.xl) {
             VStack(alignment: .leading, spacing: HM.Spacing.md) {
-                if model.isSampleData {
+                if isPreview {
+                    SampleDataBanner(text: "Preview mode — sample account, not real health data")
+                } else if model.isSampleData {
                     SampleDataBanner()
                 } else if isDemoAccount {
                     SampleDataBanner(text: "Demo account — example content, not real health data")

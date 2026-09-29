@@ -91,31 +91,20 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Call emergency services"].exists)
     }
 
-    func testSignedInChatAgainstDemoServer() throws {
-        try XCTSkipUnless(Self.demoServerIsRunning(), "Demo API not running on localhost:4000")
-        let app = launch(["-hmInitialTab", "chat", "-hmDemoEmail", "demo@healthmate.example", "-hmDemoPassword", "demo-password-123"])
-        XCTAssertTrue(app.otherElements["demoNotice"].waitForExistence(timeout: 10) || app.staticTexts["Demo server: answers are scripted examples, not real AI."].waitForExistence(timeout: 2))
+    func testSignedInChatInPreviewMode() {
+        // Preview mode (the Phase 1 default) needs no server: the sample account runs on the device.
+        let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        XCTAssertTrue(app.staticTexts["Preview mode: answers are sample responses, not a real AI and not medical advice."].waitForExistence(timeout: 10))
 
         let field = messageField(app)
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        field.typeText("Any tips for sleeping better?")
+        field.typeText("I get headaches after long days on my laptop")
         app.buttons["sendMessage"].tap()
 
-        let answer = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Demo mode'")).firstMatch
-        XCTAssertTrue(answer.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.buttons["6 to 8"].exists, "Follow-up options are tappable")
+        let notice = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Sample response in Preview mode'")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Under an hour"].exists, "Follow-up options are tappable")
     }
 
-    private static func demoServerIsRunning() -> Bool {
-        guard let url = URL(string: "http://localhost:4000/v1/meta") else { return false }
-        let done = DispatchSemaphore(value: 0)
-        var ok = false
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            ok = data.map { String(decoding: $0, as: UTF8.self).contains("\"demo\":true") } ?? false
-            done.signal()
-        }.resume()
-        _ = done.wait(timeout: .now() + 3)
-        return ok
-    }
 }

@@ -1,6 +1,8 @@
 import type { ApiErrorBody } from "@healthmate/shared-types";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { parseControls, PREVIEW_CONTROLS_COOKIE } from "../preview/controls";
+import { isPreviewMode } from "../preview/mode";
 import { apiBaseUrl } from "./config";
 import { ACCESS_COOKIE } from "./session";
 
@@ -38,6 +40,16 @@ export async function publicApi<T>(path: string, init: RequestInit & { json?: un
 
 async function rawApi(path: string, init: RequestInit & { json?: unknown }, token?: string) {
   const { json, headers, ...rest } = init;
+  if (isPreviewMode()) {
+    // Phase 1: answered locally from the sample account — no backend.
+    const controls = parseControls((await cookies()).get(PREVIEW_CONTROLS_COOKIE)?.value);
+    const { previewFetch } = await import("../preview/router");
+    try {
+      return await previewFetch(path, rest.method ?? "GET", json, token, controls);
+    } catch {
+      throw new ApiError(NETWORK_MESSAGE, 0, "network");
+    }
+  }
   try {
     return await fetch(`${apiBaseUrl()}/${path.replace(/^\//, "")}`, {
       ...rest,

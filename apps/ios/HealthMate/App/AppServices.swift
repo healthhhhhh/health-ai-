@@ -3,7 +3,8 @@ import HealthMateCore
 
 /// Composition root: picks service implementations from build configuration.
 /// `HM_API_BASE_URL` in project.yml points at the HealthMate API.
-/// `HM_DATA_SOURCE = sample` shows labelled demo data on Home instead of the person's own.
+/// `HM_DATA_SOURCE = preview` (Phase 1 default) runs the whole app on the on-device
+/// sample account; `live` uses the API; `sample` shows labelled demo data on Home only.
 struct AppServices {
     let healthData: any HealthDataService
     let planRepository: any PlanRepository
@@ -17,6 +18,11 @@ struct AppServices {
 
     static func live(bundle: Bundle = .main) -> AppServices {
         let source = bundle.object(forInfoDictionaryKey: "HMDataSource") as? String
+        // Phase 1 default: Preview mode runs everything on the on-device sample account.
+        var isPreview = source == "preview"
+        #if DEBUG
+        if let override = UserDefaults.standard.string(forKey: "hmDataSource") { isPreview = override == "preview" }
+        #endif
         let baseURL = (bundle.object(forInfoDictionaryKey: "HMAPIBaseURL") as? String).flatMap(URL.init(string:)) ?? defaultAPIBaseURL
         // The plan is stored on this device only (local-first).
         let localPlan: any PlanRepository
@@ -27,15 +33,23 @@ struct AppServices {
             localPlan = InMemoryPlanRepository()
         }
         let reminders = NotificationReminderScheduler()
+        // The sample account starts with Apple Health connected; disconnecting is remembered.
+        if isPreview { UserDefaults.standard.register(defaults: [HealthConnection.defaultsKey: true]) }
         var tokens: any TokenStore = KeychainTokenStore()
         #if DEBUG
         // Demo sign-in for screenshots keeps tokens in memory (unsigned simulator builds may lack Keychain access).
         if UserDefaults.standard.string(forKey: "hmDemoEmail") != nil { tokens = InMemoryTokenStore() }
         #endif
-        let api = APIClient(baseURL: baseURL, tokens: tokens)
+        let api: APIClient
+        if isPreview {
+            PreviewURLProtocol.state = { PreviewSettings.state }
+            api = APIClient(baseURL: PreviewURLProtocol.baseURL, tokens: tokens, session: PreviewURLProtocol.makeSession())
+        } else {
+            api = APIClient(baseURL: baseURL, tokens: tokens)
+        }
         // The plan works offline on the device and is shared with the account (web app) when signed in.
         let planRepository = SyncingPlanRepository(local: localPlan, transport: api, stateURL: fileURL?.deletingLastPathComponent().appendingPathComponent("plan-sync.json"))
-        let healthReader = HealthKitService()
+        let healthReader: any HealthDataReading = isPreview ? PreviewHealthReader() : HealthKitService()
         // "sample" shows labelled demo data on Home; anything else uses the person's real data.
         var useSample = source == "sample"
         #if DEBUG

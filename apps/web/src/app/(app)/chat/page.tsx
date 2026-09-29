@@ -26,7 +26,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       conversations={conversations}
       hasConsent={consents.some((x) => x.kind === "ai_processing" && x.granted)}
       aiAvailable={meta?.ai.available ?? null}
-      demo={meta?.ai.demo === true}
+      demo={meta?.preview ? "preview" : meta?.ai.demo === true ? "demo" : null}
       initialQuestion={q?.slice(0, 500)}
     />
   );

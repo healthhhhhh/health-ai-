@@ -20,6 +20,34 @@ extension APIClient {
         return .signedIn(userId: userId)
     }
 
+    /// Confirms an email address with the token from the confirmation email, then signs in.
+    public func verifyEmail(token: String) async throws -> AuthResponse {
+        struct Body: Encodable { let token: String }
+        let response: AuthResponse = try await send(.json("POST", "auth/verify-email", Body(token: token), authenticated: false))
+        await store(response.tokens)
+        return response
+    }
+
+    /// Sends the confirmation email again.
+    public func resendVerification(email: String) async throws {
+        struct Body: Encodable { let email: String }
+        try await sendNoContent(.json("POST", "auth/resend-verification", Body(email: email), authenticated: false))
+    }
+
+    /// Continue with Apple or Google. Phase 1 (Preview mode) signs in to the sample account; real OAuth is Phase 2.
+    public func signIn(with provider: String) async throws -> AuthResponse {
+        struct Body: Encodable { let provider: String; let timeZone: String }
+        let response: AuthResponse = try await send(.json("POST", "auth/oauth", Body(provider: provider, timeZone: TimeZone.current.identifier), authenticated: false))
+        await store(response.tokens)
+        return response
+    }
+
+    /// Sets a new password with the token from the reset email.
+    public func completePasswordReset(token: String, password: String) async throws {
+        struct Body: Encodable { let accessToken: String; let password: String }
+        try await sendNoContent(.json("POST", "auth/password-reset/complete", Body(accessToken: token, password: password), authenticated: false))
+    }
+
     /// Emails a reset link if the account exists (the server never says whether it does).
     public func requestPasswordReset(email: String) async throws {
         struct Body: Encodable { let email: String }

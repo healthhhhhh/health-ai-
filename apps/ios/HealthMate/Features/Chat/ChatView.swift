@@ -28,7 +28,7 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         if session.isDemo {
-                            Label("Demo server: answers are scripted examples, not real AI.", systemImage: "theatermasks")
+                            Label(session.isPreview ? "Preview mode: answers are sample responses, not a real AI and not medical advice." : "Demo server: answers are scripted examples, not real AI.", systemImage: session.isPreview ? "flask" : "theatermasks")
                                 .font(.hmCaption.weight(.medium))
                                 .foregroundStyle(HM.Colors.textPrimary)
                                 .padding(12)
@@ -151,7 +151,7 @@ struct ChatView: View {
 
     private var statusText: String {
         switch session.aiAvailable {
-        case .some(true): return session.isDemo ? "Demo answers" : "Online"
+        case .some(true): return session.isPreview ? "Sample answers" : session.isDemo ? "Demo answers" : "Online"
         case .some(false): return "AI answers unavailable"
         case .none: return session.isSignedIn ? "Connecting…" : "Sign in to chat"
         }

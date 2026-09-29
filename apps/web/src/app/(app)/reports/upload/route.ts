@@ -32,8 +32,11 @@ export async function POST(request: Request) {
       method: "POST",
       json: { kind, filename: file.name.slice(0, 255) || "upload", contentType: file.type, byteSize: file.size, purpose: kind === "image" ? purpose : null },
     });
-    const upload = await fetch(created.upload.url, { method: "PUT", headers: created.upload.headers, body: Buffer.from(await file.arrayBuffer()) });
-    if (!upload.ok) return fail("The upload didn't complete. Please try again.", 502);
+    // Preview mode keeps files in the browser session only (nothing is stored or analysed).
+    if (!created.upload.url.startsWith("preview-upload://")) {
+      const upload = await fetch(created.upload.url, { method: "PUT", headers: created.upload.headers, body: Buffer.from(await file.arrayBuffer()) });
+      if (!upload.ok) return fail("The upload didn't complete. Please try again.", 502);
+    }
     const processed = await api<DocumentRecord>(`documents/${created.document.id}/process`, { method: "POST", json: note ? { note } : {} });
     return NextResponse.json({ id: processed.id });
   } catch (error) {

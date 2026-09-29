@@ -36,7 +36,8 @@ export function ChatScreen({
   conversations: ConversationRecord[];
   hasConsent: boolean;
   aiAvailable: boolean | null;
-  demo: boolean;
+  /** "preview": Phase 1 sample responses; "demo": scripted demo server. */
+  demo: "preview" | "demo" | null;
   initialQuestion?: string;
 }) {
   const router = useRouter();
@@ -115,7 +116,7 @@ export function ChatScreen({
       else setError({ message: res.error, retry: "" });
     });
 
-  const status = aiAvailable === false ? "AI answers unavailable" : demo ? "Demo answers" : aiAvailable ? "Online" : "Connecting…";
+  const status = aiAvailable === false ? "AI answers unavailable" : demo === "preview" ? "Sample answers" : demo ? "Demo answers" : aiAvailable ? "Online" : "Connecting…";
   const lastAssistant = [...items].reverse().find((i) => i.type === "assistant");
 
   return (
@@ -138,7 +139,11 @@ export function ChatScreen({
         </header>
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-5" aria-live="polite">
-          {demo && <p className="rounded-md bg-warning-soft p-3 text-caption font-medium text-text-primary">Demo server: answers are scripted examples, not real AI.</p>}
+          {demo && (
+            <p className="rounded-md bg-warning-soft p-3 text-caption font-medium text-text-primary">
+              {demo === "preview" ? "Preview mode: answers are sample responses, not a real AI and not medical advice." : "Demo server: answers are scripted examples, not real AI."}
+            </p>
+          )}
           {!hasConsent && (
             <div className="rounded-lg bg-primary-soft p-5">
               <h2 className="flex items-center gap-2 text-section-heading text-text-primary">
