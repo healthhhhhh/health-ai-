@@ -279,7 +279,8 @@ test.describe("home destinations and notifications", () => {
     await expect(page.getByRole("heading", { name: "Last 30 days" })).toBeVisible();
 
     await page.goto("/home", { waitUntil: "networkidle" });
-    await page.getByRole("link", { name: /Example clinic letter uploaded/ }).click();
+    // An item from two days ago, so it is in Recent Activity at any time of day.
+    await page.getByRole("link", { name: /Example blood test analysed/ }).click();
     await expect(page).toHaveURL(/\/reports\/[\w-]+$/);
 
     await page.goto("/home", { waitUntil: "networkidle" });

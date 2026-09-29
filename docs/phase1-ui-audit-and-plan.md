@@ -54,7 +54,7 @@ real assessment.
   - history days ("date: Done")
 - **Verification (local):**
   - web unit 99/99, sample-data 12/12, design-tokens check green
-  - e2e: see the final report
+  - e2e 185/185, with 2 skipped by design. One Home test depended on the time of day: just after midnight in the sample account's time zone, "08:55 today" is still in the future. It now uses an item from two days ago.
   - API 89/89 (6 skipped need Supabase, which runs in CI)
   - iOS core 118/118
   - **iOS app build, unit and UI tests (17 UI tests) need a CI run once GitHub Actions billing is fixed**
