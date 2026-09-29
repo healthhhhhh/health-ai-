@@ -5,8 +5,14 @@ struct OnboardingView: View {
     let session: SessionStore
     var onFinish: () -> Void
 
-    @State private var showSignIn = false
-    @State private var signUp = false
+    /// Which sign-in sheet is open. `sheet(item:)` carries the mode with the presentation,
+    /// so the sheet can't open in the previous mode.
+    @State private var signIn: SignInMode?
+
+    private enum SignInMode: String, Identifiable {
+        case signIn, signUp
+        var id: String { rawValue }
+    }
     @State private var haloPulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -53,8 +59,8 @@ struct OnboardingView: View {
         .safeAreaInset(edge: .bottom) { actions }
         // Leave the welcome screens only once the sheet has fully closed, so the
         // next screen (account setup or Home) isn't swapped in under a dismissing sheet.
-        .sheet(isPresented: $showSignIn, onDismiss: { if session.isSignedIn { onFinish() } }) {
-            SignInView(session: session, startInSignUp: signUp, onSignedIn: {})
+        .sheet(item: $signIn, onDismiss: { if session.isSignedIn { onFinish() } }) { mode in
+            SignInView(session: session, startInSignUp: mode == .signUp, onSignedIn: {})
         }
     }
 
@@ -86,16 +92,10 @@ struct OnboardingView: View {
 
     private var actions: some View {
         VStack(spacing: 6) {
-            Button("Get Started") {
-                signUp = true
-                showSignIn = true
-            }
+            Button("Get Started") { signIn = .signUp }
             .buttonStyle(.hmPrimary(fullWidth: true))
             HStack(spacing: 16) {
-                Button("Sign In") {
-                    signUp = false
-                    showSignIn = true
-                }
+                Button("Sign In") { signIn = .signIn }
                 Button("Explore without an account", action: onFinish)
             }
             .buttonStyle(.hmLink)

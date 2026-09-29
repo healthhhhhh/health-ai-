@@ -42,7 +42,9 @@ final class HealthMateUITests: XCTestCase {
 
     /// What's on screen, for failure messages.
     private func screen(_ app: XCUIApplication) -> String {
-        app.staticTexts.allElementsBoundByIndex.prefix(12).map(\.label).joined(separator: " | ")
+        let texts = app.staticTexts.allElementsBoundByIndex.map(\.label)
+        let buttons = app.buttons.allElementsBoundByIndex.map(\.label)
+        return "texts: \(texts.suffix(15).joined(separator: " | ")) — buttons: \(buttons.suffix(15).joined(separator: " | "))"
     }
 
     /// Preview mode: Get Started → Continue with Apple → account setup → Home, with no server.
@@ -50,10 +52,13 @@ final class HealthMateUITests: XCTestCase {
         let app = launch(onboarded: false, ["-hmPreviewState", "normal"])
         let getStarted = app.buttons["Get Started"]
         XCTAssertTrue(getStarted.waitForExistence(timeout: 10), "welcome: \(screen(app))")
+        // The welcome actions fade in; tap once they can receive touches.
+        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: getStarted)
+        waitForExpectations(timeout: 5)
         getStarted.tap()
-        XCTAssertTrue(app.staticTexts["Create your account"].waitForExistence(timeout: 5), "sign-up sheet: \(screen(app))")
         let apple = app.buttons["Continue with Apple"]
-        XCTAssertTrue(apple.waitForExistence(timeout: 5), "Apple button: \(screen(app))")
+        XCTAssertTrue(apple.waitForExistence(timeout: 8), "sign-up sheet: \(screen(app))")
+        XCTAssertTrue(app.staticTexts["Create your account"].exists, "sign-up mode: \(screen(app))")
         apple.tap()
 
         XCTAssertTrue(app.staticTexts["About you"].waitForExistence(timeout: 10), "setup: \(screen(app))")
