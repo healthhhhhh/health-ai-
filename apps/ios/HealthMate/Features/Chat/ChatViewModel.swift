@@ -21,6 +21,9 @@ enum ChatItem: Identifiable, Equatable {
 @MainActor
 @Observable
 final class ChatViewModel {
+    /// Why the last message wasn't answered; decides the icon and wording of the error row.
+    enum ErrorKind: Equatable { case offline, unavailable, other }
+
     private(set) var items: [ChatItem] = []
     private(set) var conversationId: String?
     private(set) var sending = false
@@ -28,6 +31,11 @@ final class ChatViewModel {
     /// Last failed message, kept so the person can retry without retyping.
     private(set) var failedText: String?
     var errorMessage: String?
+    private(set) var errorKind: ErrorKind = .other
+    /// Past conversations couldn't be loaded.
+    private(set) var historyFailed = false
+    /// The server has no AI available: messages aren't sent, but on-device emergency guidance still appears.
+    var aiUnavailable = false
     var draft = ""
     private(set) var savedSuggestions: Set<String> = []
 
@@ -56,6 +64,11 @@ final class ChatViewModel {
             items.append(.localEscalation(id: localId, escalation))
         }
 
+        if aiUnavailable {
+            fail(text, .unavailable, "AI answers are unavailable right now, so this message wasn't sent. Emergency guidance still works.")
+            return
+        }
+
         sending = true
         defer { sending = false }
         do {
@@ -72,11 +85,21 @@ final class ChatViewModel {
                 if case .escalation = reply.payload { items.removeAll { if case .localEscalation(let id, _) = $0 { return id == localId }; return false } }
                 items.append(.assistant(reply))
             }
+        } catch APIError.network {
+            fail(text, .offline, "You're offline, so your message wasn't sent.")
+        } catch APIError.aiUnavailable {
+            aiUnavailable = true
+            fail(text, .unavailable, "AI answers are unavailable right now, so this message wasn't sent. Emergency guidance still works.")
         } catch {
             onSessionEnded(error)
-            failedText = text
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "The message couldn't be sent. Please try again."
+            fail(text, .other, (error as? LocalizedError)?.errorDescription ?? "The message couldn't be sent. Please try again.")
         }
+    }
+
+    private func fail(_ text: String, _ kind: ErrorKind, _ message: String) {
+        failedText = text
+        errorKind = kind
+        errorMessage = message
     }
 
     /// Retries the last failed message (its bubble is already shown).
@@ -89,8 +112,22 @@ final class ChatViewModel {
     func loadHistory() async {
         do {
             conversations = try await api.conversations()
+            historyFailed = false
         } catch {
             onSessionEnded(error)
+            historyFailed = true
+        }
+    }
+
+    func rename(_ conversation: ConversationRecord, to title: String) async {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        do {
+            let updated = try await api.renameConversation(conversation.id, title: String(name.prefix(80)))
+            if let index = conversations.firstIndex(where: { $0.id == conversation.id }) { conversations[index] = updated }
+        } catch {
+            errorKind = .other
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Couldn't rename the conversation."
         }
     }
 
@@ -106,8 +143,13 @@ final class ChatViewModel {
             items = detail.messages.map { $0.role == .user ? .user(id: $0.id, text: $0.content) : .assistant($0) }
             errorMessage = nil
             failedText = nil
+        } catch APIError.server(404, _, _) {
+            startNew()
+            errorKind = .other
+            errorMessage = "That conversation was deleted or isn't available. You can start a new one."
         } catch {
             onSessionEnded(error)
+            errorKind = error as? APIError == .network ? .offline : .other
             errorMessage = (error as? LocalizedError)?.errorDescription
         }
     }
@@ -126,6 +168,7 @@ final class ChatViewModel {
         items = []
         conversationId = nil
         errorMessage = nil
+        errorKind = .other
         failedText = nil
         draft = ""
     }

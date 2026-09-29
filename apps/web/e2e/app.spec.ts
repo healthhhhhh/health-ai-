@@ -313,6 +313,68 @@ test.describe("chat", () => {
     await page.getByRole("button", { name: "Under an hour" }).click();
     await expect(page.getByText(/^Sample response in Preview mode/)).toHaveCount(2);
   });
+
+  test("a deleted conversation's link explains itself", async ({ page }) => {
+    await page.goto("/chat?c=00000000-0000-4000-8000-00000000dead");
+    await expect(page.getByText("That conversation was deleted or isn't available.")).toBeVisible();
+    await expect(page.getByRole("group", { name: "Suggested questions" })).toBeVisible();
+  });
+
+  test("attach opens the Reports upload with photo chosen", async ({ page }) => {
+    await page.goto("/chat", { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Add a report or photo" }).click();
+    await page.getByRole("menuitem", { name: /Check a photo/ }).click();
+    await expect(page).toHaveURL(/\/reports\?upload=photo#upload$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Medical Reports" })).toBeVisible();
+  });
+
+  test.describe("history and states", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("starts, renames and deletes a conversation", async ({ page }) => {
+      await signInFresh(page);
+      await page.goto("/chat", { waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "Tips for sleeping better" }).click();
+      await expect(page.getByText(/^Sample response in Preview mode/)).toBeVisible();
+      await expect(page).toHaveURL(/\/chat\?c=/);
+      const list = page.getByRole("complementary", { name: "Past conversations" });
+      await expect(list.getByRole("link", { name: /Tips for sleeping better/ })).toBeVisible();
+
+      await list.getByRole("button", { name: "Rename conversation: Tips for sleeping better" }).click();
+      await list.getByLabel("Conversation name").fill("My sleep routine");
+      await list.getByRole("button", { name: "Save name" }).click();
+      await expect(list.getByRole("link", { name: /My sleep routine/ })).toBeVisible();
+
+      await list.getByRole("button", { name: "Delete conversation: My sleep routine" }).click();
+      const dialog = page.getByRole("dialog", { name: "Delete this conversation?" });
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(list.getByRole("link", { name: /My sleep routine/ })).toBeVisible();
+      await list.getByRole("button", { name: "Delete conversation: My sleep routine" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+      await expect(page).toHaveURL(/\/chat$/);
+      await expect(list.getByRole("link", { name: /My sleep routine/ })).toHaveCount(0);
+      await expectCurrentPageAccessible(page);
+    });
+
+    test("AI unavailable still shows emergency guidance and offers to try again", async ({ page, context }) => {
+      await signInFresh(page);
+      await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "ai_unavailable" })), url: page.url() }]);
+      await page.goto("/chat", { waitUntil: "networkidle" });
+      await expect(page.getByText("AI answers are unavailable right now", { exact: true })).toBeVisible();
+      await page.getByLabel("Message").fill("I have crushing chest pain and can't breathe");
+      await page.getByRole("button", { name: "Send" }).click();
+      await expect(page.getByRole("region", { name: "Emergency guidance" }).first()).toBeVisible();
+      await expect(page.locator("main").getByRole("alert").filter({ hasText: "wasn't sent" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+    });
+
+    test("offline shows the offline state instead of a broken page", async ({ page, context }) => {
+      await signInFresh(page);
+      await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "offline" })), url: page.url() }]);
+      await page.goto("/chat");
+      await expect(page.getByRole("heading", { name: "You're offline" })).toBeVisible();
+    });
+  });
 });
 
 test.describe("timeline, plan and profile", () => {

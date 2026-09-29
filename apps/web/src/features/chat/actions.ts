@@ -3,16 +3,18 @@
 import type { ChatMessageRecord, ConsentKind, ConversationDetail, ConversationRecord } from "@healthmate/shared-types";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
-import { api, errorMessage } from "@/lib/api/server";
+import { api, ApiError, errorMessage } from "@/lib/api/server";
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+/** `offline`: the request never reached the server, so it's safe to retry as-is. */
+type Result<T> = { ok: true; data: T } | { ok: false; error: string; offline?: boolean };
 
 async function attempt<T>(work: () => Promise<T>): Promise<Result<T>> {
   try {
     return { ok: true, data: await work() };
   } catch (error) {
     unstable_rethrow(error);
-    return { ok: false, error: errorMessage(error) };
+    const offline = error instanceof ApiError && error.code === "network";
+    return { ok: false, error: offline ? "You're offline. Check your connection and try again." : errorMessage(error), offline };
   }
 }
 
@@ -51,6 +53,16 @@ export async function rememberFact(fact: string, conversationId: string | null):
       method: "POST",
       json: { fact: value, status: "user_confirmed", source: conversationId ? "user_conversation" : "user_entry", sourceId: conversationId },
     });
+    return null;
+  });
+}
+
+export async function renameConversation(id: string, title: string): Promise<Result<null>> {
+  const value = clean(title).slice(0, 80);
+  if (!value) return { ok: false, error: "Give the conversation a name." };
+  return attempt(async () => {
+    await api(`conversations/${encodeURIComponent(id)}`, { method: "PATCH", json: { title: value } });
+    revalidatePath("/chat");
     return null;
   });
 }

@@ -41,6 +41,26 @@ describe("preview API", () => {
     expect((await call<{ onboardingCompleted: boolean }>("me/account", "GET", undefined, token)).body.onboardingCompleted).toBe(true);
   });
 
+  it("AI unavailable: meta says so and new messages are refused, other data still loads", async () => {
+    const token = await signIn();
+    const controls: PreviewControls = { state: "ai_unavailable" };
+    const meta = await call<{ ai: { available: boolean } }>("meta", "GET", undefined, token, controls);
+    expect(meta.body.ai.available).toBe(false);
+    expect((await call("conversations", "POST", { message: "hello" }, token, controls)).status).toBe(503);
+    expect((await call("conversations", "GET", undefined, token, controls)).status).toBe(200);
+    expect((await call<HealthProfile>("me", "GET", undefined, token, controls)).status).toBe(200);
+  });
+
+  it("renames a conversation and names its timeline entry after it", async () => {
+    const token = await signIn();
+    const created = await call<ConversationDetail>("conversations", "POST", { message: "Tips for sleeping better" }, token);
+    const id = created.body.conversation.id;
+    const timeline = await call<{ events: { title: string; sourceId: string | null }[] }>("timeline", "GET", undefined, token);
+    expect(timeline.body.events.find((e) => e.sourceId === id)?.title).toBe("AI chat: Tips for sleeping better");
+    const renamed = await call<{ title: string }>(`conversations/${id}`, "PATCH", { title: "My sleep routine" }, token);
+    expect(renamed.body.title).toBe("My sleep routine");
+  });
+
   it("rejects the documented wrong password and short passwords", async () => {
     expect((await call("auth/login", "POST", { email: "a@b.co", password: "wrong-password" })).status).toBe(401);
     expect((await call("auth/login", "POST", { email: "a@b.co", password: "short" })).status).toBe(401);

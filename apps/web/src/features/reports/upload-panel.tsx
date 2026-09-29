@@ -25,9 +25,9 @@ async function upload(form: FormData): Promise<string> {
   return body.id;
 }
 
-export function UploadPanel() {
+export function UploadPanel({ initialMode = "report" }: { initialMode?: "report" | "image" }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"report" | "image">("report");
+  const [mode, setMode] = useState<"report" | "image">(initialMode);
   const [purpose, setPurpose] = useState("skin");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);

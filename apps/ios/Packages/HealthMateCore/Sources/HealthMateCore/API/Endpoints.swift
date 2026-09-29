@@ -195,6 +195,12 @@ extension APIClient {
         return response.messages
     }
 
+    @discardableResult
+    public func renameConversation(_ id: String, title: String) async throws -> ConversationRecord {
+        struct Body: Encodable { let title: String }
+        return try await send(.json("PATCH", "conversations/\(id)", Body(title: title)))
+    }
+
     public func deleteConversation(_ id: String) async throws {
         try await sendNoContent(Endpoint("DELETE", "conversations/\(id)"))
     }

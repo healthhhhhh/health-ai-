@@ -73,3 +73,37 @@ final class AppRouteTests: XCTestCase {
         XCTAssertEqual(cancelled.status, .cancelled)
     }
 }
+
+final class PreviewChatTests: XCTestCase {
+    private func client(_ state: PreviewState = .normal) -> APIClient {
+        PreviewURLProtocol.backend = PreviewBackend()
+        PreviewURLProtocol.state = { state }
+        return APIClient(baseURL: PreviewURLProtocol.baseURL, tokens: InMemoryTokenStore(), session: PreviewURLProtocol.makeSession())
+    }
+
+    func testRenamesAConversationAndTitlesItsTimelineEntry() async throws {
+        let api = client()
+        _ = try await api.login(email: "alex.morgan@example.com", password: "preview-password")
+        let start = try await api.startConversation("Tips for sleeping better")
+        let renamed = try await api.renameConversation(start.conversation.id, title: "My sleep routine")
+        XCTAssertEqual(renamed.title, "My sleep routine")
+        let timeline = try await api.timeline()
+        XCTAssertEqual(timeline.events.first { $0.sourceId == start.conversation.id }?.title, "AI chat: Tips for sleeping better")
+    }
+
+    func testAIUnavailableRefusesMessagesButKeepsHistory() async throws {
+        let api = client()
+        _ = try await api.login(email: "alex.morgan@example.com", password: "preview-password")
+        PreviewURLProtocol.state = { .aiUnavailable }
+        let meta = try await api.meta()
+        XCTAssertEqual(meta.ai.available, false)
+        do {
+            _ = try await api.startConversation("hello")
+            XCTFail("expected the assistant to be unavailable")
+        } catch APIError.aiUnavailable {
+            // expected: the app shows its "AI answers are unavailable" state
+        }
+        let history = try await api.conversations()
+        XCTAssertFalse(history.isEmpty)
+    }
+}

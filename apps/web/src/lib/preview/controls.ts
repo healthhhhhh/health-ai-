@@ -5,7 +5,7 @@
  */
 export const PREVIEW_CONTROLS_COOKIE = "hm_preview_controls";
 
-export const PREVIEW_STATES = ["normal", "loading", "slow", "empty", "error", "offline", "permission"] as const;
+export const PREVIEW_STATES = ["normal", "loading", "slow", "empty", "error", "offline", "permission", "ai_unavailable"] as const;
 export type PreviewState = (typeof PREVIEW_STATES)[number];
 
 export interface PreviewControls {
@@ -22,6 +22,7 @@ export const PREVIEW_STATE_LABELS: Record<PreviewState, { label: string; descrip
   error: { label: "Server error", description: "Requests fail with a server error" },
   offline: { label: "Offline", description: "The app can't reach HealthMate" },
   permission: { label: "Permissions off", description: "Consents and Apple Health are turned off" },
+  ai_unavailable: { label: "AI unavailable", description: "The assistant can't answer; everything else works" },
 };
 
 export function parseControls(raw: string | undefined): PreviewControls {

@@ -17,6 +17,7 @@ struct ChatView: View {
     @State private var showSignIn = false
     @State private var showHistory = false
     @State private var gateEscalation: Escalation?
+    @State private var showReports = false
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -46,8 +47,13 @@ struct ChatView: View {
                             ConsentGate(busy: session.busy) {
                                 Task { await session.setConsent("ai_processing", granted: true) }
                             }
-                        } else if model.isEmpty {
-                            ChatWelcome(onPick: { suggestion in Task { await model.send(suggestion) } })
+                        } else {
+                            if model.aiUnavailable {
+                                AIUnavailableBanner()
+                            }
+                            if model.isEmpty {
+                                ChatWelcome(onPick: { suggestion in Task { await model.send(suggestion) } })
+                            }
                         }
                         ForEach(model.items) { item in
                             row(item)
@@ -58,7 +64,7 @@ struct ChatView: View {
                             TypingIndicator().id("typing")
                         }
                         if let error = model.errorMessage {
-                            ErrorRow(message: error, canRetry: model.failedText != nil) {
+                            ErrorRow(message: error, kind: model.errorKind, canRetry: model.failedText != nil) {
                                 Task { await model.retry() }
                             }
                             .id("error")
@@ -99,7 +105,15 @@ struct ChatView: View {
                 ConversationHistoryView(model: model)
                     .presentationDetents([.medium, .large])
             }
+            .sheet(isPresented: $showReports) {
+                NavigationStack {
+                    DocumentsView(session: session)
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showReports = false } } }
+                }
+            }
         }
+        .onAppear { model.aiUnavailable = session.aiAvailable == false }
+        .onChange(of: session.aiAvailable) { _, available in model.aiUnavailable = available == false }
         .task(id: session.state) {
             consumePendingQuestion()
             #if DEBUG
@@ -130,7 +144,8 @@ struct ChatView: View {
                 savedSuggestions: model.savedSuggestions,
                 onAnswer: { answer in Task { await model.send(answer) } },
                 onSaveSuggestion: { fact in Task { await model.saveSuggestion(fact) } },
-                onFindCare: onFindCare
+                onFindCare: onFindCare,
+                isSample: session.isPreview
             )
         }
     }
@@ -168,6 +183,17 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 6) {
             HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    Button { showReports = true } label: { Label("Upload a report", systemImage: "doc.text") }
+                    Button { showReports = true } label: { Label("Check a photo", systemImage: "camera") }
+                } label: {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(HM.Colors.textSecondary)
+                        .frame(width: 46, height: 46)
+                        .background(Circle().strokeBorder(HM.Colors.separator))
+                }
+                .accessibilityLabel("Add a report or photo")
                 TextField("Type your message…", text: $model.draft, axis: .vertical)
                     .font(.hmBody)
                     .lineLimit(1...5)
@@ -190,7 +216,7 @@ struct ChatView: View {
                         .accessibilityIdentifier("sendMessage")
                 }
             }
-            Text("AI-generated information, not a diagnosis.")
+            Text(session.isPreview ? "Sample responses in Preview mode, not a diagnosis." : "AI-generated information, not a diagnosis.")
                 .font(.hmMicro)
                 .foregroundStyle(HM.Colors.textMuted)
         }
@@ -362,16 +388,17 @@ private struct ConsentGate: View {
 
 private struct ErrorRow: View {
     let message: String
+    let kind: ChatViewModel.ErrorKind
     let canRetry: Bool
     let onRetry: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(HM.Colors.error)
+            Image(systemName: kind == .offline ? "wifi.slash" : kind == .unavailable ? "cloud.slash" : "exclamationmark.circle.fill").foregroundStyle(HM.Colors.error)
             Text(message).font(.hmCaption).foregroundStyle(HM.Colors.textPrimary)
             Spacer(minLength: 6)
             if canRetry {
-                Button("Retry", action: onRetry)
+                Button(kind == .unavailable ? "Try again" : "Retry", action: onRetry)
                     .font(.hmCaption.weight(.semibold))
             }
         }
@@ -381,17 +408,44 @@ private struct ErrorRow: View {
     }
 }
 
-/// Past conversations; swipe to delete.
+/// The server has no AI available right now; history and on-device emergency guidance still work.
+private struct AIUnavailableBanner: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "cloud.slash").foregroundStyle(HM.Colors.warning)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AI answers are unavailable right now").font(.hmBodyEmphasis).foregroundStyle(HM.Colors.textPrimary)
+                Text("You can still read past conversations, and emergency guidance still appears instantly. Please try again later.")
+                    .font(.hmCaption)
+                    .foregroundStyle(HM.Colors.textSecondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.warningSoft))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Past conversations: open, rename or delete (with confirmation).
 struct ConversationHistoryView: View {
     @Bindable var model: ChatViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var loaded = false
+    @State private var renaming: ConversationRecord?
+    @State private var newTitle = ""
+    @State private var deleting: ConversationRecord?
 
     var body: some View {
         NavigationStack {
             Group {
                 if !loaded {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if model.historyFailed && model.conversations.isEmpty {
+                    StateView(state: .error, title: "Couldn't load your conversations", message: "Please try again in a moment.") {
+                        Button("Try again") { Task { await model.loadHistory() } }.buttonStyle(.hmSecondary)
+                    }
+                    .padding(HM.Spacing.lg)
                 } else if model.conversations.isEmpty {
                     EmptyStateView(systemImage: "bubble.left.and.bubble.right", title: "No conversations yet", message: "Your chats with the AI Health Assistant will appear here.")
                         .padding(HM.Spacing.lg)
@@ -411,21 +465,48 @@ struct ConversationHistoryView: View {
                                         .foregroundStyle(HM.Colors.textSecondary)
                                 }
                             }
-                        }
-                        .onDelete { offsets in
-                            let targets = offsets.map { model.conversations[$0] }
-                            Task { for conversation in targets { await model.delete(conversation) } }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) { deleting = conversation } label: { Label("Delete", systemImage: "trash") }
+                                Button { startRename(conversation) } label: { Label("Rename", systemImage: "pencil") }
+                                    .tint(HM.Colors.primary)
+                            }
+                            .contextMenu {
+                                Button { startRename(conversation) } label: { Label("Rename", systemImage: "pencil") }
+                                Button(role: .destructive) { deleting = conversation } label: { Label("Delete", systemImage: "trash") }
+                            }
                         }
                     }
+                    .refreshable { await model.loadHistory() }
                 }
             }
             .navigationTitle("Conversations")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .alert("Rename conversation", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                TextField("Name", text: $newTitle)
+                Button("Save") {
+                    if let target = renaming { Task { await model.rename(target, to: newTitle) } }
+                    renaming = nil
+                }
+                Button("Cancel", role: .cancel) { renaming = nil }
+            }
+            .confirmationDialog("Delete this conversation?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    if let target = deleting { Task { await model.delete(target) } }
+                    deleting = nil
+                }
+            } message: {
+                Text("“\(deleting?.title ?? "")” and its messages will be deleted. Facts you chose to remember stay in your profile.")
+            }
         }
         .task {
             await model.loadHistory()
             loaded = true
         }
+    }
+
+    private func startRename(_ conversation: ConversationRecord) {
+        newTitle = conversation.title
+        renaming = conversation
     }
 }

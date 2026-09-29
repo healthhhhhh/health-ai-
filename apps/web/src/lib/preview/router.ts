@@ -52,6 +52,14 @@ export async function previewFetch(path: string, method: string, body: unknown, 
   const route = segments.join("/");
   const input = (body ?? {}) as Record<string, unknown>;
 
+  // "AI unavailable": the assistant can't answer; everything else (and emergency triage in the app) still works.
+  if (controls.state === "ai_unavailable") {
+    if (method === "GET" && route === "meta") return json({ apiVersion: 1, ai: { available: false, demo: true }, preview: true });
+    if (method === "POST" && (route === "conversations" || /^conversations\/[^/]+\/messages$/.test(route))) {
+      return fail(503, "ai_unavailable", "The AI Health Assistant is unavailable right now. Please try again later.");
+    }
+  }
+
   const publicResponse = publicRoute(method, segments, input, url);
   if (publicResponse) return publicResponse;
 
@@ -346,7 +354,7 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
       const now = nowIso();
       const detail: ConversationDetail = { conversation: { id: newId(), title: message.replace(/\s+/g, " ").slice(0, 60), createdAt: now, updatedAt: now }, messages: exchange(account, message) };
       account.conversations.unshift(detail);
-      account.timeline.unshift({ id: newId(), eventType: "chat", title: "AI chat", occurredAt: now, sourceType: "user_entered", sourceId: detail.conversation.id });
+      account.timeline.unshift({ id: newId(), eventType: "chat", title: `AI chat: ${detail.conversation.title}`, occurredAt: now, sourceType: "user_entered", sourceId: detail.conversation.id });
       return json(detail, 201);
     }
     const conversation = view.conversations.find((x) => x.conversation.id === b);

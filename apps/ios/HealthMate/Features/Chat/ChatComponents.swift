@@ -150,6 +150,8 @@ struct AssistantTurnView: View {
     let onAnswer: (String) -> Void
     let onSaveSuggestion: (String) -> Void
     let onFindCare: () -> Void
+    /// Preview mode: a fixed sample response, labelled as such (never presented as a real AI).
+    var isSample = false
 
     var body: some View {
         switch message.payload {
@@ -177,7 +179,8 @@ struct AssistantTurnView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.primarySoft))
                 }
-                if let notice = answer.notice {
+                // The per-answer label already says it's a sample, so the sample notice isn't repeated.
+                if let notice = answer.notice, !(isSample && notice == PreviewBackend.sampleNotice) {
                     Label(notice, systemImage: "pills")
                         .font(.hmCaption)
                         .foregroundStyle(HM.Colors.textSecondary)
@@ -197,7 +200,7 @@ struct AssistantTurnView: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityHint(saved ? "" : "Saves this to your health memory")
                 }
-                Text(answer.safetyAdjusted ? "A safety check replaced part of this answer." : "AI-generated · not a diagnosis")
+                Label(footer(answer), systemImage: isSample ? "flask" : "sparkles")
                     .font(.hmMicro)
                     .foregroundStyle(HM.Colors.textMuted)
                     .padding(.leading, 38)
@@ -205,6 +208,11 @@ struct AssistantTurnView: View {
         case .none:
             ChatBubble(author: .assistant, text: message.content)
         }
+    }
+
+    private func footer(_ answer: AssistantAnswer) -> String {
+        let base = isSample ? "Sample response in Preview mode · not a real AI, not medical advice" : "AI-generated · not a diagnosis"
+        return answer.safetyAdjusted ? "\(base) · A safety check replaced part of this answer." : base
     }
 }
 

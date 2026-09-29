@@ -1,7 +1,8 @@
 "use client";
 
 import type { AssistantAnswer, ChatMessageRecord } from "@healthmate/shared-types";
-import { BrainCircuit, Check, Pill, Stethoscope, TriangleAlert } from "lucide-react";
+import { SAMPLE_NOTICE } from "@healthmate/sample-data";
+import { BrainCircuit, Check, FlaskConical, Pill, Sparkles, Stethoscope, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Mascot } from "@/components/illustrations/mascot";
 import { Button } from "@/components/ui/button";
@@ -17,20 +18,39 @@ export function AssistantTurn({
   saved,
   onAnswer,
   onRemember,
+  sample = false,
 }: {
   message: ChatMessageRecord;
   isLatest: boolean;
   saved: Set<string>;
   onAnswer: (text: string) => void;
   onRemember: (fact: string) => void;
+  /** Preview mode: a fixed sample response, labelled as such (never presented as a real AI). */
+  sample?: boolean;
 }) {
   const payload = message.payload;
   if (!payload) return <ChatBubble from="assistant" avatar={avatar}>{message.content}</ChatBubble>;
   if (payload.kind === "escalation") return <EscalationCard escalation={payload.escalation} />;
-  return <Answer answer={payload} isLatest={isLatest} saved={saved} onAnswer={onAnswer} onRemember={onRemember} />;
+  return <Answer answer={payload} isLatest={isLatest} saved={saved} onAnswer={onAnswer} onRemember={onRemember} sample={sample} />;
 }
 
-function Answer({ answer, isLatest, saved, onAnswer, onRemember }: { answer: AssistantAnswer; isLatest: boolean; saved: Set<string>; onAnswer: (t: string) => void; onRemember: (f: string) => void }) {
+function Answer({
+  answer,
+  isLatest,
+  saved,
+  onAnswer,
+  onRemember,
+  sample,
+}: {
+  answer: AssistantAnswer;
+  isLatest: boolean;
+  saved: Set<string>;
+  onAnswer: (t: string) => void;
+  onRemember: (f: string) => void;
+  sample: boolean;
+}) {
+  // The per-answer label already says it's a sample, so the sample notice isn't repeated.
+  const notice = sample && answer.notice === SAMPLE_NOTICE ? null : answer.notice;
   return (
     <div className="flex flex-col gap-3">
       {answer.escalation && <EscalationCard escalation={answer.escalation} />}
@@ -56,10 +76,10 @@ function Answer({ answer, isLatest, saved, onAnswer, onRemember }: { answer: Ass
             {answer.careRecommendation.text}
           </p>
         )}
-        {answer.notice && (
+        {notice && (
           <p className="flex gap-2 text-caption text-text-secondary">
             <Pill aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {answer.notice}
+            {notice}
           </p>
         )}
         {answer.memorySuggestions.map(({ fact }) => (
@@ -77,7 +97,11 @@ function Answer({ answer, isLatest, saved, onAnswer, onRemember }: { answer: Ass
             </Button>
           </div>
         ))}
-        <p className="text-xs text-text-muted">{answer.safetyAdjusted ? "A safety check replaced part of this answer." : "AI-generated · not a diagnosis"}</p>
+        <p className="flex items-center gap-1.5 text-xs text-text-muted">
+          {sample ? <FlaskConical aria-hidden className="size-3.5" /> : <Sparkles aria-hidden className="size-3.5" />}
+          {sample ? "Sample response in Preview mode · not a real AI, not medical advice" : "AI-generated · not a diagnosis"}
+          {answer.safetyAdjusted && " · A safety check replaced part of this answer."}
+        </p>
       </div>
     </div>
   );

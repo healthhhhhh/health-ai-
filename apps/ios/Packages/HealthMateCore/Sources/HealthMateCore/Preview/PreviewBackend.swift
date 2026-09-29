@@ -3,6 +3,7 @@ import Foundation
 /// Debug states for Preview mode (same set as the web Preview panel).
 public enum PreviewState: String, CaseIterable, Identifiable, Sendable {
     case normal, loading, slow, empty, error, offline, permission
+    case aiUnavailable = "ai_unavailable"
 
     public var id: String { rawValue }
 
@@ -15,6 +16,7 @@ public enum PreviewState: String, CaseIterable, Identifiable, Sendable {
         case .error: return "Server error"
         case .offline: return "Offline"
         case .permission: return "Permissions off"
+        case .aiUnavailable: return "AI unavailable"
         }
     }
 
@@ -27,6 +29,7 @@ public enum PreviewState: String, CaseIterable, Identifiable, Sendable {
         case .error: return "Requests fail with a server error"
         case .offline: return "The app can't reach HealthMate"
         case .permission: return "Consents and Apple Health are turned off"
+        case .aiUnavailable: return "The assistant can't answer; everything else works"
         }
     }
 
@@ -108,8 +111,15 @@ public final class PreviewBackend: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         let segments = path.split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }
         let input = JSONValue.decode(body)
-        if let response = publicRoute(method: method, segments: segments, input: input, query: query) { return response }
         let route = segments.joined(separator: "/")
+        // "AI unavailable": the assistant can't answer; everything else (and on-device emergency triage) still works.
+        if state == .aiUnavailable {
+            if method == "GET", route == "meta" { return json(["apiVersion": 1, "ai": ["available": false, "demo": true], "preview": true]) }
+            if method == "POST", route == "conversations" || (segments.first == "conversations" && segments.last == "messages") {
+                return fail(503, "ai_unavailable", "The AI Health Assistant is unavailable right now. Please try again later.")
+            }
+        }
+        if let response = publicRoute(method: method, segments: segments, input: input, query: query) { return response }
         if state == .error, !["me", "meta", "me/account"].contains(route) {
             return fail(500, "internal", "Something went wrong on our side. Please try again.")
         }
@@ -417,7 +427,7 @@ public final class PreviewBackend: @unchecked Sendable {
                 let id = newId()
                 let detail: JSONValue = ["conversation": ["id": .string(id), "title": .string(title), "createdAt": .string(ctx.now), "updatedAt": .string(ctx.now)], "messages": .array(exchange(ctx.account, message, now: ctx.now))]
                 ctx.account["conversations"].items.insert(detail, at: 0)
-                ctx.account["timeline"].items.insert(["id": .string(newId()), "eventType": "chat", "title": "AI chat", "occurredAt": .string(ctx.now), "sourceType": "user_entered", "sourceId": .string(id)], at: 0)
+                ctx.account["timeline"].items.insert(["id": .string(newId()), "eventType": "chat", "title": .string("AI chat: \(title)"), "occurredAt": .string(ctx.now), "sourceType": "user_entered", "sourceId": .string(id)], at: 0)
                 return json(detail, 201)
             }
             if let id = b {

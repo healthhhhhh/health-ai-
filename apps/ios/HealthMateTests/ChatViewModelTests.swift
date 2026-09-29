@@ -45,6 +45,34 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertEqual(model.failedText, "I have crushing chest pain and I can't breathe")
     }
 
+    func testOfflineFailureIsLabelledOfflineAndCanBeRetried() async {
+        ChatStubProtocol.respond = nil // network down
+        let model = makeModel()
+        await model.send("Tips for sleeping better")
+        XCTAssertEqual(model.errorKind, .offline)
+        XCTAssertEqual(model.errorMessage, "You're offline, so your message wasn't sent.")
+        XCTAssertEqual(model.failedText, "Tips for sleeping better")
+    }
+
+    func testAIUnavailableKeepsEmergencyGuidanceAndDoesNotSend() async {
+        var requests = 0
+        ChatStubProtocol.respond = { _ in requests += 1; return (500, "{}") }
+        let model = makeModel()
+        model.aiUnavailable = true
+        await model.send("I have crushing chest pain and I can't breathe")
+        XCTAssertEqual(requests, 0, "nothing is sent while the assistant is unavailable")
+        XCTAssertTrue(model.items.contains { if case .localEscalation = $0 { return true }; return false })
+        XCTAssertEqual(model.errorKind, .unavailable)
+    }
+
+    func testServerReportingAIUnavailableSwitchesToTheUnavailableState() async {
+        ChatStubProtocol.respond = { _ in (503, #"{"error":{"code":"ai_unavailable","message":"Unavailable"}}"#) }
+        let model = makeModel()
+        await model.send("Tips for sleeping better")
+        XCTAssertTrue(model.aiUnavailable)
+        XCTAssertEqual(model.errorKind, .unavailable)
+    }
+
     func testCrisisMessageShowsCrisisSupport() async {
         let model = makeModel()
         await model.send("I want to kill myself")

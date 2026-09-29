@@ -15,7 +15,8 @@ import { api } from "@/lib/api/server";
 
 export const metadata: Metadata = { title: "Medical Reports" };
 
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ upload?: string }> }) {
+  const { upload } = await searchParams;
   const [documents, consents] = await Promise.all([api<DocumentRecord[]>("documents"), api<ConsentRecord[]>("me/consents")]);
   const hasConsent = consents.some((c) => c.kind === "document_processing" && c.granted);
   const date = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric" });
@@ -29,7 +30,7 @@ export default async function ReportsPage() {
           <h2 id="upload" className="mb-4 text-card-title text-text-primary">
             Upload
           </h2>
-          {hasConsent ? <UploadPanel /> : <DocumentsConsent />}
+          {hasConsent ? <UploadPanel initialMode={upload === "photo" ? "image" : "report"} /> : <DocumentsConsent />}
         </Card>
         <Card as="section" aria-labelledby="yours">
           <h2 id="yours" className="mb-2 text-card-title text-text-primary">

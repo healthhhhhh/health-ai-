@@ -161,4 +161,26 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Under an hour"].exists, "Follow-up options are tappable")
     }
 
+    /// Preview "AI unavailable": the banner explains it, and emergency guidance still appears on-device.
+    func testAIUnavailableStillShowsEmergencyGuidance() {
+        let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "ai_unavailable", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        XCTAssertTrue(app.staticTexts["AI answers are unavailable right now"].waitForExistence(timeout: 10), "banner: \(screen(app))")
+        let field = messageField(app)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("I have crushing chest pain and can't breathe")
+        app.buttons["sendMessage"].tap()
+        XCTAssertTrue(app.staticTexts["This could be an emergency"].waitForExistence(timeout: 5), "escalation: \(screen(app))")
+        XCTAssertTrue(app.buttons["Try again"].waitForExistence(timeout: 5), "unavailable row: \(screen(app))")
+    }
+
+    /// The paperclip opens Reports & photos from chat.
+    func testAttachOpensReportsFromChat() {
+        let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        let attach = app.buttons["Add a report or photo"]
+        XCTAssertTrue(attach.waitForExistence(timeout: 10), "chat: \(screen(app))")
+        attach.tap()
+        app.buttons["Upload a report"].tap()
+        XCTAssertTrue(app.navigationBars["Reports & photos"].waitForExistence(timeout: 5), "reports: \(screen(app))")
+    }
 }
