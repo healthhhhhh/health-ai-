@@ -43,7 +43,10 @@ struct MainTabView: View {
                 onNavigate: { selection = $0 },
                 onVoice: { showVoice = true },
                 isDemoAccount: session.isSignedIn && session.isDemo,
-                isPreview: session.isPreview
+                isPreview: session.isPreview,
+                session: session,
+                healthReader: services.healthReader,
+                onRoute: open
             )
             .tabItem { Label(AppTab.home.title, systemImage: AppTab.home.systemImage) }
             .tag(AppTab.home)
@@ -90,6 +93,21 @@ struct MainTabView: View {
                 selection = .chat
             }
             .presentationDetents([.medium])
+        }
+    }
+
+    /// Destinations from Home links that live in another tab.
+    private func open(_ route: AppRoute) {
+        switch route {
+        case .home, .notifications: selection = .home
+        case .chat: selection = .chat
+        case .conversation(let id):
+            selection = .chat
+            Task { await chatModel.openConversation(id: id) }
+        case .health, .metric, .timeline, .reports, .report: selection = .health
+        case .plans, .planItem: selection = .plans
+        case .care, .appointment: showCareFinder = true
+        case .profile, .settings, .account: selection = .profile
         }
     }
 }

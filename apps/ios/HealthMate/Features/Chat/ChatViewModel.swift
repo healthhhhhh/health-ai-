@@ -95,8 +95,13 @@ final class ChatViewModel {
     }
 
     func open(_ conversation: ConversationRecord) async {
+        await openConversation(id: conversation.id)
+    }
+
+    /// Opens a conversation by id (e.g. from a Home activity item or a notification).
+    func openConversation(id: String) async {
         do {
-            let detail = try await api.conversation(conversation.id)
+            let detail = try await api.conversation(id)
             conversationId = detail.conversation.id
             items = detail.messages.map { $0.role == .user ? .user(id: $0.id, text: $0.content) : .assistant($0) }
             errorMessage = nil

@@ -47,6 +47,9 @@ actor LiveHomeService: HealthDataService {
                 inputs.timeZone = details.timeZone
             }
             inputs.timeline = (try? await api.timeline().events) ?? []
+            // Care appointments and notifications (Preview mode); an older server without them falls back quietly.
+            inputs.careAppointments = try? await api.appointments()
+            inputs.unreadNotifications = (try? await api.notifications().unreadCount) ?? 0
             // A check-in made on the web counts too; the newest one wins.
             if let remote = try? await api.latestMood(), remote.recordedAt > (inputs.todayMood?.recordedAt ?? .distantPast) {
                 inputs.todayMood = remote

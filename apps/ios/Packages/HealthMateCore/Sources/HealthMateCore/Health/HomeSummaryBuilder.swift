@@ -12,6 +12,9 @@ public enum HomeSummaryBuilder {
         public var dailyValues: [TrackedMetric: [DailyValue]]?
         public var todayMood: MoodCheckIn?
         public var timeline: [TimelineEventRecord]
+        /// Appointments from Care; nil when the server has none (then timeline appointments are used).
+        public var careAppointments: [AppointmentRecord]?
+        public var unreadNotifications = 0
 
         public init(firstName: String? = nil, lastName: String? = nil, timeZone: String = TimeZone.current.identifier, dailyValues: [TrackedMetric: [DailyValue]]? = nil, todayMood: MoodCheckIn? = nil, timeline: [TimelineEventRecord] = []) {
             self.firstName = firstName
@@ -39,9 +42,9 @@ public enum HomeSummaryBuilder {
             todayMood: inputs.todayMood.flatMap { calendar.isDate($0.recordedAt, inSameDayAs: now) ? $0 : nil },
             tasks: [],
             recentActivity: recentActivity(inputs.timeline, now: now),
-            upcomingAppointments: appointments(inputs.timeline, now: now),
+            upcomingAppointments: inputs.careAppointments.map { appointments($0, now: now) } ?? appointments(inputs.timeline, now: now),
             insight: nil,
-            unreadNotifications: 0
+            unreadNotifications: inputs.unreadNotifications
         )
     }
 
@@ -75,7 +78,23 @@ public enum HomeSummaryBuilder {
             .filter { $0.occurredAt <= now }
             .sorted { $0.occurredAt > $1.occurredAt }
             .prefix(limit)
-            .map { ActivityEvent(id: $0.id, kind: activityKind($0.eventType), title: $0.title, occurredAt: $0.occurredAt, source: dataSource($0.sourceType)) }
+            .map { ActivityEvent(id: $0.id, kind: activityKind($0.eventType), title: $0.title, occurredAt: $0.occurredAt, source: dataSource($0.sourceType), link: AppRoute.forTimeline($0).link) }
+    }
+
+    /// Scheduled Care appointments that haven't started yet, soonest first.
+    static func appointments(_ records: [AppointmentRecord], now: Date, limit: Int = 3) -> [Appointment] {
+        records
+            .filter { $0.status == .scheduled && $0.startsAt > now }
+            .sorted { $0.startsAt < $1.startsAt }
+            .prefix(limit)
+            .map { record in
+                let mode: Appointment.Mode = switch record.mode {
+                case .video: .video
+                case .phone: .phone
+                default: .inPerson
+                }
+                return Appointment(id: record.id, title: record.title, clinicianName: record.providerName ?? "", specialty: record.location ?? "", startsAt: record.startsAt, mode: mode, isCareAppointment: true)
+            }
     }
 
     /// Appointments the person added to their timeline with a future date.

@@ -11,11 +11,17 @@ struct HomeView: View {
     /// Signed in to a demo server: account content is seeded demo data.
     var isDemoAccount = false
     var isPreview = false
+    /// For screens opened from Home (notifications, appointments, reports, metrics). Nil in previews.
+    var session: SessionStore?
+    var healthReader: (any HealthDataReading)?
+    /// Destinations that live in another tab (chat, plan, profile…).
+    var onRoute: (AppRoute) -> Void = { _ in }
 
     @State private var question = ""
+    @State private var path: [AppRoute] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollViewReader { proxy in
             ScrollView {
                 Group {
@@ -47,6 +53,60 @@ struct HomeView: View {
             }
             .overlay(alignment: .bottom) { toast }
             .animation(HMMotion.spring, value: model.actionError ?? plan.actionError)
+            .navigationDestination(for: AppRoute.self) { route in destination(route) }
+        }
+        // Coming back from notifications or a detail refreshes the unread count and sections.
+        .onChange(of: path) { _, newPath in
+            if newPath.isEmpty { Task { await model.load() } }
+        }
+    }
+
+    /// Opens a destination: pushed on Home when it has a screen here, otherwise handed to the tab bar.
+    private func open(_ route: AppRoute) {
+        guard let session else { return onRoute(route) }
+        switch route {
+        case .notifications, .appointment, .report, .reports, .timeline:
+            path.append(route)
+        case .metric where healthReader != nil:
+            path.append(route)
+        default:
+            onRoute(route)
+        }
+    }
+
+    @ViewBuilder
+    private func destination(_ route: AppRoute) -> some View {
+        if let session {
+            switch route {
+            case .notifications:
+                NotificationsView(model: NotificationsViewModel(api: session.api), onOpen: open)
+            case .appointment(let id):
+                AppointmentDetailView(api: session.api, appointmentID: id, onAsk: onAsk)
+            case .report(let id):
+                ReportDestination(session: session, documentID: id)
+            case .reports:
+                DocumentsView(session: session)
+            case .timeline:
+                HealthTimelineView(api: session.api, onSessionEnded: { session.handle($0) })
+            case .metric(let metric):
+                if let healthReader {
+                    MetricDestination(metric: metric, reader: healthReader, api: session.api)
+                }
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    /// Home metric → the matching Health metric, when there's a detail for it.
+    private func route(for metric: HealthMetric) -> AppRoute {
+        switch metric.kind {
+        case .heartRate: .metric(.heartRate)
+        case .steps: .metric(.steps)
+        case .sleep: .metric(.sleep)
+        case .calories: .metric(.activeEnergy)
+        case .weight: .metric(.weight)
+        default: .health
         }
     }
 
@@ -61,7 +121,7 @@ struct HomeView: View {
                 } else if isDemoAccount {
                     SampleDataBanner(text: "Demo account — example content, not real health data")
                 }
-                HomeHeader(user: summary.user, unreadNotifications: summary.unreadNotifications)
+                HomeHeader(user: summary.user, unreadNotifications: summary.unreadNotifications) { open(.notifications) }
                 AskBar(text: $question, onSubmit: onAsk, onVoice: onVoice)
             }
             .appearAnimation()
@@ -69,7 +129,7 @@ struct HomeView: View {
             AssistantHeroCard(firstName: summary.user.firstName) { onNavigate(.chat) }
                 .appearAnimation(delay: 0.06)
 
-            TodaysHealthGrid(metrics: summary.metrics) { onNavigate(.health) }
+            TodaysHealthGrid(metrics: summary.metrics, onSeeAll: { onNavigate(.health) }, onOpen: { open(route(for: $0)) })
                 .id("health")
 
             MoodCheckInCard(mood: model.mood) { mood in
@@ -92,9 +152,13 @@ struct HomeView: View {
             .appearAnimation(delay: 0.35)
             .id("plan")
 
-            AppointmentsCard(appointments: summary.upcomingAppointments)
-            RecentActivityCard(events: summary.recentActivity)
-                .id("activity")
+            AppointmentsCard(appointments: summary.upcomingAppointments) { appointment in
+                open(appointment.isCareAppointment ? .appointment(id: appointment.id) : .timeline)
+            }
+            RecentActivityCard(events: summary.recentActivity) { event in
+                open(AppRoute(link: event.link) ?? .timeline)
+            }
+            .id("activity")
             DisclaimerView()
         }
         .padding(.top, HM.Spacing.xs)
@@ -136,6 +200,51 @@ struct HomeView: View {
                     }
                 }
         }
+    }
+}
+
+/// A report or photo opened from Home, with its own list model.
+private struct ReportDestination: View {
+    let session: SessionStore
+    let documentID: String
+    @State private var model: DocumentsViewModel
+    @State private var loaded = false
+
+    init(session: SessionStore, documentID: String) {
+        self.session = session
+        self.documentID = documentID
+        _model = State(initialValue: DocumentsViewModel(api: session.api, onSessionEnded: { [session] in session.handle($0) }))
+    }
+
+    var body: some View {
+        Group {
+            if loaded {
+                DocumentDetailView(model: model, documentID: documentID)
+            } else {
+                StateView(state: .loading).padding(.top, 60)
+            }
+        }
+        .task {
+            await model.load()
+            loaded = true
+        }
+    }
+}
+
+/// A metric opened from Home, with the same data and comparison as the Health tab.
+private struct MetricDestination: View {
+    let metric: TrackedMetric
+    @State private var model: HealthDashboardViewModel
+
+    init(metric: TrackedMetric, reader: any HealthDataReading, api: APIClient) {
+        self.metric = metric
+        _model = State(initialValue: HealthDashboardViewModel(reader: reader, api: api))
+    }
+
+    var body: some View {
+        MetricDetailView(metric: metric, model: model)
+            .navigationTitle(metric.title)
+            .task { await model.load() }
     }
 }
 

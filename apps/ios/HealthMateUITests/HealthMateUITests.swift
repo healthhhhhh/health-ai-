@@ -40,6 +40,11 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
     }
 
+    private func waitUntilEnabled(_ element: XCUIElement) {
+        expectation(for: NSPredicate(format: "exists == true AND isEnabled == true AND isHittable == true"), evaluatedWith: element)
+        waitForExpectations(timeout: 10)
+    }
+
     /// What's on screen, for failure messages.
     private func screen(_ app: XCUIApplication) -> String {
         let texts = app.staticTexts.allElementsBoundByIndex.map(\.label)
@@ -62,15 +67,31 @@ final class HealthMateUITests: XCTestCase {
         apple.tap()
 
         XCTAssertTrue(app.staticTexts["About you"].waitForExistence(timeout: 10), "setup: \(screen(app))")
-        for heading in ["What would help most?", "Your health details", "Your privacy choices", "Reminders", "Apple Health"] {
-            app.buttons["Continue"].tap()
+        // The primary action (Continue / Go to Home) waits until the account's details have loaded.
+        let next = app.buttons["setupPrimaryAction"]
+        for heading in ["What would help most?", "Your health details", "Your privacy choices", "Reminders", "Apple Health", "You're all set, Alex"] {
+            waitUntilEnabled(next)
+            next.tap()
             XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5), "\(heading): \(screen(app))")
         }
-        app.buttons["Continue"].tap()
-        let goHome = app.buttons["Go to Home"]
-        XCTAssertTrue(goHome.waitForExistence(timeout: 5), "summary: \(screen(app))")
-        goHome.tap()
+        waitUntilEnabled(next)
+        XCTAssertEqual(next.label, "Go to Home")
+        next.tap()
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10), "home: \(screen(app))")
+    }
+
+    /// Preview mode: the bell opens the notification centre, and a notification opens what it's about.
+    func testNotificationOpensItsAppointment() {
+        let app = launch(["-hmInitialTab", "home", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        let bell = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Notifications'")).firstMatch
+        XCTAssertTrue(bell.waitForExistence(timeout: 10), "home: \(screen(app))")
+        bell.tap()
+        XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 5), "notifications: \(screen(app))")
+        let checkUp = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Check-up in 3 days'")).firstMatch
+        XCTAssertTrue(checkUp.waitForExistence(timeout: 5), "notification row: \(screen(app))")
+        checkUp.tap()
+        XCTAssertTrue(app.staticTexts["Annual check-up"].waitForExistence(timeout: 5), "appointment: \(screen(app))")
+        XCTAssertTrue(app.staticTexts["Bring medication list"].exists)
     }
 
     func testEveryTabOpens() {

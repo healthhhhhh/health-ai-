@@ -94,7 +94,7 @@ export interface Appointment {
   clinicianName: string;
   specialty: string;
   startsAt: ISODateString;
-  mode: "in_person" | "video";
+  mode: "in_person" | "video" | "phone";
 }
 
 /**

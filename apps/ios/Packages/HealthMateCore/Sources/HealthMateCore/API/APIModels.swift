@@ -426,14 +426,17 @@ public struct TimelineEventRecord: Codable, Equatable, Identifiable, Sendable {
     public let occurredAt: Date
     public let sourceType: String
     public let sourceId: String?
+    /// Extra details, e.g. `{ "kind": "sleep" }` for a synced measurement.
+    public let payload: JSONValue?
 
-    public init(id: String, eventType: String, title: String, occurredAt: Date, sourceType: String, sourceId: String?) {
+    public init(id: String, eventType: String, title: String, occurredAt: Date, sourceType: String, sourceId: String?, payload: JSONValue? = nil) {
         self.id = id
         self.eventType = eventType
         self.title = title
         self.occurredAt = occurredAt
         self.sourceType = sourceType
         self.sourceId = sourceId
+        self.payload = payload
     }
 }
 
@@ -446,4 +449,52 @@ public struct ConsentRecord: Codable, Equatable, Sendable {
     public let kind: String
     public let granted: Bool
     public let version: String
+}
+
+// MARK: Notifications & care
+
+public struct NotificationRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let category: NotificationCategory
+    public let title: String
+    public let body: String
+    public let createdAt: Date
+    public var readAt: Date?
+    /// In-app destination as a web path, e.g. "/reports/<id>" (see `AppRoute`).
+    public let link: String?
+    /// AI-written content is labelled in the UI.
+    public let aiGenerated: Bool
+
+    public var isRead: Bool { readAt != nil }
+}
+
+public struct NotificationList: Codable, Sendable {
+    public let notifications: [NotificationRecord]
+    public let unreadCount: Int
+}
+
+public struct AppointmentRecord: Codable, Equatable, Identifiable, Sendable {
+    public enum Mode: String, Codable, Sendable { case inPerson = "in_person", video, phone }
+    public enum Status: String, Codable, Sendable { case scheduled, completed, cancelled }
+
+    public let id: String
+    public let title: String
+    public let careProviderId: String?
+    public let providerName: String?
+    public let startsAt: Date
+    public let endsAt: Date?
+    public let location: String?
+    public let mode: Mode?
+    public var status: Status
+    public let notes: String?
+}
+
+public struct CareProviderRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let specialty: String?
+    public let phone: String?
+    public let address: String?
+    public let website: String?
+    public let notes: String?
 }

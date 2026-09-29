@@ -127,6 +127,46 @@ extension APIClient {
         try await sendNoContent(.json("PUT", "me/notification-preferences", preferences))
     }
 
+    // MARK: Notifications
+
+    public func notifications() async throws -> NotificationList {
+        try await send(Endpoint("GET", "notifications"))
+    }
+
+    public func setNotificationRead(_ id: String, read: Bool) async throws {
+        struct Body: Encodable { let read: Bool }
+        try await sendNoContent(.json("PATCH", "notifications/\(id)", Body(read: read)))
+    }
+
+    public func markAllNotificationsRead() async throws {
+        try await sendNoContent(Endpoint("POST", "notifications/read-all"))
+    }
+
+    public func deleteNotification(_ id: String) async throws {
+        try await sendNoContent(Endpoint("DELETE", "notifications/\(id)"))
+    }
+
+    // MARK: Care
+
+    /// `when`: "upcoming", "past" or "all".
+    public func appointments(when: String = "upcoming") async throws -> [AppointmentRecord] {
+        try await send(Endpoint("GET", "care/appointments", query: [URLQueryItem(name: "when", value: when)]))
+    }
+
+    public func appointment(_ id: String) async throws -> AppointmentRecord {
+        try await send(Endpoint("GET", "care/appointments/\(id)"))
+    }
+
+    /// Updates HealthMate's record only; it never contacts the clinic.
+    public func setAppointmentStatus(_ id: String, _ status: AppointmentRecord.Status) async throws {
+        struct Body: Encodable { let status: AppointmentRecord.Status }
+        try await sendNoContent(.json("PATCH", "care/appointments/\(id)", Body(status: status)))
+    }
+
+    public func careProvider(_ id: String) async throws -> CareProviderRecord {
+        try await send(Endpoint("GET", "care/providers/\(id)"))
+    }
+
     public func consents() async throws -> [ConsentRecord] {
         try await send(Endpoint("GET", "me/consents"))
     }

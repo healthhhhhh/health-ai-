@@ -130,18 +130,21 @@ public struct ActivityEvent: Codable, Sendable, Equatable, Identifiable {
     public var title: String
     public var occurredAt: Date
     public var source: DataSource
+    /// In-app destination as a web path (see `AppRoute`).
+    public var link: String?
 
-    public init(id: String, kind: ActivityKind, title: String, occurredAt: Date, source: DataSource) {
+    public init(id: String, kind: ActivityKind, title: String, occurredAt: Date, source: DataSource, link: String? = nil) {
         self.id = id
         self.kind = kind
         self.title = title
         self.occurredAt = occurredAt
         self.source = source
+        self.link = link
     }
 }
 
 public struct Appointment: Codable, Sendable, Equatable, Identifiable {
-    public enum Mode: String, Codable, Sendable { case inPerson = "in_person", video }
+    public enum Mode: String, Codable, Sendable { case inPerson = "in_person", video, phone }
 
     public let id: String
     public var title: String
@@ -149,14 +152,31 @@ public struct Appointment: Codable, Sendable, Equatable, Identifiable {
     public var specialty: String
     public var startsAt: Date
     public var mode: Mode
+    /// From Care (has a detail screen), rather than a timeline entry.
+    public var isCareAppointment: Bool
 
-    public init(id: String, title: String, clinicianName: String, specialty: String, startsAt: Date, mode: Mode) {
+    public init(id: String, title: String, clinicianName: String, specialty: String, startsAt: Date, mode: Mode, isCareAppointment: Bool = false) {
         self.id = id
         self.title = title
         self.clinicianName = clinicianName
         self.specialty = specialty
         self.startsAt = startsAt
         self.mode = mode
+        self.isCareAppointment = isCareAppointment
+    }
+
+    enum CodingKeys: String, CodingKey { case id, title, clinicianName, specialty, startsAt, mode }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            title: try c.decode(String.self, forKey: .title),
+            clinicianName: try c.decode(String.self, forKey: .clinicianName),
+            specialty: try c.decode(String.self, forKey: .specialty),
+            startsAt: try c.decode(Date.self, forKey: .startsAt),
+            mode: try c.decode(Mode.self, forKey: .mode)
+        )
     }
 }
 

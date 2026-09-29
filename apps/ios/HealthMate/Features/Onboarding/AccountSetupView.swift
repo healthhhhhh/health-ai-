@@ -12,6 +12,8 @@ struct AccountSetupView: View {
     @State private var step: AccountSetupStep = .about
     @State private var draft = AccountSetupDraft()
     @State private var loaded = false
+    /// The account's current details are in the draft (Continue waits for this).
+    @State private var ready = false
     @State private var problem: String?
     @State private var notificationStatus: PermissionStatus = .prompt
     @State private var healthStatus: PermissionStatus = .prompt
@@ -67,6 +69,7 @@ struct AccountSetupView: View {
             let profile = try? await session.api.healthProfile()
             let consents = (try? await session.api.consents()) ?? []
             draft = AccountSetupDraft(profile: profile?.profile, consents: Dictionary(uniqueKeysWithValues: consents.map { ($0.kind, $0.granted) }))
+            ready = true
             notificationStatus = Self.status(await reminders.authorization())
             if !healthReader.isAvailable { healthStatus = .unavailable }
         }
@@ -347,7 +350,8 @@ struct AccountSetupView: View {
             }
         }
         .buttonStyle(.hmPrimary(fullWidth: true))
-        .disabled(session.busy)
+        .disabled(session.busy || !ready)
+        .accessibilityIdentifier("setupPrimaryAction")
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
         .background(HM.Colors.backgroundGradientBottom.opacity(0.92).ignoresSafeArea())

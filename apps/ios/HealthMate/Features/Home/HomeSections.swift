@@ -4,6 +4,7 @@ import SwiftUI
 struct HomeHeader: View {
     let user: UserProfile
     let unreadNotifications: Int
+    var onNotifications: () -> Void = {}
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -19,9 +20,12 @@ struct HomeHeader: View {
                 }
             }
             Spacer()
-            if unreadNotifications > 0 {
-                IconButton(systemName: "bell", label: "Notifications, \(unreadNotifications) unread", showsBadge: true) {}
-            }
+            IconButton(
+                systemName: "bell",
+                label: unreadNotifications > 0 ? "Notifications, \(unreadNotifications) unread" : "Notifications",
+                showsBadge: unreadNotifications > 0,
+                action: onNotifications
+            )
             if !user.firstName.isEmpty {
                 AvatarView(name: user.fullName, size: 42)
             }
@@ -94,6 +98,7 @@ struct MoodCheckInCard: View {
 struct TodaysHealthGrid: View {
     let metrics: [HealthMetric]
     let onSeeAll: () -> Void
+    var onOpen: (HealthMetric) -> Void = { _ in }
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
@@ -106,7 +111,7 @@ struct TodaysHealthGrid: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
-                        Button(action: onSeeAll) {
+                        Button { onOpen(metric) } label: {
                             MetricCard(presentation: MetricPresenter.present(metric), systemImage: metric.kind.systemImage, beats: metric.kind == .heartRate, showsContext: false)
                         }
                         .buttonStyle(PressableButtonStyle())
@@ -176,6 +181,7 @@ struct TodaysPlanCard: View {
 
 struct AppointmentsCard: View {
     let appointments: [Appointment]
+    var onOpen: (Appointment) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -184,6 +190,7 @@ struct AppointmentsCard: View {
                 Text("No upcoming appointments. Add one to your timeline in the Health tab.").font(.hmBody).foregroundStyle(HM.Colors.textSecondary)
             }
             ForEach(appointments) { appointment in
+                Button { onOpen(appointment) } label: {
                 HStack(spacing: 12) {
                     IconBadge(systemName: "calendar", tone: .blue, size: .small)
                     VStack(alignment: .leading, spacing: 2) {
@@ -204,10 +211,14 @@ struct AppointmentsCard: View {
                             .font(.hmMicro)
                             .foregroundStyle(HM.Colors.textSecondary)
                     }
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(HM.Colors.textMuted)
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: HM.Radius.md, style: .continuous).fill(HM.Colors.cardMuted))
+                .contentShape(Rectangle())
                 .accessibilityElement(children: .combine)
+                }
+                .buttonStyle(PressableButtonStyle())
             }
         }
         .hmCard()
@@ -216,6 +227,7 @@ struct AppointmentsCard: View {
 
 struct RecentActivityCard: View {
     let events: [ActivityEvent]
+    var onOpen: (ActivityEvent) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -226,13 +238,18 @@ struct RecentActivityCard: View {
             TimelineView(.everyMinute) { context in
                 VStack(spacing: 0) {
                     ForEach(events) { event in
-                        TimelineItem(
-                            systemImage: event.kind.systemImage,
-                            tone: event.kind.tone,
-                            title: event.title,
-                            time: HealthFormat.relative(event.occurredAt, now: context.date),
-                            isLast: event.id == events.last?.id
-                        )
+                        Button { onOpen(event) } label: {
+                            TimelineItem(
+                                systemImage: event.kind.systemImage,
+                                tone: event.kind.tone,
+                                title: event.title,
+                                time: HealthFormat.relative(event.occurredAt, now: context.date),
+                                isLast: event.id == events.last?.id
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens details")
                     }
                 }
             }
