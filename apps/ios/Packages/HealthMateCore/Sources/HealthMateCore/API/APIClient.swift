@@ -138,6 +138,20 @@ public actor APIClient {
         }
     }
 
+    /// Downloads from a signed link (no auth header — the URL is the grant), for the in-app file viewer.
+    public func download(_ url: URL) async throws -> (data: Data, contentType: String?) {
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await session.data(from: url)
+        } catch {
+            throw APIError.network
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, code: "download_failed", message: "The file isn't available right now.")
+        }
+        return (data, http.value(forHTTPHeaderField: "Content-Type"))
+    }
+
     private func perform(_ endpoint: Endpoint, allowRefresh: Bool = true) async throws -> Data {
         var request = try buildRequest(endpoint)
         if endpoint.authenticated {

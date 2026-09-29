@@ -500,8 +500,86 @@ test.describe("reports, health and settings", () => {
     // A tiny valid PNG (1×1 pixel).
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
     await page.locator("input[type=file]").setInputFiles({ name: "arm.png", mimeType: "image/png", buffer: png });
+    await expect(page.getByRole("region", { name: "Selected file" })).toContainText("arm.png");
+    await page.getByRole("button", { name: "Upload and check" }).click();
     await expect(page).toHaveURL(/\/reports\/[0-9a-f-]+$/, { timeout: 20_000 });
     await expect(page.getByText(/^Sample result in Preview mode/)).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("report upload: confirm, progress steps, labelled sample summary, questions and original file", async ({ page, context }) => {
+    await page.goto("/reports", { waitUntil: "networkidle" });
+    await page.locator("input[type=file]").setInputFiles({ name: "labs.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 sample") });
+    await page.getByRole("button", { name: "Choose another file" }).click();
+    await expect(page.getByRole("region", { name: "Selected file" })).toHaveCount(0);
+    await page.locator("input[type=file]").setInputFiles({ name: "labs.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 sample") });
+    await page.getByRole("button", { name: "Upload and summarise" }).click();
+    await expect(page).toHaveURL(/\/reports\/[0-9a-f-]+$/, { timeout: 20_000 });
+    await expect(page.getByRole("list", { name: "Analysis progress" })).toBeVisible();
+    await expect(page.getByText(/^Sample result in Preview mode/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/within the report's range · 1 outside it/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Questions to ask your doctor" })).toBeVisible();
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByRole("button", { name: "Copy questions" }).click();
+    await expect(page.getByText(/^(Questions copied\.|Couldn't copy here)/)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Ask the AI Health Assistant" })).toHaveAttribute("href", /^\/chat\?q=/);
+    await expectCurrentPageAccessible(page);
+
+    await page.getByRole("link", { name: "Original file" }).click();
+    await expect(page).toHaveURL(/\/reports\/[0-9a-f-]+\/original$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Original file" })).toBeVisible();
+    await expect(page.getByText(/^Preview mode doesn't keep uploaded files/)).toBeVisible();
+    await expect(page.locator("iframe[title='Original file: labs.pdf']")).toBeVisible();
+    await page.getByRole("link", { name: "Back to the summary" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Lab results" })).toBeVisible();
+  });
+
+  test("a damaged or unreadable report offers to upload again", async ({ page }) => {
+    for (const [name, heading] of [
+      ["damaged scan.pdf", "We couldn't analyse this file"],
+      ["blurry page.pdf", "We couldn't read this report"],
+    ] as const) {
+      await page.goto("/reports", { waitUntil: "networkidle" });
+      await page.locator("input[type=file]").setInputFiles({ name, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 sample") });
+      await page.getByRole("button", { name: "Upload and summarise" }).click();
+      await expect(page).toHaveURL(/\/reports\/[0-9a-f-]+$/, { timeout: 20_000 });
+      await expect(page.getByRole("heading", { name: heading })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("link", { name: "Check the original" })).toBeVisible();
+    }
+    await page.getByRole("link", { name: "Upload again" }).click();
+    await expect(page).toHaveURL(/\/reports$/);
+  });
+
+  test("reports list filters, searches and explains empty results", async ({ page }) => {
+    await page.goto("/reports?show=photos", { waitUntil: "networkidle" });
+    const list = page.getByRole("region", { name: "Your reports and photos" }).or(page.locator("section", { has: page.getByRole("heading", { name: "Your reports and photos" }) }));
+    await expect(list.getByRole("link", { name: /Skin or rash/ }).first()).toBeVisible();
+    await expect(list.getByRole("link", { name: /Example blood test/ })).toHaveCount(0);
+    await page.getByRole("link", { name: "All", exact: true }).click();
+    await page.getByRole("searchbox", { name: "Search reports and photos" }).fill("clinic");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/q=clinic/);
+    await expect(list.getByRole("link", { name: /Example clinic letter/ })).toBeVisible();
+    await expect(list.getByRole("link", { name: /Example blood test/ })).toHaveCount(0);
+    await page.goto("/reports?q=zzzz", { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { name: "Nothing matches “zzzz”" })).toBeVisible();
+    await page.getByRole("link", { name: "Clear search" }).click();
+    await expect(page).toHaveURL(/\/reports$/);
+  });
+
+  test.describe("reports states", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+    for (const [state, text] of [
+      ["error", "Your reports couldn't load"],
+      ["offline", "You're offline"],
+    ] as const) {
+      test(`shows the ${state} state`, async ({ page, context }) => {
+        await signInFresh(page);
+        await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state })), url: page.url() }]);
+        await page.goto("/reports");
+        await expect(page.getByRole("heading", { name: text })).toBeVisible();
+        await expect(page.getByRole("link", { name: "Try again" })).toBeVisible();
+      });
+    }
   });
 
   test("health dashboard: today, connection, trends, ranges and daily history", async ({ page }) => {
@@ -586,7 +664,7 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
   });

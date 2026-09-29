@@ -124,6 +124,22 @@ final class PreviewBackendTests: XCTestCase {
         XCTAssertEqual(ready["status"].string, "ready")
         XCTAssertEqual(ready["result"]["model"].string, "sample", "results are marked as samples")
     }
+
+    func testADamagedFileFailsWithAReasonAndANotification() {
+        final class Clock: @unchecked Sendable { var now = Date() }
+        let clock = Clock()
+        backend = PreviewBackend(now: { clock.now })
+        let token = signIn()
+        let created = call("POST", "documents", ["kind": "report", "filename": "damaged scan.pdf", "contentType": "application/pdf", "byteSize": 1000], token: token).1
+        let id = created["document"]["id"].string ?? ""
+        _ = call("POST", "documents/\(id)/process", token: token)
+        clock.now = clock.now.addingTimeInterval(5)
+        let failed = call("GET", "documents/\(id)", token: token).1
+        XCTAssertEqual(failed["status"].string, "failed")
+        XCTAssertEqual(failed["failureReason"].string, PreviewBackend.failureReason)
+        XCTAssertTrue(failed["result"].isNull)
+        XCTAssertEqual(call("GET", "notifications", token: token).1["notifications"].array.first?["title"].string, "Couldn't read: damaged scan.pdf")
+    }
 }
 
 /// The app's own client talking to Preview mode through the URL protocol.
@@ -135,6 +151,17 @@ final class PreviewClientTests: XCTestCase {
 
     private func client() -> APIClient {
         APIClient(baseURL: PreviewURLProtocol.baseURL, tokens: InMemoryTokenStore(), session: PreviewURLProtocol.makeSession())
+    }
+
+    func testOriginalFilesDownloadThroughTheSignedLink() async throws {
+        let api = client()
+        _ = try await api.login(email: "alex.morgan@example.com", password: "preview-password")
+        let reports = try await api.documents(kind: .report)
+        let report = try XCTUnwrap(reports.first { $0.status == .ready })
+        let link = try await api.documentFile(report.id)
+        let file = try await api.download(link.url)
+        XCTAssertTrue(file.data.starts(with: Array("%PDF".utf8)))
+        XCTAssertEqual(file.contentType, "application/pdf")
     }
 
     func testTheAppClientWorksEndToEndWithoutAServer() async throws {

@@ -215,6 +215,8 @@ public final class PreviewBackend: @unchecked Sendable {
         if emails.count > 50 { emails.removeLast() }
     }
 
+    public static let failureReason = "We couldn't open this file. It may be damaged or password-protected. Try saving it again, or upload a photo of the pages."
+
     /// Sample analyses finish a few seconds after upload.
     private func settleProcessing(_ sid: String) {
         guard var pendingDocs = processing[sid], var account = sessions[sid] else { return }
@@ -226,15 +228,24 @@ public final class PreviewBackend: @unchecked Sendable {
             var doc = docs[index]
             let analyses = account["sampleAnalyses"]
             let filename = doc["filename"].string ?? ""
+            // File names steer the sample outcome so every result state can be tried in Preview (same as web).
+            let damaged = filename.range(of: "damaged|corrupt|fail", options: [.regularExpression, .caseInsensitive]) != nil
             let unclear = filename.range(of: "blur|unreadable|dark", options: [.regularExpression, .caseInsensitive]) != nil
             let isImage = doc["kind"].string == "image"
-            doc["result"] = isImage ? (unclear ? analyses["poorImage"] : analyses["image"]) : (unclear ? analyses["unreadableReport"] : analyses["report"])
-            doc["status"] = "ready"
+            if damaged {
+                doc["status"] = "failed"
+                doc["failureReason"] = .string(Self.failureReason)
+            } else {
+                doc["result"] = isImage ? (unclear ? analyses["poorImage"] : analyses["image"]) : (unclear ? analyses["unreadableReport"] : analyses["report"])
+                doc["status"] = "ready"
+            }
             doc["processedAt"] = .string(PreviewClock.iso(current))
             docs[index] = doc
             account["documents"] = .array(docs)
             account["notifications"] = .array([[
-                "id": .string(newId()), "category": "report", "title": .string("Summary ready: \(filename)"), "body": "Tap to see the sample summary.",
+                "id": .string(newId()), "category": "report",
+                "title": .string(damaged ? "Couldn't read: \(filename)" : "Summary ready: \(filename)"),
+                "body": .string(damaged ? "Tap to see what to try next." : "Tap to see the sample summary."),
                 "createdAt": .string(PreviewClock.iso(current)), "readAt": nil, "link": .string("/reports/\(id)"), "aiGenerated": false,
             ]] + account["notifications"].array)
             account["timeline"] = .array([[

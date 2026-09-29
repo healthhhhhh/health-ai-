@@ -209,6 +209,29 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Edit entry"].exists, "edit: \(screen(app))")
     }
 
+    /// Reports: filters narrow the list, and a report opens with its labelled sample summary and questions.
+    func testReportsFilterAndSampleResult() {
+        let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        let attach = app.buttons["Add a report or photo"]
+        XCTAssertTrue(attach.waitForExistence(timeout: 10), "chat: \(screen(app))")
+        attach.tap()
+        app.buttons["Upload a report"].tap()
+        XCTAssertTrue(app.navigationBars["Reports & photos"].waitForExistence(timeout: 5), "reports: \(screen(app))")
+        let labs = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Lab results'")).firstMatch
+        XCTAssertTrue(labs.waitForExistence(timeout: 5), "rows: \(screen(app))")
+        app.buttons["Photos"].tap()
+        XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS 'Skin or rash'")).firstMatch.waitForExistence(timeout: 5), "photos: \(screen(app))")
+        XCTAssertFalse(labs.exists, "reports are filtered out")
+        app.buttons["All"].tap()
+        XCTAssertTrue(labs.waitForExistence(timeout: 5))
+        labs.tap()
+        XCTAssertTrue(app.staticTexts["Sample result in Preview mode — this file wasn't analysed and nothing here is about you."].waitForExistence(timeout: 5), "detail: \(screen(app))")
+        let questions = app.staticTexts["Questions to ask your doctor"]
+        for _ in 0..<5 where !questions.isHittable { app.swipeUp() }
+        XCTAssertTrue(questions.exists, "questions: \(screen(app))")
+        XCTAssertTrue(app.buttons["Ask the AI Health Assistant"].exists, "ask: \(screen(app))")
+    }
+
     /// The paperclip opens Reports & photos from chat.
     func testAttachOpensReportsFromChat() {
         let app = launch(["-hmInitialTab", "chat", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])

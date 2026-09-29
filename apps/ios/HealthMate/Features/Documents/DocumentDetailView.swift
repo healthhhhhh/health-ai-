@@ -7,13 +7,14 @@ struct DocumentDetailView: View {
     let model: DocumentsViewModel
     let documentID: String
     @State private var confirmDelete = false
+    @State private var showOriginal = false
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         ScrollView {
             if let document = model.document(documentID) {
                 VStack(alignment: .leading, spacing: HM.Spacing.lg) {
+                    header(document)
                     content(document)
                 }
                 .padding(HM.Spacing.lg)
@@ -28,9 +29,7 @@ struct DocumentDetailView: View {
         .toolbar {
             if let document = model.document(documentID), document.status != .awaitingUpload {
                 ToolbarItem(placement: .secondaryAction) {
-                    Button {
-                        Task { if let url = await model.originalFileURL(document.id) { openURL(url) } }
-                    } label: {
+                    Button { showOriginal = true } label: {
                         Label("View original file", systemImage: "doc.viewfinder")
                     }
                 }
@@ -39,6 +38,9 @@ struct DocumentDetailView: View {
                 Button(role: .destructive) { confirmDelete = true } label: { Image(systemName: "trash") }
                     .accessibilityLabel("Delete")
             }
+        }
+        .navigationDestination(isPresented: $showOriginal) {
+            if let document = model.document(documentID) { OriginalFileView(model: model, document: document) }
         }
         .confirmationDialog("Delete this file and its summary?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -50,28 +52,44 @@ struct DocumentDetailView: View {
         }
     }
 
+    private func header(_ document: DocumentRecord) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(document.kind == .image ? (document.result?.bodyArea ?? DocumentPresentation.title(document)) : DocumentPresentation.title(document))
+                .font(.hmPageHeading)
+            Text("\(document.filename) · \(DocumentPresentation.byteSize(document.byteSize)) · uploaded \(document.createdAt.formatted(.dateTime.day().month().year()))")
+                .font(.hmCaption)
+                .foregroundStyle(HM.Colors.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     @ViewBuilder
     private func content(_ document: DocumentRecord) -> some View {
+        let unreadable = document.status == .ready && document.result?.type == .report && document.result?.readable == false
         switch document.status {
         case .awaitingUpload, .processing:
-            VStack(spacing: 16) {
-                MascotView(size: 110, withBackdrop: true)
-                Text("Reading your \(document.kind == .report ? "report" : "photo")…")
-                    .font(.hmSectionHeading)
-                Text("This usually takes under a minute. You can leave this screen — we'll keep working.")
-                    .font(.hmBody)
-                    .foregroundStyle(HM.Colors.textSecondary)
-                    .multilineTextAlignment(.center)
-                ProgressView()
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 40)
-            .accessibilityElement(children: .combine)
-        case .failed:
-            EmptyStateView(systemImage: "exclamationmark.triangle", tone: .orange, title: "We couldn't analyse this file", message: document.failureReason ?? "Please try uploading it again.")
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                VStack(alignment: .leading, spacing: HM.Spacing.md) {
+                    Text("Reading your \(document.kind == .report ? "report" : "photo")…").font(.hmSectionHeading)
+                    Text("This usually takes under a minute. You can leave this screen — we'll send a notification when it's ready.")
+                        .font(.hmBody)
+                        .foregroundStyle(HM.Colors.textSecondary)
+                    StepProgressView(steps: DocumentPresentation.steps.map { .init(label: $0) }, current: DocumentPresentation.currentStep(document, now: context.date))
+                }
+                .padding(HM.Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .hmCard()
+            }
+        case .failed:
+            couldNotRead(document, title: "We couldn't analyse this file", message: document.failureReason ?? "Please try uploading it again.")
+        case .ready where unreadable:
+            couldNotRead(document, title: "We couldn't read this report", message: document.result?.summary ?? "Try a clearer photo or the original PDF.")
         case .ready:
             if let result = document.result {
+                let sample = result.model == "sample"
+                if sample {
+                    SampleContentLabel(text: "Sample result in Preview mode — this file wasn't analysed and nothing here is about you.")
+                }
                 if result.injectionDetected {
                     Label("This file contained text that looked like instructions to the AI. It was ignored and only the medical content was read.", systemImage: "shield.lefthalf.filled")
                         .font(.hmCaption)
@@ -81,29 +99,36 @@ struct DocumentDetailView: View {
                         .background(RoundedRectangle(cornerRadius: HM.Radius.md).fill(HM.Colors.warningSoft))
                 }
                 if result.type == .report {
-                    ReportResultView(document: document, result: result)
+                    ReportResultView(document: document, result: result, sample: sample)
                 } else {
                     ImageResultView(document: document, result: result)
                 }
-                Text("AI-generated from your \(document.kind == .report ? "report" : "photo") on \(document.processedAt ?? document.createdAt, format: .dateTime.day().month().year()). Not a diagnosis.")
-                    .font(.hmMicro)
-                    .foregroundStyle(HM.Colors.textMuted)
+                let read = (document.processedAt ?? document.createdAt).formatted(.dateTime.day().month().year())
+                if sample {
+                    Text("Sample content for Preview mode · \(read). Not a diagnosis.").font(.hmMicro).foregroundStyle(HM.Colors.textMuted)
+                } else {
+                    AIGeneratedLabel(basedOn: "\(document.filename), read \(read)")
+                }
             }
         }
     }
-}
 
-extension AnalysisResult {
-    var documentTypeLabel: String? {
-        switch documentType {
-        case "lab_results": return "Lab results"
-        case "imaging_report": return "Imaging report"
-        case "prescription": return "Prescription"
-        case "discharge_summary": return "Discharge summary"
-        case "clinic_letter": return "Clinic letter"
-        case "other": return "Medical document"
-        default: return nil
+    private func couldNotRead(_ document: DocumentRecord, title: String, message: String) -> some View {
+        VStack(spacing: HM.Spacing.md) {
+            EmptyStateView(systemImage: "doc.questionmark", tone: .orange, title: title, message: message) {
+                VStack(spacing: 8) {
+                    Button("Upload again") { dismiss() }.buttonStyle(.hmPrimary)
+                    Button("Check the original") { showOriginal = true }.buttonStyle(.hmSecondary)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(["Upload the original PDF if you have it.", "For a photo, lay the page flat in good light and include the whole page.", "Password-protected files can't be read — save an unprotected copy first."], id: \.self) { tip in
+                    Label(tip, systemImage: "lightbulb").font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
+                }
+            }
         }
+        .padding(HM.Spacing.md)
+        .hmCard()
     }
 }
 
@@ -112,47 +137,69 @@ extension AnalysisResult {
 private struct ReportResultView: View {
     let document: DocumentRecord
     let result: AnalysisResult
+    let sample: Bool
+    @Environment(\.askAssistant) private var askAssistant
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: HM.Spacing.lg) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(result.documentTypeLabel ?? document.filename).font(.hmPageHeading)
-                Text(document.filename).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
+            if let summary = result.summary {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Summary", systemImage: "sparkles").font(.hmCardTitle).foregroundStyle(HM.Colors.primary)
+                    Text(summary).font(.hmBody).foregroundStyle(HM.Colors.textPrimary)
+                }
+                .padding(HM.Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: HM.Radius.lg, style: .continuous).fill(HMGradient.insight))
             }
-            if result.readable == false {
-                EmptyStateView(systemImage: "doc.questionmark", tone: .orange, title: "We couldn't read this report", message: "Try a clearer photo or the original PDF.")
-                    .hmCard()
-            } else {
-                if let summary = result.summary {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Summary", systemImage: "sparkles").font(.hmCardTitle).foregroundStyle(HM.Colors.primary)
-                        Text(summary).font(.hmBody).foregroundStyle(HM.Colors.textPrimary)
-                    }
-                    .padding(HM.Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: HM.Radius.lg, style: .continuous).fill(HMGradient.insight))
-                }
-                let findings = result.findings ?? []
-                if !findings.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
+            let findings = DocumentPresentation.ordered(result.findings ?? [])
+            if !findings.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Results").font(.hmSectionHeading)
-                        ForEach(findings) { FindingRow(finding: $0) }
+                        Text("\(findings.count) results · \(DocumentPresentation.countsLine(DocumentPresentation.counts(findings))). Compared only with the range printed on this report — tap a result for its explanation.")
+                            .font(.hmCaption)
+                            .foregroundStyle(HM.Colors.textSecondary)
                     }
+                    ForEach(findings) { FindingRow(finding: $0) }
                 }
-                if let questions = result.suggestedQuestions, !questions.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Questions to ask your doctor", systemImage: "questionmark.bubble").font(.hmCardTitle)
-                        ForEach(questions, id: \.self) { question in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(HM.Colors.primary)
-                                Text(question).font(.hmBody)
-                            }
+            }
+            if let questions = result.suggestedQuestions, !questions.isEmpty {
+                let text = DocumentPresentation.questionsText(document, questions: questions, sample: sample)
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Questions to ask your doctor", systemImage: "questionmark.bubble").font(.hmCardTitle)
+                    ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("\(index + 1).").font(.hmBodyEmphasis).foregroundStyle(HM.Colors.primary)
+                            Text(question).font(.hmBody)
                         }
                     }
-                    .padding(HM.Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .hmCard()
+                    HStack(spacing: 8) {
+                        Button {
+                            UIPasteboard.general.string = text
+                            copied = true
+                        } label: {
+                            Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(.hmSecondary)
+                        ShareLink(item: text, subject: Text("Questions for my doctor")) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.hmSecondary)
+                    }
+                    if let askAssistant {
+                        Button {
+                            askAssistant(DocumentPresentation.askPrompt(document))
+                        } label: {
+                            Label("Ask the AI Health Assistant", systemImage: "bubble.left.and.text.bubble.right")
+                        }
+                        .buttonStyle(.hmSecondary)
+                    }
                 }
+                .padding(HM.Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .hmCard()
+                .sensoryFeedback(.success, trigger: copied)
             }
         }
     }
@@ -163,13 +210,11 @@ private struct FindingRow: View {
     @State private var expanded = false
 
     /// Compared with the range printed on the report — never "normal"/"abnormal".
-    private var flag: (StatusBadge.Status, String) {
+    private var status: StatusBadge.Status {
         switch finding.flag {
-        case .withinRange: return (.success, "Within report range")
-        case .high: return (.warning, "Above report range")
-        case .low: return (.warning, "Below report range")
-        case .abnormal: return (.warning, "Flagged on report")
-        case .notStated: return (.neutral, "No range given")
+        case .withinRange: .success
+        case .high, .low, .abnormal: .warning
+        case .notStated: .neutral
         }
     }
 
@@ -182,7 +227,7 @@ private struct FindingRow: View {
                     .font(.hmBodyEmphasis.monospacedDigit())
             }
             HStack(spacing: 8) {
-                StatusBadge(status: flag.0, text: flag.1)
+                StatusBadge(status: status, text: DocumentPresentation.flagLabel(finding.flag))
                 if let range = finding.referenceRange {
                     Text("Range \(range)").font(.hmMicro).foregroundStyle(HM.Colors.textSecondary)
                 }
@@ -226,9 +271,6 @@ private struct ImageResultView: View {
                 )
                 .hmCard()
             } else {
-                if let area = result.bodyArea {
-                    Text(area).font(.hmPageHeading)
-                }
                 section("What we can see", systemImage: "eye", tone: .blue, items: result.observations ?? [])
                 if let causes = result.possibleCauses, !causes.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {

@@ -213,7 +213,7 @@ struct ReportDestination: View {
     init(session: SessionStore, documentID: String) {
         self.session = session
         self.documentID = documentID
-        _model = State(initialValue: DocumentsViewModel(api: session.api, onSessionEnded: { [session] in session.handle($0) }))
+        _model = State(initialValue: DocumentsViewModel(api: session.api, isPreview: session.isPreview, onSessionEnded: { [session] in session.handle($0) }))
     }
 
     var body: some View {

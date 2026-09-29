@@ -73,6 +73,10 @@ struct MainTabView: View {
                 .tabItem { Label(AppTab.profile.title, systemImage: AppTab.profile.systemImage) }
                 .tag(AppTab.profile)
         }
+        .environment(\.askAssistant, AskAssistantAction { question in
+            pendingQuestion = question
+            selection = .chat
+        })
         .sensoryFeedback(.selection, trigger: selection)
         .task { await planStore.loadIfNeeded() }
         // Home reflects the account and Apple Health, so refresh it when either may have changed.

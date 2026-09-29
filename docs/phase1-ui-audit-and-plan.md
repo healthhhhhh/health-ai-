@@ -19,8 +19,67 @@ real assessment.
 | 2 · Auth & onboarding | ✅ Done | See below |
 | 3 · Home & notifications | ✅ Done | See below |
 | 4 · AI Chat | ✅ Done | See below |
-| 5 · Health & HealthKit | ⏳ Next | |
-| 6–12 | ⬜ Not started | |
+| 5 · Health & HealthKit | ✅ Done | See below |
+| 6 · Timeline | ✅ Done | See below |
+| 7 · Medical reports | ✅ Done | See below (CI pending at the time of writing) |
+| 8 · Image analysis | ⏳ Next | |
+| 9–12 | ⬜ Not started | |
+
+### Step 7: what was built
+
+Reports are a complete UI in Preview mode. Files are never analysed: every result is the labelled sample, and the real document/analysis backend was not changed.
+- **List:** filters (All / Reports / Photos, shared with iOS as `DocumentFilter`), search by name, file name · size · date on each row, per-filter empty states, "Nothing matches" with Clear search, and error/offline states with Try again (web and iOS).
+- **Upload:** choosing a file no longer uploads it straight away. A confirmation shows the file (a thumbnail for photos, name, size), with "Upload and summarise" and "Choose another file"/Cancel. While uploading, step progress shows "Uploading securely → Reading the file → Writing a plain-language summary". Offline and server errors keep the file selected and offer Try again.
+- **Processing:** the detail page shows the same steps, moving on as time passes, and says a notification will arrive.
+- **Couldn't read:** failed uploads and unreadable reports share one layout with "Upload again", "Check the original" and three practical tips. In Preview, a file name containing "damaged" fails and "blurry" is unreadable, so both states can be demonstrated (a Preview tip says so).
+- **Result:**
+  - a count line ("4 within the report's range · 1 outside it"), with results outside the printed range first
+  - "AI-generated · based on <file>, read <date> · not a diagnosis" for real results, or the Sample label in Preview (iOS now shows it too)
+- **Questions for your doctor:** numbered, with Copy, Save as text (web) or Share (iOS), and "Ask the AI Health Assistant", which opens Chat with a question about the report. iOS uses a new `askAssistant` environment action for this.
+- **Original file:** an in-app viewer. Web: `/reports/[id]/original`, an embedded PDF or image. iOS: PDFKit or an image, fetched through the signed link with a new `APIClient.download`. It has loading, error and offline states. In Preview it's labelled as an example file, because uploads aren't kept.
+- **Shared logic** in `lib/reports.ts` and Core `DocumentPresentation`: steps, counts, ordering, questions text and sizes. It's tested on both platforms, including that no label says "normal" or "healthy".
+- **Verification:**
+  - web unit 90/90 and e2e 143/143 (new: confirm → steps → sample summary → questions → original file, damaged and unreadable, filters/search/no-match, error and offline, axe)
+  - API 89/89, unchanged
+  - iOS core 106/106
+  - iOS app tests: `DocumentsViewModelTests`
+  - iOS UI test: filters → report → labelled sample result and questions
+
+### Step 6: what was built
+
+- **Filters** on both platforms: All, Reports & photos, Conversations, Symptoms, Medications, Readings, Appointments and Notes. They're the same set everywhere (`lib/timeline.ts` / Core `TimelineFilter`), each with its own empty state and "Show everything".
+- **Grouping:** entries are grouped by day with Today/Yesterday. Each row shows its source and details.
+- **Entry detail** (`/timeline/[id]`, iOS `TimelineEntryView`) shows:
+  - the source ("You added this", "From a report"…)
+  - details such as your severity rating
+  - a link to what it's about (report, metric, appointment)
+- **Edit and delete:** entries you added can be edited, and deleted after a confirmation. Entries from reports, Apple Health or chats can't be edited, and the detail says so.
+  - Editing is Preview-only, because the real API has no PATCH yet. On a real server it says "not available on this server yet" instead of failing.
+- **States:** loading, error/offline with retry, and load more.
+- **Verification:**
+  - web e2e 128/128 at the time (filters, detail, edit, delete)
+  - iOS core 99/99
+  - iOS UI test: filter → entry detail
+  - CI green on `ea007ab`
+
+### Step 5: what was built
+
+- **Sample data:** the sample person now has 180 days of interconnected history:
+  - sleep affects the next day's steps
+  - a walking habit raises fitness, and resting heart rate drifts down with it
+  - active energy follows steps
+  - weight trends from 73.6 to 72.4 kg
+  - it's generated in `packages/sample-data` and exported for iOS
+- **Health dashboard (web and iOS):**
+  - Today snapshot
+  - Apple Health status card
+  - 7/30/90-day ranges, with charts scaled to the data
+  - metric details with a day-by-day list
+- **Daily health history:** `/health/history` and iOS `HealthHistoryView`. Each stored day is compared with the person's own usual ("Your usual …"), with previous/next day. In Phase 2 this is fed by the real pipeline.
+- **Apple Health states:** loading, empty/no-data, error, offline, permission request, denied (with Settings), disconnected, connected, syncing, sync failed and stale sync.
+- **Adding a reading:** the web has a manual reading form, which saves to that day's history. iOS opens the Health app, because HealthMate never writes to HealthKit.
+- **Not built:** exercise minutes aren't a separate metric, because that would need a HealthKit and API change. Activity is shown as active energy.
+- **Verification:** CI green on `05d1f19` (web, API/Supabase, iOS build + unit + UI tests).
 
 ### Step 4: what was built
 

@@ -11,31 +11,52 @@ import UIKit
 final class DocumentsViewModel {
     enum LoadState: Equatable { case idle, loading, loaded, failed(String) }
 
+    /// A file the person picked, waiting for them to confirm the upload.
+    struct PendingUpload: Identifiable {
+        let id = UUID()
+        let kind: DocumentKind
+        let data: Data
+        let filename: String
+        var isPDF: Bool { data.starts(with: Array("%PDF-".utf8)) }
+    }
+
     private(set) var state: LoadState = .idle
     private(set) var documents: [DocumentRecord] = []
     private(set) var uploading = false
+    /// The last load failed because there's no connection.
+    private(set) var isOffline = false
     var errorMessage: String?
+    var filter: DocumentFilter = .all
+    var query = ""
+    var pending: PendingUpload?
+    /// Preview mode: files and results are samples.
+    let isPreview: Bool
 
     private let api: APIClient
     private let onSessionEnded: @MainActor (Error) -> Void
     private var pollTask: Task<Void, Never>?
 
-    init(api: APIClient, onSessionEnded: @escaping @MainActor (Error) -> Void = { _ in }) {
+    init(api: APIClient, isPreview: Bool = false, onSessionEnded: @escaping @MainActor (Error) -> Void = { _ in }) {
         self.api = api
+        self.isPreview = isPreview
         self.onSessionEnded = onSessionEnded
     }
 
     var reports: [DocumentRecord] { documents.filter { $0.kind == .report } }
     var images: [DocumentRecord] { documents.filter { $0.kind == .image } }
+    /// The list after the filter and search.
+    var shown: [DocumentRecord] { filter.apply(documents, query: query) }
 
     func load() async {
         if documents.isEmpty { state = .loading }
         do {
             documents = try await api.documents()
             state = .loaded
+            isOffline = false
             pollIfNeeded()
         } catch {
             onSessionEnded(error)
+            isOffline = (error as? APIError) == .network
             if documents.isEmpty { state = .failed(Self.message(error)) } else { errorMessage = Self.message(error) }
         }
     }
@@ -58,6 +79,25 @@ final class DocumentsViewModel {
             return nil
         }
         return await submit(kind: .image, data: jpeg, filename: "photo.jpg", contentType: "image/jpeg", purpose: purpose, note: note)
+    }
+
+    /// Uploads the file the person confirmed.
+    func confirmPending() async -> DocumentRecord? {
+        guard let pending else { return nil }
+        let record = await submitReport(data: pending.data, filename: pending.filename)
+        if record != nil { self.pending = nil }
+        return record
+    }
+
+    /// The original upload's bytes, fetched through a short-lived signed link, for the in-app viewer.
+    func originalFile(_ id: String) async throws -> (data: Data, contentType: String?) {
+        do {
+            let link = try await api.documentFile(id)
+            return try await api.download(link.url)
+        } catch {
+            onSessionEnded(error)
+            throw error
+        }
     }
 
     /// A short-lived signed link to the original upload (never a public URL).

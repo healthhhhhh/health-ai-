@@ -124,6 +124,8 @@ function viewOf(account: SampleAccount, controls: PreviewControls): SampleAccoun
   return account;
 }
 
+export const PREVIEW_FAILURE_REASON = "We couldn't open this file. It may be damaged or password-protected. Try saving it again, or upload a photo of the pages.";
+
 /** Sample analyses finish a few seconds after upload. */
 function settleProcessing(session: PreviewSession) {
   const now = Date.now();
@@ -133,15 +135,22 @@ function settleProcessing(session: PreviewSession) {
     const doc = session.account.documents.find((d) => d.id === id);
     if (!doc) continue;
     const { sampleAnalyses } = session.account;
+    // File names steer the sample outcome so every result state can be tried in Preview.
+    const damaged = /damaged|corrupt|fail/i.test(doc.filename);
     const unclear = /blur|unreadable|dark/i.test(doc.filename);
-    doc.result = doc.kind === "image" ? (unclear ? sampleAnalyses.poorImage : sampleAnalyses.image) : unclear ? sampleAnalyses.unreadableReport : sampleAnalyses.report;
-    doc.status = "ready";
+    if (damaged) {
+      doc.status = "failed";
+      doc.failureReason = PREVIEW_FAILURE_REASON;
+    } else {
+      doc.result = doc.kind === "image" ? (unclear ? sampleAnalyses.poorImage : sampleAnalyses.image) : unclear ? sampleAnalyses.unreadableReport : sampleAnalyses.report;
+      doc.status = "ready";
+    }
     doc.processedAt = nowIso();
     session.account.notifications.unshift({
       id: newId(),
       category: "report",
-      title: `Summary ready: ${doc.filename}`,
-      body: "Tap to see the sample summary.",
+      title: damaged ? `Couldn't read: ${doc.filename}` : `Summary ready: ${doc.filename}`,
+      body: damaged ? "Tap to see what to try next." : "Tap to see the sample summary.",
       createdAt: nowIso(),
       readAt: null,
       link: `/reports/${doc.id}`,

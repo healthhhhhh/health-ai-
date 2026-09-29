@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import type { ConversationDetail, DocumentCreation, HealthProfile, PlanRecord } from "@healthmate/shared-types";
+import { describe, expect, it, vi } from "vitest";
+import type { ConversationDetail, DocumentCreation, DocumentRecord, HealthProfile, PlanRecord } from "@healthmate/shared-types";
 import { SAMPLE_NOTICE } from "@healthmate/sample-data";
 import { DEFAULT_CONTROLS, type PreviewControls } from "./controls";
-import { previewFetch } from "./router";
+import { PREVIEW_FAILURE_REASON, previewFetch } from "./router";
 
 const normal = DEFAULT_CONTROLS;
 async function call<T>(path: string, method = "GET", body?: unknown, token?: string, controls: PreviewControls = normal) {
@@ -95,6 +95,20 @@ describe("preview API", () => {
     expect((await call("documents", "POST", { kind: "report", filename: "x.exe", contentType: "application/x-msdownload", byteSize: 10 }, token)).status).toBe(415);
     const processing = await call<{ status: string }>(`documents/${created.body.document.id}/process`, "POST", {}, token);
     expect(processing.body.status).toBe("processing");
+  });
+
+  it("a damaged file fails with a reason, so the failed state can be tried", async () => {
+    const token = await signIn();
+    const created = await call<DocumentCreation>("documents", "POST", { kind: "report", filename: "damaged.pdf", contentType: "application/pdf", byteSize: 1000 }, token);
+    const id = created.body.document.id;
+    await call(`documents/${id}/process`, "POST", {}, token);
+    vi.useFakeTimers({ now: Date.now() + 5000 });
+    try {
+      const doc = await call<DocumentRecord>(`documents/${id}`, "GET", undefined, token);
+      expect(doc.body).toMatchObject({ status: "failed", failureReason: PREVIEW_FAILURE_REASON, result: null });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("enforces plan revisions like the real API", async () => {

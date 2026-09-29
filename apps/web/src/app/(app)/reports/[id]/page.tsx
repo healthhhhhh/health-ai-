@@ -1,99 +1,145 @@
 import type { AnalysisResult, DocumentRecord } from "@healthmate/shared-types";
 import type { Metadata } from "next";
-import { ArrowLeft, Eye, FileDown, FlaskConical, ListChecks, ShieldAlert, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Eye, FileSearch, FileUp, ListChecks, ShieldAlert, Sparkles, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Mascot } from "@/components/illustrations/mascot";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { AIGeneratedLabel, SampleContentLabel } from "@/components/ui/content-labels";
 import { EmptyState } from "@/components/ui/empty-state";
+import { StateView } from "@/components/ui/state-view";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { StepProgress } from "@/components/ui/step-progress";
 import { EscalationCard } from "@/features/chat/escalation-card";
 import { DeleteDocumentButton } from "@/features/reports/delete-document-button";
 import { documentTitle, findingFlag } from "@/features/reports/labels";
+import { QuestionsCard } from "@/features/reports/questions-card";
 import { RefreshWhileProcessing } from "@/features/reports/refresh-while-processing";
 import { api, ApiError } from "@/lib/api/server";
+import { askPrompt, byteSize, countsLine, currentStep, findingCounts, orderedFindings, PROCESSING_STEPS, questionsText } from "@/lib/reports";
 
 export const metadata: Metadata = { title: "Report" };
+export const dynamic = "force-dynamic";
 
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const doc = await api<DocumentRecord>(`documents/${encodeURIComponent(id)}`).catch((e) => {
     if (e instanceof ApiError && (e.status === 404 || e.status === 400)) notFound();
+    if (e instanceof ApiError && e.status !== 401) return e;
     throw e;
   });
+
+  if (doc instanceof ApiError) {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <BackLink />
+        <Card>
+          <StateView
+            state={doc.code === "network" ? "offline" : "error"}
+            title={doc.code === "network" ? undefined : "This report couldn't load"}
+            action={
+              <a href={`/reports/${encodeURIComponent(id)}`} className="text-caption font-semibold text-primary hover:underline">
+                Try again
+              </a>
+            }
+          />
+        </Card>
+      </div>
+    );
+  }
+
   const processing = doc.status === "processing" || doc.status === "awaiting_upload";
+  const sample = doc.result?.model === "sample";
+  const uploadAgain = `/reports${doc.kind === "image" ? "?upload=photo" : ""}`;
+  const date = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
+  const unreadable = doc.status === "ready" && doc.result?.type === "report" && doc.result.readable === false;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <RefreshWhileProcessing active={processing} />
       <div className="flex items-center gap-3">
-        <Link href="/reports" className="flex items-center gap-1 text-caption font-semibold text-primary hover:underline">
-          <ArrowLeft aria-hidden className="size-4" /> Reports
-        </Link>
+        <BackLink />
         <div className="ml-auto flex items-center gap-2">
           {doc.status !== "awaiting_upload" && (
-            <a
-              href={`/reports/${doc.id}/file`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-pill px-3 text-caption font-semibold text-primary ring-1 ring-separator hover:bg-primary-soft"
-            >
-              <FileDown aria-hidden className="size-4" /> Original file
-            </a>
+            <Link href={`/reports/${doc.id}/original`} className="inline-flex h-9 items-center gap-1.5 rounded-pill px-3 text-caption font-semibold text-primary ring-1 ring-separator hover:bg-primary-soft">
+              <FileSearch aria-hidden className="size-4" /> Original file
+            </Link>
           )}
           <DeleteDocumentButton id={doc.id} />
         </div>
       </div>
       <div>
         <h1 className="text-page-heading text-text-primary">{documentTitle(doc)}</h1>
-        <p className="text-caption text-text-secondary">{doc.filename}</p>
+        <p className="text-caption text-text-secondary">
+          {doc.filename} · {byteSize(doc.byteSize)} · uploaded {date.format(new Date(doc.createdAt))}
+        </p>
       </div>
 
       {processing && (
-        <Card className="flex flex-col items-center gap-3 py-10 text-center" role="status">
-          <Mascot size={100} decorative />
-          <p className="text-section-heading text-text-primary">Reading your {doc.kind === "report" ? "report" : "photo"}…</p>
-          <p className="text-body text-text-secondary">This usually takes under a minute. You can leave this page.</p>
+        <Card className="flex flex-col gap-5" role="status" aria-live="polite">
+          <div>
+            <p className="text-section-heading text-text-primary">Reading your {doc.kind === "report" ? "report" : "photo"}…</p>
+            <p className="text-body text-text-secondary">This usually takes under a minute. You can leave this page — we&apos;ll send a notification when it&apos;s ready.</p>
+          </div>
+          <StepProgress steps={PROCESSING_STEPS.map((label) => ({ label }))} current={currentStep(doc, new Date().getTime())} label="Analysis progress" />
         </Card>
       )}
-      {doc.status === "failed" && (
+      {(doc.status === "failed" || unreadable) && (
         <Card>
-          <EmptyState icon={<TriangleAlert />} tone="orange" title="We couldn't analyse this file" description={doc.failureReason ?? "Please try uploading it again."} />
+          <StateView
+            state="error"
+            title={doc.status === "failed" ? "We couldn't analyse this file" : "We couldn't read this report"}
+            description={doc.status === "failed" ? (doc.failureReason ?? "Please try uploading it again.") : (doc.result?.summary ?? "Try a clearer photo or the original PDF.")}
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <Link href={uploadAgain} className={buttonVariants({ size: "sm" })}>
+                  <FileUp aria-hidden /> Upload again
+                </Link>
+                <Link href={`/reports/${doc.id}/original`} className={buttonVariants({ variant: "secondary", size: "sm" })}>
+                  <FileSearch aria-hidden /> Check the original
+                </Link>
+              </div>
+            }
+          />
+          <ul className="mx-auto mt-2 max-w-md list-disc pl-5 text-caption text-text-secondary">
+            <li>Upload the original PDF if you have it.</li>
+            <li>For a photo, lay the page flat in good light and include the whole page.</li>
+            <li>Password-protected files can&apos;t be read — save an unprotected copy first.</li>
+          </ul>
         </Card>
       )}
-      {doc.status === "ready" && doc.result && (
+      {doc.status === "ready" && doc.result && !unreadable && (
         <>
+          {sample && <SampleContentLabel>Sample result in Preview mode — this file wasn&apos;t analysed and nothing here is about you.</SampleContentLabel>}
           {doc.result.injectionDetected && (
             <p className="flex gap-2 rounded-md bg-warning-soft p-3 text-caption text-text-primary">
               <ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
               This file contained text that looked like instructions to the AI. It was ignored and only the medical content was read.
             </p>
           )}
-          {doc.result.model === "sample" && (
-            <p className="flex gap-2 rounded-md bg-warning-soft p-3 text-caption font-medium text-text-primary">
-              <FlaskConical aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-              Sample result in Preview mode — this file wasn&apos;t analysed and nothing here is about you.
-            </p>
+          {doc.result.type === "report" ? <ReportResult doc={doc} result={doc.result} sample={sample} /> : <ImageResult result={doc.result} />}
+          {sample ? (
+            <p className="text-xs text-text-muted">Sample content for Preview mode · {date.format(new Date(doc.processedAt ?? doc.createdAt))}. Not a diagnosis.</p>
+          ) : (
+            <AIGeneratedLabel basedOn={`${doc.filename}, read ${date.format(new Date(doc.processedAt ?? doc.createdAt))}`} />
           )}
-          {doc.result.type === "report" ? <ReportResult result={doc.result} /> : <ImageResult result={doc.result} />}
-          <p className="text-xs text-text-muted">
-            {doc.result.model === "sample" ? "Sample content for Preview mode" : `AI-generated from your ${doc.kind === "report" ? "report" : "photo"}`} ·{" "}
-            {new Date(doc.processedAt ?? doc.createdAt).toLocaleDateString("en-US", { dateStyle: "medium" })}. Not a diagnosis.
-          </p>
         </>
       )}
     </div>
   );
 }
 
-function ReportResult({ result }: { result: AnalysisResult }) {
-  if (result.readable === false) {
-    return (
-      <Card>
-        <EmptyState icon={<TriangleAlert />} tone="orange" title="We couldn't read this report" description={result.summary ?? "Try a clearer photo or the original PDF."} />
-      </Card>
-    );
-  }
+function BackLink() {
+  return (
+    <Link href="/reports" className="flex items-center gap-1 text-caption font-semibold text-primary hover:underline">
+      <ArrowLeft aria-hidden className="size-4" /> Reports
+    </Link>
+  );
+}
+
+function ReportResult({ doc, result, sample }: { doc: DocumentRecord; result: AnalysisResult; sample: boolean }) {
+  const findings = orderedFindings(result.findings ?? []);
+  const counts = countsLine(findingCounts(findings));
   return (
     <>
       {result.summary && (
@@ -104,12 +150,17 @@ function ReportResult({ result }: { result: AnalysisResult }) {
           <p className="mt-2 text-body text-text-primary">{result.summary}</p>
         </section>
       )}
-      {(result.findings?.length ?? 0) > 0 && (
+      {findings.length > 0 && (
         <section aria-labelledby="results" className="flex flex-col gap-3">
-          <h2 id="results" className="text-section-heading text-text-primary">
-            Results
-          </h2>
-          {result.findings!.map((f) => {
+          <div>
+            <h2 id="results" className="text-section-heading text-text-primary">
+              Results
+            </h2>
+            <p className="text-caption text-text-secondary">
+              {findings.length} results · {counts}. Compared only with the range printed on this report — tap a result for its explanation.
+            </p>
+          </div>
+          {findings.map((f) => {
             const [status, label] = findingFlag(f.flag);
             return (
               <Card key={`${f.name}-${f.value}-${f.page ?? 0}`}>
@@ -131,16 +182,12 @@ function ReportResult({ result }: { result: AnalysisResult }) {
         </section>
       )}
       {(result.suggestedQuestions?.length ?? 0) > 0 && (
-        <Card as="section" aria-labelledby="questions">
-          <h2 id="questions" className="text-card-title text-text-primary">
-            Questions to ask your doctor
-          </h2>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-body text-text-primary">
-            {result.suggestedQuestions!.map((q) => (
-              <li key={q}>{q}</li>
-            ))}
-          </ul>
-        </Card>
+        <QuestionsCard
+          questions={result.suggestedQuestions!}
+          text={questionsText(doc, result.suggestedQuestions!, sample)}
+          filename={doc.filename}
+          askHref={`/chat?q=${encodeURIComponent(askPrompt(doc))}`}
+        />
       )}
     </>
   );
