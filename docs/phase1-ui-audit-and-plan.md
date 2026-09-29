@@ -25,8 +25,35 @@ real assessment.
 | 8 · Image analysis | ✅ Done | See below |
 | 9 · Plan, tasks, medications | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
 | 10 · Care | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
-| 11 · Profile, settings, privacy | ⏳ Next | |
-| 12 | ⬜ Not started | |
+| 11 · Profile, settings, privacy | ✅ Done locally | See below. iOS CI blocked (GitHub Actions billing) |
+| 12 · Final polish | ⏳ Next | |
+
+### Step 11: what was built
+
+- **iOS Settings screen** (`SettingsView`, from the gear on Profile or its "Settings" row). Settings that used to be mixed into Profile now live here, and Profile keeps the health profile, memory, reports and care. Sections:
+  - **Notifications:** `NotificationSettingsView`
+    - the iPhone permission status: allowed / not yet asked / off, with Open Settings
+    - per-category switches: medication, tasks and habits, appointments, reports, weekly insights (account messages are always sent)
+    - quiet hours, and the lock-screen "Show names and details" switch, kept in step with the local reminder setting
+  - **Display:** appearance (Match my device / Light / Dark, applied app-wide) and weight (kg or lb)
+  - **Privacy:** the three consent switches
+  - **Your data:** download everything as JSON
+  - **Account:** `AccountView` with email and verification, sign-in methods, member since, and change password (password accounts only; others are told why there's none); sign out with a confirmation
+  - **About:** Preview controls, privacy policy, terms, design system, welcome screens, version, and the "companion, not a doctor" statement
+  - **Delete account**
+- **Web settings:** a Notifications page (`/settings/notifications`, the same choices) and a Display card (appearance and weight, saved per browser in a cookie; `data-theme` is set on `<html>`). The privacy card has its own error/offline state, and the About card has help, privacy and terms links.
+- **Weight units on both platforms:** readings are always stored in kilograms and only converted for display and entry.
+  - web: `lib/display-prefs.ts`, applied in the health data loaders, Home, the charts and the add-reading form (you type in lb and it's stored in kg)
+  - iOS: `TrackedMetric.weightUnit` / `displayValue`, applied to labels, charts and Home
+  - Height isn't shown anywhere yet, so units cover weight only, and the settings copy says so.
+- **Graceful on the real API:** notification preferences and change-password only exist in Preview so far. On a real server, a 404/405 says "not available on this server yet" instead of failing (web and iOS).
+- **Sign-out and delete** keep their confirmations on both platforms.
+- **Verification:**
+  - web unit 99/99 and e2e 179/179 (new: notification settings save and reload, dark mode and pounds across Health and add reading, the privacy error state, axe on the new pages)
+  - API 89/89, unchanged
+  - iOS core 118/118
+  - new iOS UI test: Profile › Settings → notifications → account
+  - **iOS app build/UI tests still blocked by GitHub Actions billing**
 
 ### Step 10: what was built
 

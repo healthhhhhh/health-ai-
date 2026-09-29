@@ -13,6 +13,8 @@ import { MEASUREMENT_ICON } from "@/features/health/metric-icons";
 import { formatMetric, HEALTH_METRICS, trendLabel } from "@/features/health/metrics";
 import { getHealthTrends, getMeta } from "@/lib/api/data";
 import { buildDailyHistory, compareWithUsual, HISTORY_METRICS, shiftDay, type UsualComparison } from "@/lib/health-history";
+import { unitFor } from "@/lib/display-prefs";
+import { getDisplayPrefs } from "@/lib/display-prefs.server";
 
 export const metadata: Metadata = { title: "Day in your health history" };
 export const dynamic = "force-dynamic";
@@ -30,6 +32,7 @@ const BADGE: Record<UsualComparison, "success" | "info" | "neutral"> = { in_usua
 
 /** One day of the person's health history, each reading next to their own usual. */
 export default async function HealthDayPage({ params }: { params: Promise<{ date: string }> }) {
+  const { units } = await getDisplayPrefs();
   const { date } = await params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`))) notFound();
   const [{ trends, failed }, meta] = await Promise.all([getHealthTrends(90), getMeta()]);
@@ -85,7 +88,7 @@ export default async function HealthDayPage({ params }: { params: Promise<{ date
                     <span className="block text-caption text-text-secondary">{LABEL[kind]}</span>
                     <span className="block text-metric text-text-primary tabular-nums">
                       {value !== undefined ? formatMetric(kind, value) : "—"}
-                      {value !== undefined && def.unit && <span className="ml-1 text-body font-medium text-text-secondary">{def.unit}</span>}
+                      {value !== undefined && unitFor(def.kind, units, def.unit) && <span className="ml-1 text-body font-medium text-text-secondary">{unitFor(def.kind, units, def.unit)}</span>}
                     </span>
                     {value === undefined ? (
                       <span className="text-caption text-text-secondary">Not recorded this day</span>
@@ -95,7 +98,7 @@ export default async function HealthDayPage({ params }: { params: Promise<{ date
                         {usual !== null && (
                           <span>
                             Your usual {formatMetric(kind, usual)}
-                            {def.unit ? ` ${def.unit}` : ""}
+                            {unitFor(def.kind, units, def.unit) ? ` ${unitFor(def.kind, units, def.unit)}` : ""}
                           </span>
                         )}
                       </span>

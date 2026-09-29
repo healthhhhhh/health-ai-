@@ -57,7 +57,10 @@ public enum HomeSummaryBuilder {
             guard let todays = series.first(where: { calendar.isDate($0.date, inSameDayAs: today) }) else { return nil }
             let parts = TrendAnalysis.split(series, days: 7, now: now, calendar: calendar)
             let trend = TrendAnalysis.summarize(recent: parts.recent, baseline: parts.baseline).trend
-            return HealthMetric(kind: kind, value: todays.value, unit: unit(for: kind), recordedAt: now, source: .appleHealth, trend: trend)
+            // Shown in the person's units (weight may be pounds); the trend compares stored values.
+            let value = tracked.displayValue(todays.value)
+            let shownUnit = tracked == .weight ? (tracked.displayUnit ?? unit(for: kind)) : unit(for: kind)
+            return HealthMetric(kind: kind, value: value, unit: shownUnit, recordedAt: now, source: .appleHealth, trend: trend)
         }
     }
 

@@ -9,11 +9,6 @@ struct ProfileView: View {
     @State private var model: ProfileViewModel
     @State private var showSignIn = false
     @State private var adding: AddKind?
-    @State private var exportURL: URL?
-    @State private var exporting = false
-    @State private var showDelete = false
-    @State private var confirmSignOut = false
-    @AppStorage("showReminderDetails") private var showReminderDetails = false
 
     enum AddKind: String, Identifiable { case condition, allergy, medication; var id: String { rawValue } }
 
@@ -49,41 +44,28 @@ struct ProfileView: View {
                 }
 
                 Section {
-                    Toggle("Show names in reminders", isOn: $showReminderDetails)
-                } header: {
-                    Text("Notifications")
-                } footer: {
-                    Text("Off: reminders only say something is due, so nothing about your health appears on the lock screen. Takes effect the next time your plan changes.")
-                }
-
-                Section("App") {
-                    if session.isPreview {
-                        NavigationLink {
-                            PreviewControlsView(session: session)
-                        } label: {
-                            Label("Preview mode", systemImage: "flask")
-                        }
-                    }
                     NavigationLink {
-                        DesignSystemGallery()
+                        SettingsView(session: session, onRestartOnboarding: onRestartOnboarding)
                     } label: {
-                        Label("Design system", systemImage: "paintpalette")
+                        Label("Settings", systemImage: "gearshape")
                     }
-                    Link(destination: AppLinks.privacy) { Label("Privacy Policy", systemImage: "hand.raised") }
-                    Link(destination: AppLinks.terms) { Label("Terms of Use", systemImage: "doc.text") }
-                    Button(action: onRestartOnboarding) {
-                        Label("Show welcome screens", systemImage: "arrow.uturn.backward")
-                    }
-                    if session.isSignedIn {
-                        Button(role: .destructive) { confirmSignOut = true } label: {
-                            Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
-                        }
-                    }
+                } footer: {
+                    Text("Notifications, display, privacy, your data, account and about.")
                 }
 
                 Section { DisclaimerView() }
             }
             .navigationTitle("Profile")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink {
+                        SettingsView(session: session, onRestartOnboarding: onRestartOnboarding)
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
             .refreshable { if session.isSignedIn { await model.load() } }
             .overlay {
                 if session.isSignedIn, case .loading = model.state {
@@ -93,17 +75,6 @@ struct ProfileView: View {
             .sheet(isPresented: $showSignIn) { SignInView(session: session, onSignedIn: {}) }
             .sheet(item: $adding) { kind in
                 AddProfileItemView(kind: kind, model: model)
-            }
-            .sheet(isPresented: $showDelete) {
-                DeleteAccountView(session: session)
-            }
-            .sheet(item: $exportURL) { url in
-                ShareSheet(items: [url])
-            }
-            .confirmationDialog("Sign out of HealthMate?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button("Sign out", role: .destructive) { Task { await session.signOut() } }
-            } message: {
-                Text("Your plan stays on this device. Conversations and your health profile stay in your account.")
             }
             .alert("Something went wrong", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
                 Button("OK", role: .cancel) {}
@@ -198,45 +169,6 @@ struct ProfileView: View {
                 }
             } footer: {
                 Text("What the AI Health Assistant remembers about you. You can edit or delete anything.")
-            }
-        }
-
-        Section {
-            consentToggle("ai_processing", title: "AI Health Assistant", detail: "Send your messages and saved health details to our AI provider to answer you.")
-            consentToggle("document_processing", title: "Report & photo analysis", detail: "Send files you upload to our AI provider for a plain-language summary.")
-            consentToggle("health_data_sync", title: "Health data sync", detail: "Store Apple Health measurements you choose in your account.")
-            Button {
-                Task {
-                    exporting = true
-                    exportURL = await model.exportFile()
-                    exporting = false
-                }
-            } label: {
-                HStack {
-                    Label("Download my data", systemImage: "square.and.arrow.down")
-                    Spacer()
-                    if exporting { ProgressView() }
-                }
-            }
-            .disabled(exporting)
-            Button(role: .destructive) { showDelete = true } label: {
-                Label("Delete account and all data", systemImage: "trash")
-            }
-        } header: {
-            Text("Privacy & data")
-        } footer: {
-            Text("Turning a switch off stops new processing right away. Your data is never sold or used for advertising.")
-        }
-    }
-
-    private func consentToggle(_ kind: String, title: String, detail: String) -> some View {
-        Toggle(isOn: Binding(
-            get: { session.hasConsent(kind) },
-            set: { granted in Task { await session.setConsent(kind, granted: granted) } }
-        )) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary)
             }
         }
     }

@@ -17,6 +17,8 @@ import { formatRelative } from "@/lib/format";
 import { dayLabel } from "@/lib/health-history";
 import { trendOf } from "@/lib/home";
 import { READING_TYPES } from "@/features/health/reading-types";
+import { latestForDisplay, trendForDisplay, unitFor } from "@/lib/display-prefs";
+import { getDisplayPrefs } from "@/lib/display-prefs.server";
 
 const RANGES = [7, 30, 90] as const;
 
@@ -31,7 +33,7 @@ export default async function MetricDetailPage({ params, searchParams }: { param
   const def = HEALTH_METRICS.find((m) => m.kind === kind);
   if (!def) notFound();
   const days = RANGES.find((d) => String(d) === raw) ?? 7;
-  const [trend, latest, meta] = await Promise.all([
+  const [raw_trend, latest, meta] = await Promise.all([
     api<TrendResponse>(`health-data/trends?kind=${def.kind}&days=${days}`).catch((error) => {
       if (error instanceof ApiError && error.status !== 401) return error;
       throw error;
@@ -39,7 +41,9 @@ export default async function MetricDetailPage({ params, searchParams }: { param
     api<LatestMeasurement[]>("health-data/latest").catch(() => []),
     getMeta(),
   ]);
-  const last = latest.find((m) => m.kind === (def.kind as MeasurementKind));
+  const { units } = await getDisplayPrefs();
+  const last = latestForDisplay(latest, units).find((m) => m.kind === (def.kind as MeasurementKind));
+  const trend = raw_trend instanceof ApiError ? raw_trend : trendForDisplay(raw_trend, units);
   const values = trend instanceof ApiError ? [] : trend.points.map((p) => p.value);
   const sample = Boolean(meta?.preview);
 
@@ -54,7 +58,7 @@ export default async function MetricDetailPage({ params, searchParams }: { param
           {last && (
             <p className="mt-1 flex flex-wrap items-center gap-2 text-body text-text-secondary">
               Latest {formatMetric(def.kind, last.value)}
-              {def.unit ? ` ${def.unit}` : ""} · {formatRelative(last.recordedAt, new Date())}
+              {unitFor(def.kind, units, def.unit) ? ` ${unitFor(def.kind, units, def.unit)}` : ""} · {formatRelative(last.recordedAt, new Date())}
               <SourceBadge source={sample ? "sample" : last.source === "apple_health" ? "apple_health" : "user_reported"} />
             </p>
           )}
@@ -89,10 +93,10 @@ export default async function MetricDetailPage({ params, searchParams }: { param
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label={def.summary} value={trend.average != null ? formatMetric(def.kind, trend.average) : "—"} unit={def.unit} />
-            <Stat label="Lowest day" value={formatMetric(def.kind, Math.min(...values))} unit={def.unit} />
-            <Stat label="Highest day" value={formatMetric(def.kind, Math.max(...values))} unit={def.unit} />
-            <Stat label={`Previous ${days} days`} value={trend.previousAverage != null ? formatMetric(def.kind, trend.previousAverage) : "—"} unit={def.unit} />
+            <Stat label={def.summary} value={trend.average != null ? formatMetric(def.kind, trend.average) : "—"} unit={unitFor(def.kind, units, def.unit)} />
+            <Stat label="Lowest day" value={formatMetric(def.kind, Math.min(...values))} unit={unitFor(def.kind, units, def.unit)} />
+            <Stat label="Highest day" value={formatMetric(def.kind, Math.max(...values))} unit={unitFor(def.kind, units, def.unit)} />
+            <Stat label={`Previous ${days} days`} value={trend.previousAverage != null ? formatMetric(def.kind, trend.previousAverage) : "—"} unit={unitFor(def.kind, units, def.unit)} />
           </div>
           <Card as="section" aria-labelledby="trend-heading">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -136,7 +140,7 @@ export default async function MetricDetailPage({ params, searchParams }: { param
                   <span className="text-body text-text-primary">{dayLabel(p.date, trend.points.at(-1)!.date)}</span>
                   <span className="flex items-center gap-2 text-body font-semibold text-text-primary tabular-nums">
                     {formatMetric(def.kind, p.value)}
-                    {def.unit && <span className="text-caption font-medium text-text-secondary">{def.unit}</span>}
+                    {unitFor(def.kind, units, def.unit) && <span className="text-caption font-medium text-text-secondary">{unitFor(def.kind, units, def.unit)}</span>}
                     <ChevronRight aria-hidden className="size-4 text-text-muted" />
                   </span>
                 </Link>

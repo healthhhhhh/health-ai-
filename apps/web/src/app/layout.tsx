@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { ToastProvider } from "@/components/ui/toast";
 import { PreviewPanel } from "@/features/preview/preview-panel";
 import { REFRESH_COOKIE } from "@/lib/api/session";
+import { DISPLAY_COOKIE, parseDisplayPrefs } from "@/lib/display-prefs";
 import { isPreviewMode } from "@/lib/preview/mode";
 
 export const metadata: Metadata = {
@@ -21,9 +22,11 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const preview = isPreviewMode();
-  const signedIn = preview && Boolean((await cookies()).get(REFRESH_COOKIE)?.value);
+  const jar = await cookies();
+  const signedIn = preview && Boolean(jar.get(REFRESH_COOKIE)?.value);
+  const { theme } = parseDisplayPrefs(jar.get(DISPLAY_COOKIE)?.value);
   return (
-    <html lang="en">
+    <html lang="en" data-theme={theme === "system" ? undefined : theme}>
       <body className="min-h-dvh">
         <ToastProvider>
           {children}

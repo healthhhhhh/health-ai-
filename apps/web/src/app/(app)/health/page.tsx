@@ -19,6 +19,8 @@ import { api } from "@/lib/api/server";
 import { cn } from "@/lib/cn";
 import { buildDailyHistory, compareWithUsual, dayLabel } from "@/lib/health-history";
 import { trendOf } from "@/lib/home";
+import { unitFor } from "@/lib/display-prefs";
+import { getDisplayPrefs } from "@/lib/display-prefs.server";
 
 export const metadata: Metadata = { title: "Health Dashboard" };
 export const dynamic = "force-dynamic";
@@ -35,6 +37,7 @@ const TODAY: { kind: MeasurementKind; label: string }[] = [
 ];
 
 export default async function HealthPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
+  const { units } = await getDisplayPrefs();
   const { days: raw } = await searchParams;
   const days = RANGES.find((d) => String(d) === raw) ?? 7;
   const [period, recent, connection, consents, meta] = await Promise.all([
@@ -138,7 +141,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                         key={kind}
                         label={label}
                         value={value !== undefined ? formatMetric(kind, value) : "—"}
-                        unit={value !== undefined ? def.unit : undefined}
+                        unit={value !== undefined ? unitFor(def.kind, units, def.unit) : undefined}
                         context={value === undefined ? "Not recorded yet" : kind === "steps" || kind === "active_energy" ? "So far today" : trendLabel(comparison)}
                         icon={MEASUREMENT_ICON[kind]}
                         tone={def.tone}
@@ -162,7 +165,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                     title={def.title}
                     icon={MEASUREMENT_ICON[def.kind]}
                     value={trend!.average != null ? formatMetric(def.kind, trend!.average) : "—"}
-                    unit={def.unit}
+                    unit={unitFor(def.kind, units, def.unit)}
                     context={`${def.summary} · ${trendLabel(trendOf(trend!))}`}
                     href={`/health/${def.kind}?days=${days}`}
                   >

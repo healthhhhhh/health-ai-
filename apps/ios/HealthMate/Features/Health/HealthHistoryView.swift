@@ -4,6 +4,8 @@ import SwiftUI
 /// The person's longitudinal record: one row per day, grouped by month.
 /// (Phase 1: Apple Health sample data in Preview mode; Phase 2 adds the stored history.)
 struct HealthHistoryView: View {
+    /// Re-renders when Settings › Display › Weight changes.
+    @AppStorage("hmWeightUnit") private var weightUnit = WeightUnit.kilograms.rawValue
     let reader: any HealthDataReading
     var isPreview = false
     @State private var model: HealthHistoryViewModel
@@ -96,6 +98,8 @@ private struct DayRow: View {
 
 /// One day of the history, each reading next to the person's own usual.
 struct HealthDayView: View {
+    /// Re-renders when Settings › Display › Weight changes.
+    @AppStorage("hmWeightUnit") private var weightUnit = WeightUnit.kilograms.rawValue
     @State var date: Date
     let days: [HealthDay]
 

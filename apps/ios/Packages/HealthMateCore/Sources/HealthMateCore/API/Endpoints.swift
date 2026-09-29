@@ -110,6 +110,12 @@ extension APIClient {
         await clearSession()
     }
 
+    /// Changes the password for an email-and-password account.
+    public func changePassword(current: String, new: String) async throws {
+        struct Body: Encodable { let currentPassword, newPassword: String }
+        try await sendNoContent(.json("POST", "auth/change-password", Body(currentPassword: current, newPassword: new)))
+    }
+
     public func accountSummary() async throws -> AccountSummary {
         try await send(Endpoint("GET", "me/account"))
     }

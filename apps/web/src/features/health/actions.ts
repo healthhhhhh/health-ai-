@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { getProfile } from "@/lib/api/data";
 import { api, errorMessage } from "@/lib/api/server";
+import { fromDisplay, toDisplay, unitFor } from "@/lib/display-prefs";
+import { getDisplayPrefs } from "@/lib/display-prefs.server";
 import { dayIn } from "@/lib/plan";
 import { READING_TYPES } from "./reading-types";
 
@@ -30,10 +32,14 @@ export async function addReading(_prev: ReadingState, form: FormData): Promise<R
     const minutes = Number(form.get("minutes") || 0);
     value = Math.round(hours * 60 + minutes);
   } else {
-    value = Number(String(form.get("value") ?? "").replace(",", "."));
+    // Typed in the person's units (weight may be pounds); stored in metric.
+    const typed = Number(String(form.get("value") ?? "").replace(",", "."));
+    value = fromDisplay(kind, typed, (await getDisplayPrefs()).units);
   }
   if (!Number.isFinite(value) || value < type.min || value > type.max) {
-    return { fieldErrors: { value: `Enter a value between ${type.format(type.min)} and ${type.format(type.max)}.` } };
+    const { units } = await getDisplayPrefs();
+    const bound = (v: number) => (kind === "weight" ? `${Math.round(toDisplay(kind, v, units))} ${unitFor(kind, units)}` : type.format(v));
+    return { fieldErrors: { value: `Enter a value between ${bound(type.min)} and ${bound(type.max)}.` } };
   }
   // Today's reading is "now"; an earlier day is recorded at midday so it lands on that day.
   const recordedAt = date === today ? new Date().toISOString() : new Date(`${date}T12:00:00Z`).toISOString();

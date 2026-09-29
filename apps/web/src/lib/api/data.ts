@@ -16,6 +16,8 @@ import { cache } from "react";
 import { buildHomeSummary, HOME_METRICS } from "../home";
 import { dayIn, tasksForDay } from "../plan";
 import { api, ApiError, publicApi } from "./server";
+import { latestForDisplay, trendForDisplay } from "@/lib/display-prefs";
+import { getDisplayPrefs } from "@/lib/display-prefs.server";
 
 /** Per-request cached loaders (server only). */
 export const getProfile = cache(() => api<HealthProfile>("me"));
@@ -39,11 +41,12 @@ export async function getHomeSummary(now = new Date()) {
     failed.add(section);
     return fallback;
   };
+  const { units } = await getDisplayPrefs();
   const [profile, timeline, mood, latest, plan, appointments, ...trends] = await Promise.all([
     getProfile(),
     api<TimelinePage>("timeline").catch(orFail("activity", { events: [], nextCursor: null })),
     api<{ checkIn: MoodCheckIn | null }>("check-ins/mood/latest").catch(orFail("mood", { checkIn: null })),
-    api<LatestMeasurement[]>("health-data/latest").catch(orFail("metrics", [])),
+    api<LatestMeasurement[]>("health-data/latest").then((list) => latestForDisplay(list, units)).catch(orFail("metrics", [])),
     getPlan().catch(orFail("plan", { revision: 0, items: [], completions: [] })),
     // Care appointments (Preview mode); an API without them falls back to timeline appointments.
     api<AppointmentRecord[]>("care/appointments?when=upcoming").catch(() => null),
@@ -54,7 +57,7 @@ export async function getHomeSummary(now = new Date()) {
     timeline: timeline.events,
     latestMood: mood.checkIn,
     latest,
-    trends: Object.fromEntries(HOME_METRICS.map(([kind], i) => [kind, trends[i]])) as Partial<Record<MeasurementKind, TrendResponse>>,
+    trends: Object.fromEntries(HOME_METRICS.map(([kind], i) => [kind, trends[i] ? trendForDisplay(trends[i], units) : undefined])) as Partial<Record<MeasurementKind, TrendResponse>>,
     now,
   });
   summary.tasks = tasksForDay(plan, dayIn(now, profile.profile.timeZone));
@@ -111,7 +114,8 @@ export const getHealthTrends = cache(async (days: number) => {
       }),
     ),
   );
-  const trends = Object.fromEntries(kinds.map((kind, i) => [kind, results[i]])) as Record<MeasurementKind, TrendResponse | null>;
+  const { units } = await getDisplayPrefs();
+  const trends = Object.fromEntries(kinds.map((kind, i) => [kind, results[i] ? trendForDisplay(results[i], units) : null])) as Record<MeasurementKind, TrendResponse | null>;
   const failed: ApiError | null = results.every((r) => r === null) ? (failure as ApiError | null) : null;
   return { trends, failed };
 });

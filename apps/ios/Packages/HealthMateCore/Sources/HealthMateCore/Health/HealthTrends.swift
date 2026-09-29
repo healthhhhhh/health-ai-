@@ -51,10 +51,18 @@ public enum TrackedMetric: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
+    /// How weight is shown (Settings › Display). Stored values stay in kilograms.
+    nonisolated(unsafe) public static var weightUnit: WeightUnit = .kilograms
+
+    /// A stored value in the person's units (only weight differs).
+    public func displayValue(_ value: Double) -> Double {
+        self == .weight && Self.weightUnit == .pounds ? value * WeightUnit.poundsPerKilogram : value
+    }
+
     public func format(_ value: Double) -> String {
         switch self {
         case .sleep: return HealthFormat.duration(minutes: value)
-        case .weight: return value.formatted(.number.precision(.fractionLength(1)))
+        case .weight: return displayValue(value).formatted(.number.precision(.fractionLength(1)))
         default: return HealthFormat.number(value)
         }
     }
@@ -64,6 +72,7 @@ public enum TrackedMetric: String, CaseIterable, Sendable, Identifiable {
         switch self {
         case .sleep: return nil
         case .steps: return nil
+        case .weight: return Self.weightUnit == .pounds ? "lb" : "kg"
         default: return unit
         }
     }
@@ -151,4 +160,11 @@ public enum TrendAnalysis {
             )
         }
     }
+}
+
+public enum WeightUnit: String, CaseIterable, Identifiable, Sendable {
+    case kilograms, pounds
+    public static let poundsPerKilogram = 2.20462262
+    public var id: String { rawValue }
+    public var label: String { self == .kilograms ? "Kilograms (kg)" : "Pounds (lb)" }
 }

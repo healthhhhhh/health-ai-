@@ -164,6 +164,24 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Saved."].waitForExistence(timeout: 5), "saved: \(screen(app))")
     }
 
+    /// Settings: reachable from Profile, with notifications, display, privacy, data and account.
+    func testSettingsSections() {
+        let app = launch(["-hmInitialTab", "profile", "-hmPreviewState", "normal", "-hmDemoEmail", "alex.morgan@example.com", "-hmDemoPassword", "preview-password"])
+        let gear = app.navigationBars["Profile"].buttons["Settings"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 10), "profile: \(screen(app))")
+        gear.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), "settings: \(screen(app))")
+        XCTAssertTrue(app.buttons["Notifications"].exists)
+        XCTAssertTrue(app.switches.containing(NSPredicate(format: "label CONTAINS 'AI Health Assistant'")).firstMatch.exists, "privacy: \(screen(app))")
+        app.buttons["Notifications"].tap()
+        XCTAssertTrue(app.switches.containing(NSPredicate(format: "label CONTAINS 'Medication reminders'")).firstMatch.waitForExistence(timeout: 8), "notifications: \(screen(app))")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let account = app.buttons["Account & password"]
+        for _ in 0..<4 where !account.isHittable { app.swipeUp() }
+        account.tap()
+        XCTAssertTrue(app.staticTexts["alex.morgan@example.com"].waitForExistence(timeout: 8), "account: \(screen(app))")
+    }
+
     /// Emergency guidance must appear even without an account or network.
     func testEmergencyGuidanceWhenSignedOut() {
         let app = launch(["-hmInitialTab", "chat"])

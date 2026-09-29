@@ -43,3 +43,16 @@ final class HealthFormatTests: XCTestCase {
         XCTAssertEqual(HealthFormat.relative(now.addingTimeInterval(3 * 86400), now: now), "in 3 days")
     }
 }
+
+final class WeightUnitTests: XCTestCase {
+    override func tearDown() { TrackedMetric.weightUnit = .kilograms }
+
+    func testWeightIsShownInThePersonsUnitOnly() {
+        XCTAssertEqual(TrackedMetric.weight.displayUnit, "kg")
+        TrackedMetric.weightUnit = .pounds
+        XCTAssertEqual(TrackedMetric.weight.displayUnit, "lb")
+        XCTAssertEqual(TrackedMetric.weight.displayValue(72.4), 159.6, accuracy: 0.1)
+        XCTAssertEqual(TrackedMetric.restingHeartRate.displayValue(64), 64)
+        XCTAssertEqual(TrackedMetric.restingHeartRate.displayUnit, "bpm")
+    }
+}

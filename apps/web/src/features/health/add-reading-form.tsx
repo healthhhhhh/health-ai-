@@ -6,10 +6,11 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
+import { toDisplay, unitFor, type DisplayPrefs } from "@/lib/display-prefs";
 import { addReading, type ReadingState } from "./actions";
 import { READING_TYPES } from "./reading-types";
 
-export function AddReadingForm({ today, initialKind }: { today: string; initialKind?: MeasurementKind }) {
+export function AddReadingForm({ today, initialKind, units = "metric" }: { today: string; initialKind?: MeasurementKind; units?: DisplayPrefs["units"] }) {
   const [state, action, pending] = useActionState<ReadingState, FormData>(addReading, {});
   const [kind, setKind] = useState<MeasurementKind>(READING_TYPES.some((t) => t.kind === initialKind) ? initialKind! : "weight");
   const type = READING_TYPES.find((t) => t.kind === kind)!;
@@ -40,13 +41,13 @@ export function AddReadingForm({ today, initialKind }: { today: string; initialK
       ) : (
         <Input
           key={kind}
-          label={`${type.label} (${type.unit})`}
+          label={`${type.label} (${unitFor(kind, units, type.unit)})`}
           name="value"
           type="number"
           inputMode="decimal"
           step={type.step}
-          min={type.min}
-          max={type.max}
+          min={Math.floor(toDisplay(kind, type.min, units))}
+          max={Math.ceil(toDisplay(kind, type.max, units))}
           error={state.fieldErrors?.value}
         />
       )}

@@ -861,8 +861,58 @@ test.describe("reports, health and settings", () => {
     });
   });
 
+  test.describe("settings", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("notification settings save and come back the same", async ({ page }) => {
+      await signInFresh(page);
+      await page.goto("/settings", { waitUntil: "networkidle" });
+      await page.getByRole("link", { name: /Reminders, alerts, lock-screen privacy/ }).click();
+      await expect(page).toHaveURL(/\/settings\/notifications$/);
+      await page.getByRole("checkbox", { name: /Weekly insights/ }).uncheck();
+      await page.getByRole("checkbox", { name: /Show names and details/ }).uncheck();
+      await page.getByRole("checkbox", { name: /Hold non-urgent notifications/ }).check();
+      await page.getByLabel("From").fill("21:30");
+      await expectCurrentPageAccessible(page);
+      await page.getByRole("button", { name: "Save notification settings" }).click();
+      await expect(page.getByText(/^Saved\./)).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole("checkbox", { name: /Weekly insights/ })).not.toBeChecked();
+      await expect(page.getByRole("checkbox", { name: /Show names and details/ })).not.toBeChecked();
+      await expect(page.getByLabel("From")).toHaveValue("21:30");
+    });
+
+    test("appearance and weight units apply across the app", async ({ page, context }) => {
+      await signInFresh(page);
+      await page.goto("/settings", { waitUntil: "networkidle" });
+      await page.getByText("Dark", { exact: true }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      await page.getByText("Pounds (lb)", { exact: true }).click();
+      await expect.poll(async () => decodeURIComponent((await context.cookies()).find((c) => c.name === "hm_display")?.value ?? "")).toContain("imperial");
+      await page.goto("/health/weight", { waitUntil: "load" });
+      await expect(page.getByText(/^Latest [\d.]+ lb/)).toBeVisible();
+      await page.goto("/health/add?kind=weight", { waitUntil: "load" });
+      await page.getByLabel("Weight (lb)").fill("160");
+      await page.getByRole("button", { name: "Save reading" }).click();
+      await expect(page).toHaveURL(/\/health\/history\/\d{4}-\d{2}-\d{2}/);
+      // The day's weight (averaged with any other reading that day) is shown in pounds.
+      await expect(page.getByRole("link", { name: /^Weight 1[5-6]\d\.\d ?lb/ })).toBeVisible();
+      await page.goto("/settings", { waitUntil: "load" });
+      await page.getByText("Match my device", { exact: true }).click();
+      await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
+    });
+
+    test("settings show the error state for privacy choices", async ({ page, context }) => {
+      await signInFresh(page);
+      await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "error" })), url: page.url() }]);
+      await page.goto("/settings");
+      await expect(page.getByRole("heading", { name: "Your privacy choices couldn't load" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Delete account" })).toBeVisible();
+    });
+  });
+
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
-    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/plans/tasks", "/plans/medications", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/care", "/care/appointments", "/care/team", "/design"]) {
+    for (const path of ["/home", "/chat", "/timeline", "/plans", "/profile", "/reports", "/reports?show=photos", "/reports/photo-check", "/plans/tasks", "/plans/medications", "/health", "/health/sleep", "/health/history", "/health/add", "/settings", "/settings/notifications", "/settings/account", "/care", "/care/appointments", "/care/team", "/design"]) {
       await expectNoA11yViolations(page, path);
     }
   });

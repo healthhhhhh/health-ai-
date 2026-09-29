@@ -9,6 +9,8 @@ import { formatMetric } from "@/features/health/metrics";
 import { getHealthTrends, getMeta } from "@/lib/api/data";
 import { cn } from "@/lib/cn";
 import { buildDailyHistory, dayLabel, groupByMonth } from "@/lib/health-history";
+import { unitFor } from "@/lib/display-prefs";
+import { getDisplayPrefs } from "@/lib/display-prefs.server";
 
 export const metadata: Metadata = { title: "Daily health history" };
 export const dynamic = "force-dynamic";
@@ -20,6 +22,7 @@ const RANGES = [30, 90] as const;
  * (Phase 1 shows the Preview sample; Phase 2 fills it from the stored history.)
  */
 export default async function HealthHistoryPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
+  const { units } = await getDisplayPrefs();
   const { days: raw } = await searchParams;
   const days = RANGES.find((d) => String(d) === raw) ?? 30;
   const [{ trends, failed }, meta] = await Promise.all([getHealthTrends(days), getMeta()]);
@@ -87,7 +90,7 @@ export default async function HealthHistoryPage({ searchParams }: { searchParams
                       <Value label="Sleep" value={day.values.sleep !== undefined ? formatMetric("sleep", day.values.sleep) : undefined} />
                       <Value label="Steps" value={day.values.steps !== undefined ? formatMetric("steps", day.values.steps) : undefined} />
                       <Value label="Resting HR" value={day.values.resting_heart_rate !== undefined ? `${formatMetric("resting_heart_rate", day.values.resting_heart_rate)} bpm` : undefined} />
-                      <Value label="Weight" value={day.values.weight !== undefined ? `${formatMetric("weight", day.values.weight)} kg` : undefined} />
+                      <Value label="Weight" value={day.values.weight !== undefined ? `${formatMetric("weight", day.values.weight)} ${unitFor("weight", units)}` : undefined} />
                     </dl>
                     <ChevronRight aria-hidden className="size-4 shrink-0 text-text-muted" />
                   </Link>

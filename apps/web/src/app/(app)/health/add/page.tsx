@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { AddReadingForm } from "@/features/health/add-reading-form";
 import { getProfile } from "@/lib/api/data";
 import { dayIn } from "@/lib/plan";
+import { getDisplayPrefs } from "@/lib/display-prefs.server";
 
 export const metadata: Metadata = { title: "Add a reading" };
 
@@ -21,7 +22,7 @@ export default async function AddReadingPage({ searchParams }: { searchParams: P
         <p className="mt-1 text-body text-text-secondary">Record a reading yourself. It&apos;s saved to that day in your health history and labelled &ldquo;Added by you&rdquo;.</p>
       </div>
       <Card>
-        <AddReadingForm today={dayIn(new Date(), profile.timeZone)} initialKind={kind as MeasurementKind | undefined} />
+        <AddReadingForm today={dayIn(new Date(), profile.timeZone)} initialKind={kind as MeasurementKind | undefined} units={(await getDisplayPrefs()).units} />
       </Card>
       <p className="flex items-start gap-2 text-caption text-text-secondary">
         <Smartphone aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />

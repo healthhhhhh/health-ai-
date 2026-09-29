@@ -5,6 +5,8 @@ import SwiftUI
 /// Health tab: Apple Health trends compared with the person's own baseline,
 /// plus the health timeline.
 struct HealthDashboardView: View {
+    /// Re-renders when Settings › Display › Weight changes.
+    @AppStorage("hmWeightUnit") private var weightUnit = WeightUnit.kilograms.rawValue
     let session: SessionStore
     let reader: any HealthDataReading
     @State private var model: HealthDashboardViewModel
@@ -359,11 +361,11 @@ private struct MetricTrendCard: View {
             }
             Chart(values) { value in
                 if metric.isCumulative {
-                    BarMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, value.value))
+                    BarMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, metric.displayValue(value.value)))
                         .foregroundStyle(metric.tone.color.gradient)
                         .cornerRadius(2)
                 } else {
-                    LineMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, value.value))
+                    LineMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, metric.displayValue(value.value)))
                         .foregroundStyle(metric.tone.color)
                         .interpolationMethod(.catmullRom)
                 }
@@ -387,6 +389,8 @@ private struct MetricTrendCard: View {
 
 /// One metric in detail with axes, the average line and the baseline comparison.
 struct MetricDetailView: View {
+    /// Re-renders when Settings › Display › Weight changes.
+    @AppStorage("hmWeightUnit") private var weightUnit = WeightUnit.kilograms.rawValue
     let metric: TrackedMetric
     let model: HealthDashboardViewModel
     @State private var selectedDate: Date?
@@ -417,19 +421,19 @@ struct MetricDetailView: View {
                 Chart {
                     ForEach(values) { value in
                         if metric.isCumulative {
-                            BarMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, value.value))
+                            BarMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, metric.displayValue(value.value)))
                                 .foregroundStyle(metric.tone.color.gradient)
                                 .cornerRadius(3)
                         } else {
-                            LineMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, value.value))
+                            LineMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, metric.displayValue(value.value)))
                                 .foregroundStyle(metric.tone.color)
                                 .interpolationMethod(.catmullRom)
-                            PointMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, value.value))
+                            PointMark(x: .value("Day", value.date, unit: .day), y: .value(metric.title, metric.displayValue(value.value)))
                                 .foregroundStyle(metric.tone.color)
                         }
                     }
                     if let baseline = summary.baselineAverage, summary.trend != .noBaseline {
-                        RuleMark(y: .value("Your usual", baseline))
+                        RuleMark(y: .value("Your usual", metric.displayValue(baseline)))
                             .foregroundStyle(HM.Colors.textMuted)
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                             .annotation(position: .top, alignment: .leading) {
