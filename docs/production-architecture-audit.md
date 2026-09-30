@@ -74,7 +74,7 @@ Planned production stack: **Supabase** (PostgreSQL, Auth, Storage, pgvector) and
 
 - **Gateway:** `AiGateway` sits over the `AiProvider` interface and records usage (tokens and outcome) in `ai_usage`. It maps failures to `ai_unavailable`, `ai_declined` or `ai_invalid_output`.
 - **Providers:**
-  - `AnthropicProvider`: Anthropic SDK beta Messages API, model `AI_MODEL` (default `claude-opus-5`), `fallbacks: "default"`, and structured output through `output_config.format` with a JSON schema generated from zod. Reports are sent as base64 PDFs, photos as base64 images.
+  - `AnthropicProvider`: Anthropic SDK beta Messages API, model `AI_MODEL` (default `claude-opus-5-5`), `fallbacks: "default"`, and structured output through `output_config.format` with a JSON schema generated from zod. Reports are sent as base64 PDFs, photos as base64 images.
   - `UnavailableProvider`: used when there's no key.
   - `DemoAiProvider`: scripted answers, labelled as a demo.
   - `FakeAiProvider`: used in tests.

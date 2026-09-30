@@ -42,7 +42,7 @@ const schema = z.object({
   JWT_SECRET: z.string().min(32).optional(),
   /** Server-side only. Never shipped to the iOS or web clients. */
   ANTHROPIC_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().default("claude-opus-5"),
+  AI_MODEL: z.string().default("claude-opus-5-5"),
   /** Error reporting. Events are scrubbed of health content before sending. */
   SENTRY_DSN: optionalUrl,
 

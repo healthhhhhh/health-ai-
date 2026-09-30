@@ -4,8 +4,11 @@ import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
 import { AiGateway } from "../ai/ai.gateway";
 import type { AiMessage } from "../ai/ai.types";
+import { dailyHealthContext, relevantMetrics } from "../health-data/daily-health-context";
+import { HealthDataService } from "../health-data/health-data.service";
+import { renderMemoryContext } from "../memory/memory-retrieval";
 import { MemoryService } from "../memory/memory.service";
-import { ProfileService } from "../profile/profile.service";
+import { localDay, ProfileService } from "../profile/profile.service";
 import { TimelineService } from "../timeline/timeline.service";
 import { CHAT_SYSTEM_PROMPT, ChatAnswerSchema, contextBlock, REWRITE_NOTE, SAFE_FALLBACK_ANSWER, safetyNotes, type ChatAnswer } from "./chat.prompts";
 
@@ -19,6 +22,8 @@ export type AssistantPayload =
       warningSigns: string[];
       careRecommendation: ChatAnswer["careRecommendation"];
       memorySuggestions: { fact: string }[];
+      /** What the answer was based on (shown as "based on …"; the facts are the person's own). */
+      context?: AnswerContext;
       /** Deterministic banner shown above the answer for urgent triage. */
       escalation: EscalationMessage | null;
       /** Fixed notice when the person asked about changing medication. */
@@ -45,8 +50,18 @@ export interface Conversation {
 
 const HISTORY_LIMIT = 20;
 
+/** What an answer was based on — the few facts retrieved, not the whole history. */
+export interface AnswerContext {
+  memories: { id: string; fact: string; status: string; temporalStatus: "current" | "historical"; occurredOn: string | null }[];
+  usedProfile: boolean;
+  /** Daily health metrics summarised for this answer (e.g. "sleep"). */
+  healthMetrics: string[];
+}
+
 type MessageRow = { id: string; role: "user" | "assistant"; content: string; structured: AssistantPayload | null; triage_level: string | null; created_at: Date };
 const toMessage = (r: MessageRow): ChatMessage => ({ id: r.id, role: r.role, content: r.content, payload: r.structured, triageLevel: r.triage_level, createdAt: r.created_at.toISOString() });
+
+const shiftDay = (day: string, offset: number) => new Date(Date.parse(`${day}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
 
 @Injectable()
 export class ChatService {
@@ -56,6 +71,7 @@ export class ChatService {
     @Inject(ProfileService) private readonly profiles: ProfileService,
     @Inject(MemoryService) private readonly memories: MemoryService,
     @Inject(TimelineService) private readonly timeline: TimelineService,
+    @Inject(HealthDataService) private readonly healthData: HealthDataService,
   ) {}
 
   /** Renames a conversation (the person's own label; nothing about the content changes). */
@@ -133,11 +149,25 @@ export class ChatService {
     }
 
     const history = conversationId ? await this.history(userId, conversationId) : [];
-    const [profileSummary, memories] = await Promise.all([this.profiles.contextSummary(userId), this.memories.relevant(userId, text)]);
+    // Retrieval: only what's relevant to this question, never the whole history.
+    const { profile } = await this.profiles.get(userId);
+    const today = localDay(profile.timeZone);
+    const metrics = relevantMetrics(text);
+    const [profileSummary, memories, daily] = await Promise.all([
+      this.profiles.contextSummary(userId, new Date(), text),
+      this.memories.relevant(userId, text, today),
+      metrics.length ? this.healthData.daily(userId, shiftDay(today, -37), today, metrics) : Promise.resolve([]),
+    ]);
+    const dailyHealth = dailyHealthContext(daily, metrics, today);
+    const context: AnswerContext = {
+      memories: memories.map((m) => ({ id: m.id, fact: m.fact, status: m.status, temporalStatus: m.temporalStatus, occurredOn: m.occurredOn ?? null })),
+      usedProfile: profileSummary.trim().length > 0,
+      healthMetrics: dailyHealth.metrics,
+    };
     const urgent = result.level === "urgent";
     const baseSystem = [
       CHAT_SYSTEM_PROMPT,
-      contextBlock({ today: new Date().toISOString().slice(0, 10), profileSummary, memories }),
+      contextBlock({ today, profileSummary, memorySection: renderMemoryContext(memories, today), dailyHealth: dailyHealth.lines }),
       safetyNotes({ urgentReasons: urgent ? result.matchedRules.map((r) => r.reason) : [], medicationChangeRequest: result.medicationChangeRequest }),
     ];
     const messages: AiMessage[] = [...history, { role: "user", content: text }];
@@ -158,6 +188,7 @@ export class ChatService {
     } catch (error) {
       throw AiGateway.toApiError(error);
     }
+    await this.memories.markUsed(userId, memories.map((m) => m.id));
 
     const escalation = urgent ? escalationMessage(result) : null;
     const care = urgent && (!answer.careRecommendation || !["urgent", "emergency"].includes(answer.careRecommendation.level))
@@ -173,6 +204,7 @@ export class ChatService {
         warningSigns: answer.warningSigns,
         careRecommendation: care,
         memorySuggestions: answer.memorySuggestions,
+        context,
         escalation,
         notice: result.medicationChangeRequest ? MEDICATION_CHANGE_NOTICE : null,
         safetyAdjusted,

@@ -40,8 +40,10 @@ export class AnthropicProvider implements AiProvider {
   constructor(
     apiKey: string,
     private readonly model: string,
+    /** Tests pass a fetch stub to check the exact request sent to the Messages API. */
+    options: { fetch?: typeof fetch; maxRetries?: number } = {},
   ) {
-    this.client = new Anthropic({ apiKey, maxRetries: 2, timeout: 120_000 });
+    this.client = new Anthropic({ apiKey, maxRetries: options.maxRetries ?? 2, timeout: 120_000, ...(options.fetch ? { fetch: options.fetch } : {}) });
   }
 
   async generate<T>(request: AiRequest<T>): Promise<AiResult<T>> {
@@ -71,7 +73,13 @@ export class AnthropicProvider implements AiProvider {
       throw new AiUnavailableError();
     }
 
-    if (response.stop_reason === "refusal") throw new AiDeclinedError();
+    if (response.stop_reason === "refusal") {
+      // The whole fallback chain declined. Category only — never content.
+      this.logger.warn(`Model declined ${request.feature} (${(response as { stop_details?: { category?: string | null } }).stop_details?.category ?? "no category"})`);
+      throw new AiDeclinedError();
+    }
+    // A cut-off answer can't be valid JSON; say so rather than guessing.
+    if (response.stop_reason === "max_tokens") throw new AiInvalidOutputError();
     const text = response.content
       .filter((b): b is Anthropic.Beta.Messages.BetaTextBlock => b.type === "text")
       .map((b) => b.text)

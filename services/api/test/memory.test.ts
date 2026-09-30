@@ -36,9 +36,9 @@ describe("health memory", () => {
     await ctx.http.post("/v1/memories").set(bob.auth).send({ fact: "Allergic to penicillin" }).expect(201);
     await ctx.drainJobs();
     const aliceMatches = await memories.semanticMatches(alice.userId, "allergic to penicillin");
-    expect(aliceMatches.map((m) => m.fact)).toEqual(["Allergic to penicillin antibiotics"]);
+    expect(aliceMatches.map((m) => m.memory.fact)).toEqual(["Allergic to penicillin antibiotics"]);
     const bobMatches = await memories.semanticMatches(bob.userId, "allergic to penicillin");
-    expect(bobMatches.map((m) => m.fact)).toEqual(["Allergic to penicillin"]);
+    expect(bobMatches.map((m) => m.memory.fact)).toEqual(["Allergic to penicillin"]);
     const relevant = await memories.relevant(bob.userId, "Can I take antibiotics?");
     expect(relevant.every((m) => m.fact !== "Allergic to penicillin antibiotics")).toBe(true);
   });

@@ -54,7 +54,7 @@ export class AccountService {
            FROM symptoms s WHERE s.user_id = $1 ORDER BY s.created_at`,
       ),
       memories: q(
-        `SELECT id, fact, category, source, source_id, status, prior_status, confidence, occurred_on::text AS occurred_on, ended_on::text AS ended_on, confirmed_at, superseded_by, superseded_at, created_at, updated_at
+        `SELECT id, fact, category, source, source_id, status, prior_status, confidence, occurred_on::text AS occurred_on, ended_on::text AS ended_on, confirmed_at, superseded_by, superseded_at, ai_excluded, last_used_at, created_at, updated_at
            FROM health_memories WHERE user_id = $1 ORDER BY created_at`,
       ),
       conversations: q(`SELECT id, title, created_at FROM conversations WHERE user_id = $1 ORDER BY created_at`),

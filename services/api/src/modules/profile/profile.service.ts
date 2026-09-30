@@ -65,6 +65,20 @@ export function localDay(timeZone: string, now = new Date()): string {
   }
 }
 
+/**
+ * Past items are history: the AI gets the ones the question mentions plus the
+ * few most recent, not years of stopped medications. Current items are always sent.
+ */
+export const PAST_ITEMS_IN_CONTEXT = 5;
+export function limitPast<T>(items: T[], name: (item: T) => string, endedAt: (item: T) => string, question: string): { items: T[]; hidden: number } {
+  const q = question.toLowerCase();
+  const mentioned = items.filter((item) => q.includes(name(item).toLowerCase()));
+  const recent = [...items].sort((a, b) => endedAt(b).localeCompare(endedAt(a))).filter((item) => !mentioned.includes(item)).slice(0, Math.max(0, PAST_ITEMS_IN_CONTEXT - mentioned.length));
+  const shown = [...mentioned, ...recent];
+  return { items: shown, hidden: items.length - shown.length };
+}
+const more = (hidden: number) => (hidden > 0 ? ` (and ${hidden} older past item${hidden === 1 ? "" : "s"} not shown)` : "");
+
 @Injectable()
 export class ProfileService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
@@ -237,7 +251,7 @@ export class ProfileService {
    * current from what is past, with dates, so old information is never
    * presented as current. Never includes more than needed.
    */
-  async contextSummary(userId: string, now = new Date()): Promise<string> {
+  async contextSummary(userId: string, now = new Date(), question = ""): Promise<string> {
     const { profile, conditions, allergies, medications } = await this.get(userId);
     const today = localDay(profile.timeZone, now);
     const when = (label: string, day: string | null) => (day && DAY.test(day) ? `, ${label} ${day} (${relativeAge(day, today)})` : "");
@@ -246,18 +260,18 @@ export class ProfileService {
     if (profile.sex) lines.push(`Sex: ${profile.sex}`);
 
     const activeConditions = conditions.filter((c) => c.status === "active");
-    const pastConditions = conditions.filter((c) => c.status === "resolved");
+    const pastConditions = limitPast(conditions.filter((c) => c.status === "resolved"), (c) => c.name, (c) => c.resolvedOn ?? c.updatedAt, question);
     if (activeConditions.length) lines.push(`Current conditions: ${activeConditions.map((c) => `${c.name} [${c.source}${when("since", c.onsetOn)}]`).join("; ")}`);
-    if (pastConditions.length) lines.push(`Past conditions (resolved, not current): ${pastConditions.map((c) => `${c.name} [${c.source}${when("resolved", c.resolvedOn)}]`).join("; ")}`);
+    if (pastConditions.items.length) lines.push(`Past conditions (resolved, not current): ${pastConditions.items.map((c) => `${c.name} [${c.source}${when("resolved", c.resolvedOn)}]`).join("; ")}${more(pastConditions.hidden)}`);
 
     const activeAllergies = allergies.filter((a) => a.status === "active");
     if (activeAllergies.length) lines.push(`Allergies: ${activeAllergies.map((a) => `${a.substance}${a.reaction ? ` – ${a.reaction}` : ""} [${a.source}]`).join("; ")}`);
 
     const isCurrent = (m: Medication) => m.active && (!m.stoppedOn || m.stoppedOn > today);
     const current = medications.filter(isCurrent);
-    const past = medications.filter((m) => !isCurrent(m));
+    const past = limitPast(medications.filter((m) => !isCurrent(m)), (m) => m.name, (m) => m.stoppedOn ?? m.updatedAt, question);
     if (current.length) lines.push(`Current medications, instructions verbatim: ${current.map((m) => `${m.name}: "${m.instruction}" [${m.source}${when("started", m.startedOn)}]`).join("; ")}`);
-    if (past.length) lines.push(`Past medications (stopped, not current): ${past.map((m) => `${m.name} [${m.source}${when("stopped", m.stoppedOn)}]`).join("; ")}`);
+    if (past.items.length) lines.push(`Past medications (stopped, not current): ${past.items.map((m) => `${m.name} [${m.source}${when("stopped", m.stoppedOn)}]`).join("; ")}${more(past.hidden)}`);
     return lines.join("\n");
   }
 }
