@@ -75,6 +75,12 @@ public struct ProfileDetails: Codable, Equatable, Sendable {
     public var timeZone: String
     /// What the person wants help with (onboarding); ids from `HealthGoal`.
     public var goals: [String]?
+    /// Preferred units, stored with the account (Phase 2A). `nil` from older servers and Preview.
+    public var unitSystem: UnitSystem? = nil
+}
+
+public enum UnitSystem: String, Codable, Sendable {
+    case metric, imperial
 }
 
 /// Sign-in details for the account (not health data).
@@ -121,12 +127,20 @@ public struct NotificationPreferences: Codable, Equatable, Sendable {
     }
 }
 
+// Structured facts carry their event dates (YYYY-MM-DD) from Phase 2A; the
+// fields are optional so older servers and Preview mode still decode.
+// See docs/health-memory-architecture.md.
+
 public struct ConditionRecord: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let status: String
     public let source: ProfileSource
     public let notes: String?
+    public var onsetOn: String? = nil
+    /// Resolved conditions are history, never "current".
+    public var resolvedOn: String? = nil
+    public var sourceRef: String? = nil
 }
 
 public struct AllergyRecord: Codable, Equatable, Identifiable, Sendable {
@@ -135,6 +149,10 @@ public struct AllergyRecord: Codable, Equatable, Identifiable, Sendable {
     public let reaction: String?
     public let severity: String?
     public let source: ProfileSource
+    /// "active" or "inactive".
+    public var status: String? = nil
+    public var notedOn: String? = nil
+    public var sourceRef: String? = nil
 }
 
 /// `instruction` is the clinician's or label's wording, exactly as entered.
@@ -144,6 +162,10 @@ public struct MedicationRecord: Codable, Equatable, Identifiable, Sendable {
     public let instruction: String
     public let source: ProfileSource
     public let active: Bool
+    public var startedOn: String? = nil
+    /// A stopped medication is history (with its stop date), not a correction.
+    public var stoppedOn: String? = nil
+    public var sourceRef: String? = nil
 }
 
 public struct HealthProfile: Codable, Equatable, Sendable {
@@ -186,6 +208,14 @@ public struct MemoryRecord: Codable, Equatable, Identifiable, Sendable {
     public let source: String
     public let status: MemoryStatus
     public let createdAt: Date
+    /// When it happened / was true (YYYY-MM-DD), when known.
+    public var occurredOn: String? = nil
+    /// When it stopped being true (YYYY-MM-DD).
+    public var endedOn: String? = nil
+    public var category: String? = nil
+    /// A correction replaced this fact; `priorStatus` keeps where it originally came from.
+    public var supersededBy: String? = nil
+    public var priorStatus: MemoryStatus? = nil
 }
 
 // MARK: Chat

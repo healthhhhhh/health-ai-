@@ -149,12 +149,32 @@ rate limits remain the defaults when `REDIS_URL` is unset.
   and Storage), `records.test.ts` / `plan.test.ts` (API-level isolation, including client-supplied
   plan item ids that belong to someone else).
 
+## 10a. Phase 2A additions
+
+Migration `0008_health_record_foundation.sql` and the routes that used to exist only in Preview
+mode — see [`phase2-plan.md`](phase2-plan.md) (what changed and why) and
+[`health-memory-architecture.md`](health-memory-architecture.md) (provenance, time, retention):
+
+| Group | Routes |
+|---|---|
+| Account | `GET /v1/me/account`, `POST /v1/me/onboarding`, `GET/PUT /v1/me/notification-preferences`, `PATCH /v1/me/profile` (+ `goals`, `unitSystem`) |
+| Auth | `POST /v1/auth/change-password` (signed in), `POST /v1/auth/verify-email`, `POST /v1/auth/resend-verification`, `POST /v1/auth/oauth` (501 until 2C) |
+| Record corrections | `PATCH /v1/me/conditions/:id`, `PATCH /v1/me/allergies/:id`, `PATCH /v1/me/medications/:id` (+ `startedOn`, `stoppedOn`) |
+| Memory | `POST /v1/memories/:id/supersede`; `occurredOn`, `endedOn`, `category` on create/edit |
+| Timeline, chat, care | `GET/PATCH /v1/timeline/:id`, `PATCH /v1/conversations/:id`, `GET/PATCH /v1/care/providers/:id`, `GET /v1/care/appointments/:id`, `PATCH /v1/care/appointments/:id` (any field) |
+| Notifications | `GET /v1/notifications`, `POST /v1/notifications/read-all`, `PATCH/DELETE /v1/notifications/:id` |
+| Treatment plans | `GET/POST /v1/treatment-plans`, `GET/PATCH/DELETE /v1/treatment-plans/:id` |
+
+New tables `notification_preferences`, `notifications` (server-written), `treatment_plans`; views
+`current_medications`, `current_conditions`, `current_allergies`; all under RLS (tested in
+`test/rls.test.ts`). Export format is now `healthmate-export-v2`.
+
 ## 11. Environment variables
 
 See [`.env.example`](../.env.example). Server-only: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
 `SUPABASE_SECRET_KEY`, `DATABASE_URL` (+ `DATABASE_CA_CERT`), `ANTHROPIC_API_KEY`, `REDIS_URL`,
 `EMBED_FUNCTION_SECRET`, `PASSWORD_RESET_REDIRECT_URL`, `JWT_SECRET` (local auth only),
-`SENTRY_DSN`. Production refuses to start without `DATABASE_URL` and Supabase Storage, and refuses
+`SENTRY_DSN`, `AUDIT_LOG_RETENTION_DAYS`, `AI_USAGE_RETENTION_DAYS`, `SAFETY_EVENT_RETENTION_DAYS`. Production refuses to start without `DATABASE_URL` and Supabase Storage, and refuses
 the development embedding provider.
 
 ## 12. Risks

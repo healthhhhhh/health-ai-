@@ -280,6 +280,7 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
       if (input.heightCm !== undefined) p.heightCm = typeof input.heightCm === "number" ? input.heightCm : null;
       if (typeof input.timeZone === "string") p.timeZone = validTimeZone(input.timeZone);
       if (Array.isArray(input.goals)) p.goals = input.goals.filter((g): g is string => typeof g === "string").slice(0, 10);
+      if (input.unitSystem === "metric" || input.unitSystem === "imperial") p.unitSystem = input.unitSystem;
       return json(account.profile.profile);
     }
     if (b === "conditions" && method === "POST") {
@@ -496,7 +497,7 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
     const entry = account.timeline.find((e) => e.id === b);
     if (b && !entry) return fail(404, "not_found", "Entry not found.");
     if (entry && method === "GET") return json(entry);
-    // Editing is Preview-only for now (the Phase 2 API adds it); only entries the person added can change.
+    // Same rule as the API: only entries the person added can change.
     if (entry && method === "PATCH") {
       if (entry.sourceType !== "user_entered") return fail(403, "forbidden", "Only entries you added can be edited.");
       if (typeof input.title === "string" && text(input.title, 200)) entry.title = text(input.title, 200);

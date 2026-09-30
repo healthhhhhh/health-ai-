@@ -36,31 +36,56 @@ export interface ProfileDetails {
   timeZone: string;
   /** What the person wants help with (onboarding); ids from HEALTH_GOALS. */
   goals?: string[];
+  /** Preferred units for display (Phase 2A; stored with the account). */
+  unitSystem?: UnitSystem;
 }
 
-export interface ConditionRecord {
+export type UnitSystem = "metric" | "imperial";
+
+/**
+ * Provenance and time carried by every structured fact (Phase 2A; optional so
+ * older servers and Preview mode still decode). Dates are YYYY-MM-DD.
+ * See docs/health-memory-architecture.md.
+ */
+export interface FactMeta {
+  sourceRef?: string | null;
+  confidence?: number;
+  confirmedAt?: ISO | null;
+  createdAt?: ISO;
+  updatedAt?: ISO;
+}
+
+export interface ConditionRecord extends FactMeta {
   id: string;
   name: string;
   status: string;
   source: ProfileSource;
   notes: string | null;
+  onsetOn?: string | null;
+  /** Resolved conditions are history, never "current". */
+  resolvedOn?: string | null;
 }
 
-export interface AllergyRecord {
+export interface AllergyRecord extends FactMeta {
   id: string;
   substance: string;
   reaction: string | null;
   severity: string | null;
   source: ProfileSource;
+  status?: "active" | "inactive";
+  notedOn?: string | null;
 }
 
 /** `instruction` is the clinician's or label's wording, exactly as entered. */
-export interface MedicationRecord {
+export interface MedicationRecord extends FactMeta {
   id: string;
   name: string;
   instruction: string;
   source: ProfileSource;
   active: boolean;
+  startedOn?: string | null;
+  /** A stopped medication is history (with its stop date), not a correction. */
+  stoppedOn?: string | null;
 }
 
 export interface HealthProfile {
@@ -72,12 +97,48 @@ export interface HealthProfile {
 
 export type MemoryStatus = "user_reported" | "user_confirmed" | "document_extracted" | "healthkit" | "clinician_provided" | "ai_inferred" | "superseded";
 
+export type MemoryCategory = "condition" | "medication" | "allergy" | "symptom" | "measurement" | "procedure" | "lifestyle" | "family_history" | "other";
+
 export interface MemoryRecord {
   id: string;
   fact: string;
   source: string;
   status: MemoryStatus;
   createdAt: ISO;
+  /** When it happened / was true (YYYY-MM-DD), when known. */
+  occurredOn?: string | null;
+  /** When it stopped being true (YYYY-MM-DD). */
+  endedOn?: string | null;
+  category?: MemoryCategory | null;
+  confidence?: number;
+  confirmedAt?: ISO | null;
+  /** A correction replaced this fact; `priorStatus` keeps where it originally came from. */
+  supersededBy?: string | null;
+  supersededAt?: ISO | null;
+  priorStatus?: Exclude<MemoryStatus, "superseded"> | null;
+}
+
+/** `POST /v1/memories/:id/supersede` */
+export interface MemorySupersedeResult {
+  superseded: MemoryRecord;
+  replacement: MemoryRecord;
+}
+
+/** A clinician's plan as the person recorded it (`/v1/treatment-plans`). */
+export interface TreatmentPlanRecord {
+  id: string;
+  title: string;
+  /** Verbatim from the clinician or letter; never generated. */
+  description: string | null;
+  careProviderId: string | null;
+  source: ProfileSource;
+  sourceRef: string | null;
+  status: "active" | "completed" | "stopped";
+  startedOn: string | null;
+  endedOn: string | null;
+  planItemIds: string[];
+  createdAt: ISO;
+  updatedAt: ISO;
 }
 
 export type TriageLevel = "informational" | "routine" | "urgent" | "emergency";

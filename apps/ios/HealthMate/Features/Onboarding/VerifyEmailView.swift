@@ -2,7 +2,7 @@ import HealthMateCore
 import SwiftUI
 
 /// Continue with Apple / Google. Phase 1: signs in to the Preview sample
-/// account; real Sign in with Apple and Google OAuth arrive in Phase 2.
+/// account; real Sign in with Apple and Google OAuth arrive in Phase 2C.
 struct SocialSignInButtons: View {
     let session: SessionStore
     var onSignedIn: () -> Void

@@ -6,7 +6,9 @@ import { writeSession } from "@/lib/api/session";
 
 /** The link in the confirmation email: confirms the address, signs in and continues to onboarding. */
 export async function GET(request: Request) {
-  const token = new URL(request.url).searchParams.get("token") ?? "";
+  // Supabase's confirmation template links with `token_hash`; Preview mode uses `token`.
+  const params = new URL(request.url).searchParams;
+  const token = params.get("token_hash") ?? params.get("token") ?? "";
   try {
     const auth = await publicApi<AuthResponse>("auth/verify-email", { method: "POST", json: { token } });
     writeSession(await cookies(), auth);

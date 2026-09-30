@@ -36,7 +36,11 @@ demo server).
 
 1. **Create a project** at [supabase.com](https://supabase.com) (choose the region your users are in).
    Under *Authentication → URL Configuration* add `https://<your web domain>/reset-password` to the
-   redirect URLs; for production turn on email confirmation and configure custom SMTP.
+   redirect URLs; for production turn on email confirmation and configure custom SMTP. With
+   confirmation on, add `https://<your web domain>/verify-email/confirm` too and set the *Confirm
+   signup* email template's link to
+   `{{ .SiteURL }}/verify-email/confirm?token_hash={{ .TokenHash }}&type=email`
+   (see [`docs/phase2-plan.md`](docs/phase2-plan.md) §4).
 2. **Environment**: `cp .env.example .env` and fill in `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
    `SUPABASE_SECRET_KEY` (*Project Settings → API Keys*), `DATABASE_URL` (*Connect → Transaction
    pooler*), `ANTHROPIC_API_KEY`, `REDIS_URL` and `EMBED_FUNCTION_SECRET` (any random string of 24+

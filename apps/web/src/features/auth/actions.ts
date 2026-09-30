@@ -51,7 +51,7 @@ export async function authenticate(_prev: AuthFormState, form: FormData): Promis
 
 /**
  * Continue with Apple or Google. Phase 1 (Preview mode) signs in to the
- * sample account; real OAuth arrives with Supabase Auth in Phase 2.
+ * sample account; the real API answers 501 until Apple/Google sign-in is set up (Phase 2C).
  */
 export async function continueWithProvider(provider: "apple" | "google", timeZone: string): Promise<{ error: string } | undefined> {
   let auth: AuthResponse & { isNewUser?: boolean };

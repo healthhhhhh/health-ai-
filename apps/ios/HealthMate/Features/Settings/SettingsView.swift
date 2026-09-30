@@ -36,8 +36,11 @@ struct SettingsView: View {
                     get: { weightUnit },
                     set: { raw in
                         // Update the formatter first so screens that re-render show the new unit.
-                        TrackedMetric.weightUnit = WeightUnit(rawValue: raw) ?? .kilograms
+                        let unit = WeightUnit(rawValue: raw) ?? .kilograms
+                        TrackedMetric.weightUnit = unit
                         weightUnit = raw
+                        // Also remember it with the account (best effort; the device setting is what's shown).
+                        if session.isSignedIn { Task { try? await session.api.setUnitSystem(unit.unitSystem) } }
                     }
                 )) {
                     ForEach(WeightUnit.allCases) { Text($0.label).tag($0.rawValue) }

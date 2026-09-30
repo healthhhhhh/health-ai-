@@ -34,7 +34,7 @@ extension APIClient {
         try await sendNoContent(.json("POST", "auth/resend-verification", Body(email: email), authenticated: false))
     }
 
-    /// Continue with Apple or Google. Phase 1 (Preview mode) signs in to the sample account; real OAuth is Phase 2.
+    /// Continue with Apple or Google. Phase 1 (Preview mode) signs in to the sample account; the real API answers 501 until OAuth is set up (Phase 2C).
     public func signIn(with provider: String) async throws -> AuthResponse {
         struct Body: Encodable { let provider: String; let timeZone: String }
         let response: AuthResponse = try await send(.json("POST", "auth/oauth", Body(provider: provider, timeZone: TimeZone.current.identifier), authenticated: false))
@@ -78,6 +78,12 @@ extension APIClient {
 
     public func updateProfile(_ details: ProfileDetails) async throws -> ProfileDetails {
         try await send(.json("PATCH", "me/profile", details))
+    }
+
+    /// Saves the preferred units with the account (the device keeps its own display choice too).
+    public func setUnitSystem(_ system: UnitSystem) async throws {
+        struct Body: Encodable { let unitSystem: UnitSystem }
+        let _: ProfileDetails = try await send(.json("PATCH", "me/profile", Body(unitSystem: system)))
     }
 
     public func addCondition(name: String, source: ProfileSource) async throws {
@@ -325,7 +331,7 @@ extension APIClient {
         return try await send(Endpoint("GET", "timeline", query: query))
     }
 
-    /// Edits an entry the person added. Preview mode only in Phase 1 (the API adds it in Phase 2).
+    /// Edits an entry the person added (device, document and AI entries can't be edited).
     public func updateTimelineEntry(_ id: String, title: String, occurredAt: Date, details: String?) async throws {
         struct Body: Encodable { let title: String; let occurredAt: Date; let details: String? }
         let _: TimelineEventRecord = try await send(.json("PATCH", "timeline/\(id)", Body(title: title, occurredAt: occurredAt, details: details ?? "")))

@@ -1,6 +1,6 @@
 import type { MeasurementKind } from "@healthmate/shared-types";
 
-/** Per-browser display choices (appearance and units). Kept in a cookie; nothing is sent to the server's database. */
+/** Per-browser display choices (appearance and units), kept in a cookie. Units are also saved with the account when signed in; no health data here. */
 export interface DisplayPrefs {
   theme: "system" | "light" | "dark";
   units: "metric" | "imperial";

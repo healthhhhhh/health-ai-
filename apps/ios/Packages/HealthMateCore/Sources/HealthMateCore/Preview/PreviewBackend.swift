@@ -362,6 +362,7 @@ public final class PreviewBackend: @unchecked Sendable {
                 for key in ["dateOfBirth", "sex", "timeZone"] where input.object[key] != nil { ctx.account["profile"]["profile"][key] = optionalText(input[key], 64) }
                 if input.object["heightCm"] != nil { ctx.account["profile"]["profile"]["heightCm"] = input["heightCm"].double.map { .number($0) } ?? .null }
                 if case .array(let goals) = input["goals"] { ctx.account["profile"]["profile"]["goals"] = .array(Array(goals.filter { $0.string != nil }.prefix(10))) }
+                if let units = input["unitSystem"].string, ["metric", "imperial"].contains(units) { ctx.account["profile"]["profile"]["unitSystem"] = .string(units) }
                 return json(ctx.account["profile"]["profile"])
             }
             if b == "conditions", c == nil, method == "POST" {

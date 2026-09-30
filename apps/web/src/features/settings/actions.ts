@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { api, ApiError, errorMessage } from "@/lib/api/server";
-import { clearSession } from "@/lib/api/session";
+import { ACCESS_COOKIE, clearSession } from "@/lib/api/session";
 import { DISPLAY_COOKIE, parseDisplayPrefs, type DisplayPrefs } from "@/lib/display-prefs";
 
 export interface DeleteState {
@@ -26,10 +26,15 @@ export async function deleteAccount(_prev: DeleteState, form: FormData): Promise
   redirect("/?deleted=1");
 }
 
-/** Saves appearance and units for this browser. */
+/** Saves appearance and units for this browser, and the units with the account when signed in. */
 export async function saveDisplayPrefs(prefs: DisplayPrefs): Promise<void> {
   const clean = parseDisplayPrefs(encodeURIComponent(JSON.stringify(prefs)));
-  (await cookies()).set(DISPLAY_COOKIE, encodeURIComponent(JSON.stringify(clean)), { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  const jar = await cookies();
+  jar.set(DISPLAY_COOKIE, encodeURIComponent(JSON.stringify(clean)), { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  if (jar.get(ACCESS_COOKIE)?.value) {
+    // Best effort: the browser's choice is what's shown either way.
+    await api("me/profile", { method: "PATCH", json: { unitSystem: clean.units } }).catch((error) => unstable_rethrow(error));
+  }
   revalidatePath("/", "layout");
 }
 

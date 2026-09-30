@@ -140,7 +140,7 @@ final class SessionStore {
         }
     }
 
-    /// Continue with Apple or Google (Phase 1: mocked in Preview mode).
+    /// Continue with Apple or Google (mocked in Preview mode; the real API says it isn't available until Phase 2C).
     func signIn(with provider: String) async -> Bool {
         await perform { _ = try await self.api.signIn(with: provider) }
     }

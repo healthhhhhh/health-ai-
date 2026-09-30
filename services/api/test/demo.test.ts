@@ -51,6 +51,9 @@ describe("demo mode", () => {
     expect(memories).toHaveLength(1);
     const plan = (await (await fetch(`${base}/plan`, { headers: auth })).json()) as { items: { source: string; kind: string }[] };
     expect(plan.items.map((i) => i.kind)).not.toContain("medication");
+    // Signed-in screenshots and UI tests land on Home, not first-run setup.
+    const account = (await (await fetch(`${base}/me/account`, { headers: auth })).json()) as { onboardingCompleted: boolean };
+    expect(account.onboardingCompleted).toBe(true);
   });
 
   it("labels chat answers as a demo and still applies the safety pipeline", async () => {

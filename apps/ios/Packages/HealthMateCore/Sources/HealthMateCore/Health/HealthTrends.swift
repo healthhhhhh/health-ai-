@@ -167,4 +167,6 @@ public enum WeightUnit: String, CaseIterable, Identifiable, Sendable {
     public static let poundsPerKilogram = 2.20462262
     public var id: String { rawValue }
     public var label: String { self == .kilograms ? "Kilograms (kg)" : "Pounds (lb)" }
+    /// The account-level unit system this display choice corresponds to.
+    public var unitSystem: UnitSystem { self == .pounds ? .imperial : .metric }
 }

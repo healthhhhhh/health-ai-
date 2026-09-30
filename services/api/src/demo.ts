@@ -43,6 +43,8 @@ export async function seed(base: string) {
   const registered = await call("auth/register", { ...DEMO_ACCOUNT, lastName: "", timeZone: "UTC" });
   const auth = registered && "accessToken" in registered ? registered : await call("auth/login", { email: DEMO_ACCOUNT.email, password: DEMO_ACCOUNT.password });
   const token = String(auth?.accessToken);
+  // The demo account has been set up already (clients otherwise open first-run setup).
+  await call("me/onboarding", undefined, token);
 
   const existing = (await call("memories", undefined, token, "GET")) as unknown as unknown[];
   if (Array.isArray(existing) && existing.length > 0) return; // already seeded (persistent database)

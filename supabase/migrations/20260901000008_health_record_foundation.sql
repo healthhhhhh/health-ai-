@@ -53,6 +53,9 @@ REVOKE EXECUTE ON FUNCTION public.handle_updated_auth_user() FROM PUBLIC, anon, 
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS goals text[] NOT NULL DEFAULT '{}';
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS unit_system text NOT NULL DEFAULT 'metric';
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_completed_at timestamptz;
+-- Accounts that existed before this migration were already set up in the
+-- apps (the flag was device-only); don't send them through first-run setup again.
+UPDATE profiles SET onboarding_completed_at = now() WHERE onboarding_completed_at IS NULL;
 ALTER TABLE profiles ADD CONSTRAINT profiles_goals_check CHECK (cardinality(goals) <= 10);
 ALTER TABLE profiles ADD CONSTRAINT profiles_unit_system_check CHECK (unit_system IN ('metric', 'imperial'));
 ALTER TABLE profiles ADD CONSTRAINT profiles_time_zone_length CHECK (char_length(time_zone) BETWEEN 1 AND 64);
