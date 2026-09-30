@@ -43,6 +43,13 @@ const schema = z.object({
   /** Server-side only. Never shipped to the iOS or web clients. */
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default("claude-opus-5-5"),
+  /**
+   * anthropic | development | none. Defaults to anthropic when ANTHROPIC_API_KEY
+   * is set, otherwise none (the assistant says it's unavailable). "development"
+   * is an offline, scripted provider that needs no key and costs nothing; it is
+   * refused in production.
+   */
+  AI_PROVIDER: z.enum(["anthropic", "development", "none"]).optional(),
   /** Error reporting. Events are scrubbed of health content before sending. */
   SENTRY_DSN: optionalUrl,
 
@@ -67,6 +74,7 @@ type Env = z.infer<typeof schema>;
 export type AppConfig = Env & {
   jwtSecret: string;
   aiEnabled: boolean;
+  aiProvider: "anthropic" | "development" | "none";
   authProvider: "local" | "supabase";
   storageProvider: "local" | "supabase";
   embeddingsProvider: "supabase" | "hash" | "none";
@@ -74,7 +82,9 @@ export type AppConfig = Env & {
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = schema.safeParse(env);
+  // `KEY=` in an env file means "not set" (Node's --env-file sets it to "").
+  const present = Object.fromEntries(Object.entries(env).filter(([, value]) => value !== undefined && value.trim() !== ""));
+  const parsed = schema.safeParse(present);
   if (!parsed.success) {
     const fields = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`Invalid configuration: ${fields}`);
@@ -86,9 +96,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const storageProvider = cfg.STORAGE_PROVIDER ?? (hasSupabase && cfg.SUPABASE_SECRET_KEY ? "supabase" : "local");
   const embeddingsProvider = cfg.EMBEDDINGS_PROVIDER ?? (hasSupabase && cfg.EMBED_FUNCTION_SECRET ? "supabase" : production ? "none" : "hash");
 
+  const aiProvider = cfg.AI_PROVIDER ?? (cfg.ANTHROPIC_API_KEY ? "anthropic" : "none");
+
   const need = (condition: boolean, message: string) => {
     if (condition) throw new Error(message);
   };
+  need(aiProvider === "anthropic" && !cfg.ANTHROPIC_API_KEY, "AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY");
   if (authProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_PUBLISHABLE_KEY || !cfg.SUPABASE_SECRET_KEY, "Supabase Auth needs SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY");
   if (storageProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY, "Supabase Storage needs SUPABASE_URL and SUPABASE_SECRET_KEY");
   if (embeddingsProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY || !cfg.EMBED_FUNCTION_SECRET, "Supabase embeddings need SUPABASE_URL, SUPABASE_SECRET_KEY and EMBED_FUNCTION_SECRET");
@@ -97,12 +110,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     need(storageProvider === "local", "Production must use Supabase Storage (STORAGE_PROVIDER=supabase)");
     need(embeddingsProvider === "hash", "The hash embeddings provider is for development only");
     need(authProvider === "local" && !cfg.JWT_SECRET, "JWT_SECRET is required for local auth in production");
+    need(aiProvider === "development", "The development AI provider is for development only");
   }
   return {
     ...cfg,
     // Dev/test only: a random per-process secret (local sessions reset on restart).
     jwtSecret: cfg.JWT_SECRET ?? randomBytes(48).toString("base64url"),
-    aiEnabled: Boolean(cfg.ANTHROPIC_API_KEY),
+    aiEnabled: aiProvider !== "none",
+    aiProvider,
     authProvider,
     storageProvider,
     embeddingsProvider,

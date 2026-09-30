@@ -22,7 +22,7 @@
 ## Before launch (decisions and work outside the codebase)
 
 - **Clinical review** of `packages/safety/src/rules.ts` (triage rules and escalation copy).
-- **AI provider key**: set `ANTHROPIC_API_KEY` on the server. Without it the assistant says it's unavailable; it never makes up an answer.
+- **AI provider key** (optional until launch): set `ANTHROPIC_API_KEY` on the server. Without it the assistant says it's unavailable; it never makes up an answer. Development runs without a key (`AI_PROVIDER=development`: offline scripted answers, labelled as demo).
 - **Supabase** (implemented — see `docs/backend-supabase-migration.md`): allow the build environment to reach the project, rotate the secret key that was shared in chat, turn on email confirmation + custom SMTP, deploy the `embed` function, and run `SUPABASE_LIVE_TEST=1` against a staging project. Set `HM_API_BASE_URL` for iOS release builds.
 - **Redis** (implemented): provision a managed Redis for shared rate limits and BullMQ, and run `npm run worker`.
 - **Compliance**: Supabase HIPAA add-on / BAA or regional equivalent, and a DPA, before storing real health data.

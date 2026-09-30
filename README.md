@@ -28,9 +28,27 @@ cd apps/ios && xcodegen generate && open HealthMate.xcodeproj   # ⌘R: the iOS 
   send (email confirmation, password reset), so those flows can be completed.
 - The password `wrong-password` shows the sign-in error.
 
-To run against the real API instead: web `HEALTHMATE_DATA_SOURCE=api`, iOS `HM_DATA_SOURCE: live`
-in `apps/ios/project.yml`, and start the API (below; `npm run demo -w @healthmate/api` runs a local
-demo server).
+To run against the real API instead: web `HEALTHMATE_DATA_SOURCE=api`, iOS `-hmDataSource live`
+(scheme launch argument) or `HM_DATA_SOURCE: live` in `apps/ios/project.yml`, and start the API
+(below; `npm run demo -w @healthmate/api` runs a local demo server).
+
+## Local API without a paid AI key
+
+No AI provider account is needed for development. `cp .env.example .env` works as is (empty values
+mean "not set"): the API uses an embedded database, local accounts and local storage, and the AI
+Health Assistant reports that it's unavailable. To exercise chat end to end for free, set
+`AI_PROVIDER=development` in `.env`: answers are scripted (no model is called), clearly labelled as
+demo answers, and list exactly which remembered facts and daily data retrieval selected, so memory
+recall, exclusion and past facts can be tested. Use synthetic test data only.
+
+```bash
+cp .env.example .env              # then set AI_PROVIDER=development (and PGLITE_DIR=.data/pglite to keep data)
+npm run build -w @healthmate/safety && npm run build -w @healthmate/api
+npm run start -w @healthmate/api  # log: "ai: development"
+```
+
+The Anthropic integration is unchanged: setting `ANTHROPIC_API_KEY` (and leaving `AI_PROVIDER`
+empty) switches to the real model.
 
 ## Set up with Supabase
 
@@ -43,7 +61,7 @@ demo server).
    (see [`docs/phase2-plan.md`](docs/phase2-plan.md) §4).
 2. **Environment**: `cp .env.example .env` and fill in `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
    `SUPABASE_SECRET_KEY` (*Project Settings → API Keys*), `DATABASE_URL` (*Connect → Transaction
-   pooler*), `ANTHROPIC_API_KEY`, `REDIS_URL` and `EMBED_FUNCTION_SECRET` (any random string of 24+
+   pooler*), optionally `ANTHROPIC_API_KEY`, `REDIS_URL` and `EMBED_FUNCTION_SECRET` (any random string of 24+
    characters). **Never commit `.env`**; the secret key and AI key are server-only.
 3. **Migrations** (tables, RLS policies, private buckets):
    ```bash

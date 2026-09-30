@@ -8,7 +8,7 @@ import type { AiProvider, AiRequest, AiResult } from "./ai.types";
  * request schema and the normal safety pipeline.
  */
 export class DemoAiProvider implements AiProvider {
-  readonly name = "demo";
+  readonly name: string = "demo";
   readonly available = true;
   readonly demo = true;
 

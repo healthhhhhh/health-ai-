@@ -64,7 +64,9 @@ told to ignore embedded instructions, and detected injection attempts are flagge
 - Migrations: `services/api/migrations` (mirrored to `supabase/migrations`). Production applies them
   in the deploy step (`npm run db:migrate`), not at start-up.
 - `ANTHROPIC_API_KEY` enables the AI features. Without it `/v1/meta` reports `ai.available: false` and
-  AI routes return `ai_unavailable`. The apps show this state; nothing is faked.
+  AI routes return `ai_unavailable`. The apps show this state; nothing is faked. For development
+  without a key, `AI_PROVIDER=development` gives offline scripted answers (`ai.demo: true`, so the
+  apps show their demo notice) that list the context retrieval selected; refused in production.
 - Every route except `auth/*` requires a session; every query filters by the caller's user ID, and
   Postgres Row Level Security enforces the same isolation independently. Every route is
   rate-limited. Audit logs record actions, never health content.

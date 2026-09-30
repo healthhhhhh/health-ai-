@@ -3,6 +3,7 @@ import type { AppConfig } from "./config";
 import { InProcessJobQueue, type JobQueue } from "./modules/documents/job-queue";
 import { AnthropicProvider, UnavailableProvider } from "./modules/ai/anthropic.provider";
 import type { AiProvider } from "./modules/ai/ai.types";
+import { DevelopmentAiProvider } from "./modules/ai/development.provider";
 import { LocalObjectStorage, SupabaseObjectStorage, type ObjectStorage } from "./modules/documents/storage";
 import { HashEmbeddingProvider, NoEmbeddingProvider, SupabaseEmbeddingProvider, type EmbeddingProvider } from "./modules/memory/embeddings";
 
@@ -27,8 +28,16 @@ export function embeddingsFor(config: AppConfig): EmbeddingProvider {
   }
 }
 
+/** The real model when configured; offline scripted answers for development; otherwise an honest "unavailable". */
 export function aiProviderFor(config: AppConfig): AiProvider {
-  return config.ANTHROPIC_API_KEY ? new AnthropicProvider(config.ANTHROPIC_API_KEY, config.AI_MODEL) : new UnavailableProvider();
+  switch (config.aiProvider) {
+    case "anthropic":
+      return new AnthropicProvider(config.ANTHROPIC_API_KEY!, config.AI_MODEL);
+    case "development":
+      return new DevelopmentAiProvider();
+    default:
+      return new UnavailableProvider();
+  }
 }
 
 /** Redis (BullMQ) when REDIS_URL is set; otherwise jobs run in this process. */
