@@ -34,7 +34,7 @@ extension APIClient {
         try await sendNoContent(.json("POST", "auth/resend-verification", Body(email: email), authenticated: false))
     }
 
-    /// Continue with Apple or Google. Phase 1 (Preview mode) signs in to the sample account; the real API answers 501 until OAuth is set up (Phase 2C).
+    /// Continue with Apple or Google. Phase 1 (Preview mode) signs in to the sample account; the real API answers 501 until OAuth is set up (Phase 2D).
     public func signIn(with provider: String) async throws -> AuthResponse {
         struct Body: Encodable { let provider: String; let timeZone: String }
         let response: AuthResponse = try await send(.json("POST", "auth/oauth", Body(provider: provider, timeZone: TimeZone.current.identifier), authenticated: false))

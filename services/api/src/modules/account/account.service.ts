@@ -70,7 +70,14 @@ export class AccountService {
          ORDER BY created_at`,
       ),
       measurements: q(`SELECT kind, value, unit, recorded_at, source FROM health_measurements WHERE user_id = $1 ORDER BY recorded_at`),
-      healthKit: q(`SELECT status, device_name, scopes, connected_at, disconnected_at, last_sync_at FROM healthkit_connections WHERE user_id = $1`),
+      dailyHealth: q(
+        `SELECT day::text AS day, kind, unit, value, min_value, max_value, sample_count, source, is_complete, time_zone, source_device, computed_at, updated_at
+           FROM daily_health_records WHERE user_id = $1 ORDER BY day, kind, source`,
+      ),
+      healthSyncRuns: q(`SELECT kind, status, days_sent, records_upserted, oldest_day::text AS oldest_day, newest_day::text AS newest_day, error_code, started_at, finished_at FROM health_sync_runs WHERE user_id = $1 ORDER BY started_at`),
+      healthKit: q(
+        `SELECT status, device_name, scopes, connected_at, disconnected_at, last_sync_at, history_status, history_from::text AS history_from, history_days_requested FROM healthkit_connections WHERE user_id = $1`,
+      ),
       timeline: q(`SELECT event_type, title, occurred_at, source_type, payload FROM timeline_events WHERE user_id = $1 ORDER BY occurred_at`),
       consents: q(`SELECT kind, granted, version, created_at FROM consents WHERE user_id = $1 ORDER BY created_at`),
       moodCheckIns: q(`SELECT mood, recorded_at FROM mood_checkins WHERE user_id = $1 ORDER BY recorded_at`),

@@ -6,8 +6,9 @@ real, long-lived health record. It is split so each part can be verified before 
 | Part | Scope | Status |
 |---|---|---|
 | **2A** | Real authentication (Supabase Auth, email/password), user profile and preferences, normalized longitudinal health schema with provenance, health-memory foundation, RLS/storage review, data controls | **this document** |
-| 2B | Real AI in chat/reports/photos on the new memory model (retrieval, confirmation UX, extraction into structured facts) | not started |
-| 2C | OAuth (Apple, Google), push notifications, HealthKit background sync | not started |
+| 2B | Daily health records and Apple Health (HealthKit): permissions, sync, history import, offline/error states — [`phase2b-plan.md`](phase2b-plan.md) | in progress |
+| 2C | Real AI in chat/reports/photos on the new memory model (retrieval, confirmation UX, extraction into structured facts) | not started |
+| 2D | OAuth (Apple, Google), push notifications | not started |
 
 Rules that apply to every part: [`CLAUDE.md`](../CLAUDE.md). Memory design:
 [`health-memory-architecture.md`](health-memory-architecture.md). Backend/Supabase details:
@@ -41,7 +42,7 @@ Rules that apply to every part: [`CLAUDE.md`](../CLAUDE.md). Memory design:
 | `GET/PUT /v1/me/notification-preferences` | Preview only | real (`notification_preferences`) |
 | `POST /v1/auth/change-password` | Preview only | real (local + Supabase) |
 | `POST /v1/auth/verify-email`, `POST /v1/auth/resend-verification` | Preview only | real (Supabase `token_hash` verification, resend) |
-| `POST /v1/auth/oauth` | Preview only | **kept unavailable** (501) — UI structure preserved, clients already say "isn't available on this server yet"; real OAuth is 2C |
+| `POST /v1/auth/oauth` | Preview only | **kept unavailable** (501) — UI structure preserved, clients already say "isn't available on this server yet"; real OAuth is 2D |
 | `GET/PATCH /v1/timeline/:id` | Preview only | real (own `user_entered` entries only) |
 | `PATCH /v1/conversations/:id` (rename) | Preview only | real |
 | `GET/PATCH /v1/care/providers/:id`, `GET /v1/care/appointments/:id` | Preview only | real |

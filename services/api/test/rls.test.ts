@@ -253,6 +253,24 @@ describe("Phase 2A tables and policies", () => {
   });
 });
 
+describe("Phase 2B daily health data", () => {
+  it("lets people read only their own daily records and sync runs, written only by the server", async () => {
+    await db.query(`INSERT INTO daily_health_records (user_id, day, kind, unit, value, source, time_zone) VALUES ($1, '2026-09-01', 'steps', 'count', 8000, 'apple_health', 'UTC')`, [alice]);
+    await db.query(`INSERT INTO health_sync_runs (user_id, kind) VALUES ($1, 'manual')`, [alice]);
+    for (const table of ["daily_health_records", "health_sync_runs", "daily_health_summary"]) {
+      await as(alice, async (q) => expect(await count(q, `SELECT 1 FROM ${table}`), `${table} (owner)`).toBeGreaterThan(0));
+      await as(bob, async (q) => expect(await count(q, `SELECT 1 FROM ${table} WHERE user_id = $1`, [alice]), `${table} (other)`).toBe(0));
+      await expect(as(null, (q) => q.query(`SELECT 1 FROM ${table}`))).rejects.toThrow(/permission denied/);
+    }
+    // Values are validated by the API (bounds, consent): no direct writes, even to one's own rows.
+    await expect(
+      as(alice, (q) => q.query(`INSERT INTO daily_health_records (user_id, day, kind, unit, value, source, time_zone) VALUES ($1, '2026-09-02', 'steps', 'count', 1, 'apple_health', 'UTC')`, [alice])),
+    ).rejects.toThrow(/row-level security/);
+    expect(await changed(alice, `UPDATE daily_health_records SET value = 1 WHERE user_id = $1 RETURNING id`, [alice])).toBe(0);
+    expect(await changed(alice, `DELETE FROM health_sync_runs WHERE user_id = $1 RETURNING id`, [alice])).toBe(0);
+  });
+});
+
 describe("storage policies", () => {
   it("keeps medical buckets private and each person's folder their own", async () => {
     const { rows } = await db.query<{ id: string; public: boolean }>(`SELECT id, public FROM storage.buckets WHERE id IN ('avatars', 'health-images', 'medical-reports') ORDER BY id`);

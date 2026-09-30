@@ -97,10 +97,10 @@ describe("HealthKit connection", () => {
     expect((await ctx.http.get("/v1/healthkit/connection").set(user.auth).expect(200)).body.status).toBe("never_connected");
     await ctx.http.put("/v1/healthkit/connection").set(user.auth).send({ deviceName: "iPhone", scopes: ["steps", "heart_rate"] }).expect(200);
     await ctx.http
-      .post("/v1/health-data/measurements")
+      .put("/v1/health-data/daily")
       .set(user.auth)
-      .send({ measurements: [{ kind: "steps", value: 5000, recordedAt: new Date().toISOString(), source: "apple_health", externalId: "hk-1" }] })
-      .expect(201);
+      .send({ timeZone: "UTC", records: [{ day: new Date().toISOString().slice(0, 10), kind: "steps", value: 5000, isComplete: false, computedAt: new Date().toISOString() }] })
+      .expect(200);
     const connected = (await ctx.http.get("/v1/healthkit/connection").set(user.auth).expect(200)).body;
     expect(connected).toMatchObject({ status: "connected", deviceName: "iPhone", scopes: ["steps", "heart_rate"] });
     expect(connected.lastSyncAt).not.toBeNull();

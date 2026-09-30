@@ -152,23 +152,29 @@ describe("image analysis", () => {
 });
 
 describe("health data", () => {
-  it("ingests idempotently and builds daily trends", async () => {
+  it("accepts whole days from older iOS versions, idempotently, and builds daily trends", async () => {
     const user = await signUp(ctx);
-    const now = new Date();
-    const sample = (id: string, value: number, daysAgo: number) => ({
+    const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+    const sample = (value: number, daysAgo: number) => ({
       kind: "steps",
       value,
-      recordedAt: new Date(now.getTime() - daysAgo * 86_400_000).toISOString(),
+      recordedAt: `${day(daysAgo)}T12:00:00Z`,
       source: "apple_health",
-      externalId: id,
+      externalId: `apple_health:steps:${day(daysAgo)}`,
     });
-    const body = { measurements: [sample("a", 4000, 1), sample("b", 2000, 1), sample("c", 6000, 2)] };
+    const body = { measurements: [sample(6000, 1), sample(6000, 2)] };
     const first = await ctx.http.post("/v1/health-data/measurements").set(user.auth).send(body).expect(201);
-    expect(first.body.inserted).toBe(3);
+    expect(first.body.inserted).toBe(2);
     const again = await ctx.http.post("/v1/health-data/measurements").set(user.auth).send(body).expect(201);
     expect(again.body.inserted).toBe(0);
     const trend = await ctx.http.get("/v1/health-data/trends?kind=steps&days=7").set(user.auth).expect(200);
-    expect(trend.body.points.map((p: { value: number }) => p.value).sort()).toEqual([6000, 6000]);
+    expect(trend.body.points.map((p: { value: number }) => p.value)).toEqual([6000, 6000]);
+    // Raw Apple Health samples would double-count iPhone + Watch: they must come as daily records.
+    await ctx.http
+      .post("/v1/health-data/measurements")
+      .set(user.auth)
+      .send({ measurements: [{ kind: "steps", value: 40, recordedAt: new Date().toISOString(), source: "apple_health", externalId: "hk-sample-1" }] })
+      .expect(400);
   });
 
   it("rejects implausible values", async () => {
@@ -185,7 +191,12 @@ describe("health data", () => {
     await ctx.http
       .post("/v1/health-data/measurements")
       .set(user.auth)
-      .send({ measurements: [{ kind: "steps", value: 10, recordedAt: new Date().toISOString(), source: "apple_health" }] })
+      .send({ measurements: [{ kind: "steps", value: 10, recordedAt: "2026-09-01T12:00:00Z", source: "apple_health", externalId: "apple_health:steps:2026-09-01" }] })
+      .expect(403);
+    await ctx.http
+      .put("/v1/health-data/daily")
+      .set(user.auth)
+      .send({ timeZone: "UTC", records: [{ day: "2026-09-01", kind: "steps", value: 10, isComplete: true, computedAt: "2026-09-02T08:00:00Z" }] })
       .expect(403);
   });
 });

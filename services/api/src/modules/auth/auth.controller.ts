@@ -108,7 +108,7 @@ export class AuthController {
 
   /**
    * Continue with Apple / Google: the UI is in place, the provider setup
-   * arrives in Phase 2C. Clients show "isn't available on this server yet".
+   * arrives in Phase 2D. Clients show "isn't available on this server yet".
    */
   @Post("oauth")
   @RateLimit("auth-oauth", 10, 60_000)
