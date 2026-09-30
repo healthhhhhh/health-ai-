@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { Logger } from "@nestjs/common";
-import { aiProviderFor, rateLimitStoreFor, storageFor } from "./adapters";
+import { aiProvidersFor, rateLimitStoreFor, storageFor } from "./adapters";
 import { createApp } from "./bootstrap";
 import { loadConfig } from "./config";
 import { createDatabase } from "./db/database";
@@ -18,7 +18,8 @@ async function main() {
   const logger = new Logger("Worker");
   const database = await createDatabase({ url: config.DATABASE_URL, pgliteDir: config.PGLITE_DIR, caCert: config.DATABASE_CA_CERT });
   const jobQueue = new BullJobQueue(config.REDIS_URL, { runWorker: true });
-  const app = await createApp({ config, database, aiProvider: aiProviderFor(config), storage: storageFor(config), jobQueue, rateLimitStore: await rateLimitStoreFor(config) });
+  const aiProviders = aiProvidersFor(config);
+  const app = await createApp({ config, database, aiProvider: aiProviders.default, aiProviders, storage: storageFor(config), jobQueue, rateLimitStore: await rateLimitStoreFor(config) });
   startMaintenance(app);
   logger.log(`HealthMate worker running (storage: ${config.storageProvider}, embeddings: ${config.embeddingsProvider})`);
 }

@@ -172,14 +172,21 @@ export class ChatService {
     ];
     const messages: AiMessage[] = [...history, { role: "user", content: text }];
 
+    // Urgent symptoms and medication questions go to the "complex_health" route; urgent ones
+    // are safety-critical, so the monthly cost limit never stops them.
+    const task = urgent || result.medicationChangeRequest ? "complex_health" : "health_chat";
+    const ask = (system: string[]) => this.ai.generate({ task, system, messages, schema: ChatAnswerSchema, userId, safetyCritical: urgent });
+
     let answer: ChatAnswer;
     let safetyAdjusted = false;
     try {
-      answer = (await this.ai.generate({ feature: "chat", system: baseSystem, messages, schema: ChatAnswerSchema, effort: "medium", userId })).data;
-      let issues = this.review(answer);
+      let generated = await ask(baseSystem);
+      answer = generated.data;
+      let issues = generated.issues;
       if (issues.length) {
-        answer = (await this.ai.generate({ feature: "chat", system: [...baseSystem, REWRITE_NOTE(issues)], messages, schema: ChatAnswerSchema, effort: "medium", userId })).data;
-        issues = this.review(answer);
+        generated = await ask([...baseSystem, REWRITE_NOTE(issues)]);
+        answer = generated.data;
+        issues = generated.issues;
       }
       if (issues.length) {
         safetyAdjusted = true;
@@ -210,11 +217,6 @@ export class ChatService {
         safetyAdjusted,
       },
     };
-  }
-
-  private review(answer: ChatAnswer): string[] {
-    const texts = [answer.answer, answer.careRecommendation?.text ?? "", answer.followUp?.question ?? "", ...answer.warningSigns];
-    return [...new Set(texts.flatMap((t) => reviewAssistantText(t)))];
   }
 
   private async history(userId: string, conversationId: string): Promise<AiMessage[]> {

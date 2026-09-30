@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { parsePrices, type ModelPrice } from "./modules/ai/ai.pricing";
+import { parseRoutes, type AiProviderName, type AiRoutes } from "./modules/ai/ai.routing";
 
 const optionalUrl = z.string().url().optional();
 
@@ -68,6 +70,12 @@ const schema = z.object({
    * refused in production.
    */
   AI_PROVIDER: z.enum(["anthropic", "development", "none"]).optional(),
+  /** Per-task routing: `task=provider[:model][@effort]`, comma-separated (see ai.routing.ts). */
+  AI_ROUTES: z.string().optional(),
+  /** Price overrides, USD per million tokens: `model=input/output[/cacheRead/cacheWrite]`. */
+  AI_PRICES: z.string().optional(),
+  /** Internal monthly AI cost limit per person (USD). 0 turns it off. Never shown to people. */
+  AI_MONTHLY_USER_BUDGET_USD: z.coerce.number().min(0).default(5),
   /** Error reporting. Events are scrubbed of health content before sending. */
   SENTRY_DSN: optionalUrl,
 
@@ -93,6 +101,10 @@ export type AppConfig = Env & {
   jwtSecret: string;
   aiEnabled: boolean;
   aiProvider: "anthropic" | "development" | "none";
+  /** Every provider some task can use (the default first). */
+  aiProvidersInUse: AiProviderName[];
+  aiRoutes: AiRoutes;
+  aiPrices: Record<string, ModelPrice>;
   googleClientIds: string[];
   pushProvider: "log" | "apns" | "none";
   /** 32 bytes, or null when device tokens can't be stored (production without PUSH_TOKEN_KEY). */
@@ -123,7 +135,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const need = (condition: boolean, message: string) => {
     if (condition) throw new Error(message);
   };
-  need(aiProvider === "anthropic" && !cfg.ANTHROPIC_API_KEY, "AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY");
+  const parsedAi = (() => {
+    try {
+      return { ...parseRoutes(cfg.AI_ROUTES), prices: parsePrices(cfg.AI_PRICES) };
+    } catch (error) {
+      throw new Error(`Invalid configuration: ${error instanceof Error ? error.message : "AI_ROUTES/AI_PRICES"}`);
+    }
+  })();
+  const aiProvidersInUse = [...new Set<AiProviderName>([aiProvider, ...parsedAi.providers])];
+  need(aiProvidersInUse.includes("anthropic") && !cfg.ANTHROPIC_API_KEY, "AI_PROVIDER=anthropic (or an AI_ROUTES entry using it) needs ANTHROPIC_API_KEY");
 
   const googleClientIds = (cfg.GOOGLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
   const pushProvider = cfg.PUSH_PROVIDER ?? (production ? "none" : "log");
@@ -141,7 +161,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     need(storageProvider === "local", "Production must use Supabase Storage (STORAGE_PROVIDER=supabase)");
     need(embeddingsProvider === "hash", "The hash embeddings provider is for development only");
     need(authProvider === "local" && !cfg.JWT_SECRET, "JWT_SECRET is required for local auth in production");
-    need(aiProvider === "development", "The development AI provider is for development only");
+    need(aiProvidersInUse.includes("development"), "The development AI provider is for development only");
   }
   return {
     ...cfg,
@@ -149,6 +169,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     jwtSecret: cfg.JWT_SECRET ?? randomBytes(48).toString("base64url"),
     aiEnabled: aiProvider !== "none",
     aiProvider,
+    aiProvidersInUse,
+    aiRoutes: parsedAi.routes,
+    aiPrices: parsedAi.prices,
     googleClientIds,
     pushProvider,
     pushTokenKey,

@@ -33,7 +33,7 @@ async function upload(ctx: TestContext, auth: Record<string, string>, kind: "rep
 describe("medical reports", () => {
   it("uploads via a signed URL, processes in the background and adds a timeline entry", async () => {
     const user = await signUp(ctx);
-    ctx.ai.on("document_extraction", () => extraction());
+    ctx.ai.on("report_analysis", () => extraction());
     const id = await upload(ctx, user.auth, "report", PDF, "application/pdf");
     const started = await ctx.http.post(`/v1/documents/${id}/process`).set(user.auth).send({}).expect(202);
     expect(started.body.status).toBe("processing");
@@ -69,7 +69,7 @@ describe("medical reports", () => {
 
   it("flags prompt injection and neutralises unsafe explanations", async () => {
     const user = await signUp(ctx);
-    ctx.ai.on("document_extraction", () =>
+    ctx.ai.on("report_analysis", () =>
       extraction({ containsInstructionsToAi: true, summary: "You definitely have heart disease.", findings: [{ ...extraction().findings[0], explanation: "Increase your dose to 40 mg." }] }),
     );
     const id = await upload(ctx, user.auth, "report", PDF, "application/pdf");
@@ -96,7 +96,7 @@ describe("medical reports", () => {
   it("keeps each user's documents private and deletes files", async () => {
     const a = await signUp(ctx);
     const b = await signUp(ctx);
-    ctx.ai.on("document_extraction", () => extraction());
+    ctx.ai.on("report_analysis", () => extraction());
     const id = await upload(ctx, a.auth, "report", PDF, "application/pdf");
     await ctx.http.get(`/v1/documents/${id}`).set(b.auth).expect(404);
     await ctx.http.delete(`/v1/documents/${id}`).set(a.auth).expect(204);

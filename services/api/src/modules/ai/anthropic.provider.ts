@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Logger } from "@nestjs/common";
 import { z } from "zod";
-import { AiDeclinedError, AiInvalidOutputError, AiUnavailableError, type AiContentPart, type AiProvider, type AiRequest, type AiResult } from "./ai.types";
+import { AiDeclinedError, AiInvalidOutputError, AiUnavailableError, type AiContentPart, type AiProvider, type AiProviderRequest, type AiProviderResponse } from "./ai.types";
 
 /** Turns a zod schema into the JSON Schema used for structured outputs. */
 export function toJsonSchema(schema: z.ZodType): Record<string, unknown> {
@@ -29,7 +29,8 @@ function toBlocks(content: string | AiContentPart[]): string | Block[] {
 /**
  * Claude via the Messages API. Server-side only: the API key never leaves the
  * backend. Uses structured outputs so every response is schema-constrained,
- * and server-side refusal fallbacks (`fallbacks: "default"`).
+ * and server-side refusal fallbacks (`fallbacks: "default"`). The model comes
+ * from the gateway's route; the answer is validated by the gateway.
  */
 export class AnthropicProvider implements AiProvider {
   readonly name = "anthropic";
@@ -39,27 +40,27 @@ export class AnthropicProvider implements AiProvider {
 
   constructor(
     apiKey: string,
-    private readonly model: string,
+    readonly defaultModel: string,
     /** Tests pass a fetch stub to check the exact request sent to the Messages API. */
     options: { fetch?: typeof fetch; maxRetries?: number } = {},
   ) {
     this.client = new Anthropic({ apiKey, maxRetries: options.maxRetries ?? 2, timeout: 120_000, ...(options.fetch ? { fetch: options.fetch } : {}) });
   }
 
-  async generate<T>(request: AiRequest<T>): Promise<AiResult<T>> {
+  async generate(request: AiProviderRequest): Promise<AiProviderResponse> {
     const [stable, ...dynamic] = request.system;
     const system: Anthropic.Beta.Messages.BetaTextBlockParam[] = [
       { type: "text", text: stable ?? "", cache_control: { type: "ephemeral" } },
       ...dynamic.filter(Boolean).map((text) => ({ type: "text" as const, text })),
     ];
     const params = {
-      model: this.model,
-      max_tokens: 16_000,
+      model: request.model,
+      max_tokens: request.maxOutputTokens,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       system,
       messages: request.messages.map((m) => ({ role: m.role, content: toBlocks(m.content) })),
-      output_config: { effort: request.effort ?? "medium", format: { type: "json_schema", schema: toJsonSchema(request.schema) } },
+      output_config: { effort: request.effort, format: { type: "json_schema", schema: toJsonSchema(request.schema) } },
     } as unknown as Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
 
     let response: Anthropic.Beta.Messages.BetaMessage;
@@ -68,14 +69,14 @@ export class AnthropicProvider implements AiProvider {
     } catch (error) {
       if (error instanceof Anthropic.APIError) {
         // Status only — never log prompts or health content.
-        this.logger.warn(`Anthropic API error ${error.status ?? "network"} for ${request.feature}`);
+        this.logger.warn(`Anthropic API error ${error.status ?? "network"} for ${request.task}`);
       }
       throw new AiUnavailableError();
     }
 
     if (response.stop_reason === "refusal") {
       // The whole fallback chain declined. Category only — never content.
-      this.logger.warn(`Model declined ${request.feature} (${(response as { stop_details?: { category?: string | null } }).stop_details?.category ?? "no category"})`);
+      this.logger.warn(`Model declined ${request.task} (${(response as { stop_details?: { category?: string | null } }).stop_details?.category ?? "no category"})`);
       throw new AiDeclinedError();
     }
     // A cut-off answer can't be valid JSON; say so rather than guessing.
@@ -84,18 +85,21 @@ export class AnthropicProvider implements AiProvider {
       .filter((b): b is Anthropic.Beta.Messages.BetaTextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-    let json: unknown;
+    let data: unknown;
     try {
-      json = JSON.parse(text);
+      data = JSON.parse(text);
     } catch {
       throw new AiInvalidOutputError();
     }
-    const parsed = request.schema.safeParse(json);
-    if (!parsed.success) throw new AiInvalidOutputError();
     return {
-      data: parsed.data,
+      data,
       model: response.model,
-      usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens },
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+      },
     };
   }
 }
@@ -104,7 +108,8 @@ export class AnthropicProvider implements AiProvider {
 export class UnavailableProvider implements AiProvider {
   readonly name = "unavailable";
   readonly available = false;
-  async generate<T>(): Promise<AiResult<T>> {
+  readonly defaultModel = "none";
+  async generate(): Promise<AiProviderResponse> {
     throw new AiUnavailableError("No AI provider is configured on this server.");
   }
 }

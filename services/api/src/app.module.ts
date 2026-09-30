@@ -8,8 +8,8 @@ import { CONFIG, type AppConfig } from "./config";
 import { DATABASE, type Database } from "./db/database";
 import { AccountController } from "./modules/account/account.controller";
 import { AccountService } from "./modules/account/account.service";
-import { AiGateway } from "./modules/ai/ai.gateway";
-import { AI_PROVIDER, type AiProvider } from "./modules/ai/ai.types";
+import { AiGateway, registryOf, type AiProviderRegistry } from "./modules/ai/ai.gateway";
+import { AI_PROVIDERS, type AiProvider } from "./modules/ai/ai.types";
 import { AuthController, IdentitiesController } from "./modules/auth/auth.controller";
 import { ID_TOKEN_VERIFIERS, idTokenVerifiersFor, type IdTokenVerifiers } from "./modules/auth/oauth";
 import { PUSH_PROVIDER, pushProviderFor, type PushProvider } from "./modules/notifications/push";
@@ -42,7 +42,7 @@ import { TimelineService } from "./modules/timeline/timeline.service";
 
 @Controller()
 class HealthController {
-  constructor(@Inject(AI_PROVIDER) private readonly ai: AiProvider) {}
+  constructor(@Inject(AiGateway) private readonly ai: AiGateway) {}
 
   /** Liveness probe. */
   @Get("health")
@@ -53,7 +53,7 @@ class HealthController {
   /** Lets clients show an honest "AI unavailable" state instead of failing late. */
   @Get("v1/meta")
   meta() {
-    return { apiVersion: 1, ai: { available: this.ai.available, demo: this.ai.demo === true } };
+    return { apiVersion: 1, ai: { available: this.ai.available, demo: this.ai.demo } };
   }
 }
 
@@ -68,7 +68,10 @@ class DatabaseCloser implements OnApplicationShutdown {
 export interface AppDependencies {
   config: AppConfig;
   database: Database;
+  /** The default AI provider (every task without its own route). */
   aiProvider: AiProvider;
+  /** Every routable provider (defaults to just `aiProvider`). Features reach them only through AiGateway. */
+  aiProviders?: AiProviderRegistry;
   storage: ObjectStorage;
   /** Defaults from config: in-process queue, embeddings per EMBEDDINGS_PROVIDER, identity per AUTH_PROVIDER. */
   jobQueue?: JobQueue;
@@ -89,7 +92,7 @@ export class AppModule {
     const providers: Provider[] = [
       { provide: CONFIG, useValue: deps.config },
       { provide: DATABASE, useValue: deps.database },
-      { provide: AI_PROVIDER, useValue: deps.aiProvider },
+      { provide: AI_PROVIDERS, useFactory: () => deps.aiProviders ?? registryOf(deps.aiProvider) },
       { provide: STORAGE, useValue: deps.storage },
       { provide: APP_FILTER, useClass: ErrorFilter },
       DatabaseCloser,

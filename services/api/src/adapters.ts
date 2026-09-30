@@ -4,6 +4,8 @@ import { InProcessJobQueue, type JobQueue } from "./modules/documents/job-queue"
 import { AnthropicProvider, UnavailableProvider } from "./modules/ai/anthropic.provider";
 import type { AiProvider } from "./modules/ai/ai.types";
 import { DevelopmentAiProvider } from "./modules/ai/development.provider";
+import { registryOf, type AiProviderRegistry } from "./modules/ai/ai.gateway";
+import type { AiProviderName } from "./modules/ai/ai.routing";
 import { LocalObjectStorage, SupabaseObjectStorage, type ObjectStorage } from "./modules/documents/storage";
 import { HashEmbeddingProvider, NoEmbeddingProvider, SupabaseEmbeddingProvider, type EmbeddingProvider } from "./modules/memory/embeddings";
 
@@ -28,9 +30,8 @@ export function embeddingsFor(config: AppConfig): EmbeddingProvider {
   }
 }
 
-/** The real model when configured; offline scripted answers for development; otherwise an honest "unavailable". */
-export function aiProviderFor(config: AppConfig): AiProvider {
-  switch (config.aiProvider) {
+function buildProvider(config: AppConfig, name: AiProviderName): AiProvider {
+  switch (name) {
     case "anthropic":
       return new AnthropicProvider(config.ANTHROPIC_API_KEY!, config.AI_MODEL);
     case "development":
@@ -38,6 +39,17 @@ export function aiProviderFor(config: AppConfig): AiProvider {
     default:
       return new UnavailableProvider();
   }
+}
+
+/** The default provider: the real model when configured; offline scripted answers for development; otherwise an honest "unavailable". */
+export function aiProviderFor(config: AppConfig): AiProvider {
+  return buildProvider(config, config.aiProvider);
+}
+
+/** Every provider a task can be routed to (`AI_PROVIDER` first, then those named in `AI_ROUTES`). */
+export function aiProvidersFor(config: AppConfig): AiProviderRegistry {
+  const [first, ...rest] = config.aiProvidersInUse.map((name) => buildProvider(config, name));
+  return registryOf(first!, rest);
 }
 
 /** Redis (BullMQ) when REDIS_URL is set; otherwise jobs run in this process. */

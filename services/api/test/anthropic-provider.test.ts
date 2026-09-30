@@ -36,7 +36,9 @@ const message = (text: string, extra: Record<string, unknown> = {}) => ({
 });
 
 const request = {
-  feature: "chat" as const,
+  task: "health_chat" as const,
+  model: "claude-opus-5-5",
+  maxOutputTokens: 16_000,
   system: [CHAT_SYSTEM_PROMPT, contextBlock({ today: "2026-09-30", profileSummary: "", memorySection: "Current:\n- none relevant", dailyHealth: [] })],
   messages: [{ role: "user" as const, content: "I have a headache" }],
   schema: ChatAnswerSchema,
@@ -52,8 +54,8 @@ describe("Anthropic provider (real SDK, stubbed HTTP)", () => {
     const { fetchImpl, calls } = stub(() => ({ body: message(JSON.stringify(chatAnswer())) }));
     const provider = new AnthropicProvider("sk-test-not-real", "claude-opus-5-5", { fetch: fetchImpl, maxRetries: 0 });
     const result = await provider.generate(request);
-    expect(result.data.answer).toContain("headache");
-    expect(result.usage).toEqual({ inputTokens: 1200, outputTokens: 180 });
+    expect((result.data as { answer: string }).answer).toContain("headache"); // parsed, validated by the gateway
+    expect(result.usage).toEqual({ inputTokens: 1200, outputTokens: 180, cacheReadTokens: 0, cacheWriteTokens: 0 });
 
     const { url, headers, body } = calls[0]!;
     expect(url).toMatch(/\/v1\/messages(\?beta=true)?$/);
@@ -74,12 +76,20 @@ describe("Anthropic provider (real SDK, stubbed HTTP)", () => {
     expect(body.messages).toEqual([{ role: "user", content: "I have a headache" }]);
   });
 
+  it("sends the routed model and output limit, and reports cache usage", async () => {
+    const { fetchImpl, calls } = stub(() => ({ body: message(JSON.stringify(chatAnswer()), { model: "claude-sonnet-5-5", usage: { input_tokens: 50, output_tokens: 60, cache_read_input_tokens: 4000, cache_creation_input_tokens: 300 } }) }));
+    const provider = new AnthropicProvider("k", "claude-opus-5-5", { fetch: fetchImpl, maxRetries: 0 });
+    const result = await provider.generate({ ...request, task: "summarization", model: "claude-sonnet-5-5", maxOutputTokens: 4_000, effort: "low" });
+    expect(calls[0]!.body).toMatchObject({ model: "claude-sonnet-5-5", max_tokens: 4_000, output_config: { effort: "low" } });
+    expect(result).toMatchObject({ model: "claude-sonnet-5-5", usage: { inputTokens: 50, outputTokens: 60, cacheReadTokens: 4000, cacheWriteTokens: 300 } });
+  });
+
   it("treats a refusal, a cut-off answer, invalid JSON and API errors honestly", async () => {
     const declined = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ body: message("", { content: [], stop_reason: "refusal", stop_details: { type: "refusal", category: "bio", explanation: null } }) })).fetchImpl, maxRetries: 0 });
     await expect(declined.generate(request)).rejects.toBeInstanceOf(AiDeclinedError);
     const cut = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ body: message('{"answer": "par', { stop_reason: "max_tokens" }) })).fetchImpl, maxRetries: 0 });
     await expect(cut.generate(request)).rejects.toBeInstanceOf(AiInvalidOutputError);
-    const garbled = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ body: message(JSON.stringify({ answer: 5 })) })).fetchImpl, maxRetries: 0 });
+    const garbled = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ body: message("not json {") })).fetchImpl, maxRetries: 0 });
     await expect(garbled.generate(request)).rejects.toBeInstanceOf(AiInvalidOutputError);
     const down = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ status: 529, body: { type: "error", error: { type: "overloaded_error", message: "Overloaded" } } })).fetchImpl, maxRetries: 0 });
     await expect(down.generate(request)).rejects.toBeInstanceOf(AiUnavailableError);

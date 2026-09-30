@@ -1,4 +1,4 @@
-import type { AiRequest, AiResult } from "./ai.types";
+import type { AiProviderRequest, AiProviderResponse } from "./ai.types";
 import { DemoAiProvider } from "./demo.provider";
 
 /**
@@ -12,17 +12,12 @@ import { DemoAiProvider } from "./demo.provider";
  */
 export class DevelopmentAiProvider extends DemoAiProvider {
   override readonly name: string = "development";
+  override readonly defaultModel: string = "development-offline";
 
-  override async generate<T>(request: AiRequest<T>): Promise<AiResult<T>> {
-    if (request.feature !== "chat") return super.generate(request);
-    const data = request.schema.parse({
-      answer: developmentAnswer(request.system),
-      followUp: null,
-      warningSigns: [],
-      careRecommendation: null,
-      memorySuggestions: [],
-    });
-    return { data, model: "development-offline", usage: { inputTokens: 0, outputTokens: 0 } };
+  override async generate(request: AiProviderRequest): Promise<AiProviderResponse> {
+    if (request.task !== "health_chat" && request.task !== "complex_health") return super.generate(request);
+    const data = { answer: developmentAnswer(request.system), followUp: null, warningSigns: [], careRecommendation: null, memorySuggestions: [] };
+    return { data, model: this.defaultModel, usage: { inputTokens: 0, outputTokens: 0 } };
   }
 }
 

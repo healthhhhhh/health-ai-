@@ -47,13 +47,44 @@ The iOS app lives beside the TypeScript workspace rather than inside a JS framew
    is **not** called. Urgent cases always carry an "urgent" care recommendation.
 3. **Context**: profile, conditions, allergies, medications (verbatim) and confirmed memories. AI
    inferences are never stored as confirmed history; the person confirms memory suggestions.
-4. **Structured answer** (JSON schema) from the AI gateway.
-5. **Review** of the answer (overconfident diagnosis, dosing directions). Failing answers are
-   regenerated once, then replaced with a safe fallback.
+4. **Structured answer** (JSON schema) from the AI gateway — task `health_chat`, or `complex_health`
+   for urgent symptoms and medication questions.
+5. **Validation** by the gateway: schema first, then content (overconfident diagnosis, dosing
+   directions). Failing answers are regenerated once, then replaced with a safe fallback.
 6. Medication-change requests always get the fixed "talk to your prescriber" notice.
 
 Uploaded documents and photos are untrusted input: the server checks file signatures, the AI is
 told to ignore embedded instructions, and detected injection attempts are flagged in the result.
+
+## AI Gateway (services/api/src/modules/ai)
+
+Features never call an AI provider: they ask `AiGateway.generate({ task, userId, system, messages,
+schema, safetyCritical? })`, the single entry point (enforced by an architecture test).
+
+```
+feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► cost check ──► AiProvider.generate
+                │                                                               │
+                ◄── schema validation ◄── content validation ◄──────────────────┘
+                └── ai_usage row (task, provider, model, period, tokens, estimated + priced cost, status)
+```
+
+- **Tasks**: `health_chat`, `complex_health`, `report_analysis`, `image_analysis`,
+  `task_generation`, `summarization` (`ai.tasks.ts`: effort, output limits, validators, and the
+  output contracts for the last two).
+- **Providers** implement `AiProvider` (`ai.types.ts`): `anthropic`, `development` (offline, free),
+  `demo`, `unavailable`. They only generate; keys stay inside them, server-side. Adding Gemini or
+  OpenAI = one class implementing `generate()`, one case in `adapters.ts`, one provider name in
+  `ai.routing.ts`, and prices in `ai.pricing.ts` / `AI_PRICES`. Nothing else changes.
+- **Routing**: `AI_PROVIDER` serves every task; `AI_ROUTES` overrides per task
+  (`complex_health=anthropic:claude-opus-5-5@high`).
+- **Cost protection**: before a paid call, the gateway estimates its cost and refuses it if the
+  person's spend this month (UTC) would pass `AI_MONTHLY_USER_BUDGET_USD` (default $5). People see
+  only "AI unavailable" — never balances or credits. Safety-critical requests (urgent symptoms) are
+  never refused; emergencies never reach a model at all.
+- **Accounting**: `ai_usage` (server-only, no health content) keeps user, billing period, task,
+  provider, model, input/output/cache tokens, estimated and priced cost, status (`ok`, `flagged`,
+  `invalid_output`, `declined`, `unavailable`, `budget_exceeded`, `error`) and whether the request
+  was safety-critical. Pruned after `AI_USAGE_RETENTION_DAYS`.
 
 ## API (services/api)
 

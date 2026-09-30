@@ -94,7 +94,7 @@ describe.skipIf(!live)("Supabase (live)", () => {
   it("stores reports privately in Storage and isolates people across API, Data API and Storage", async () => {
     const alice = await user("Alice");
     const bob = await user("Bob");
-    ai.on("document_extraction", () => ({
+    ai.on("report_analysis", () => ({
       readable: true,
       documentType: "lab_results",
       summary: "Test summary.",

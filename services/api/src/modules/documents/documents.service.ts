@@ -1,11 +1,11 @@
-import { detectPromptInjection, reviewAssistantText, triage } from "@healthmate/safety";
+import { reviewAssistantText, triage } from "@healthmate/safety";
 import { HttpStatus, Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { AuditService } from "../../common/audit";
 import { ApiError, notFound } from "../../common/errors";
 import { DATABASE, type Database } from "../../db/database";
 import { AiGateway } from "../ai/ai.gateway";
-import { AiDeclinedError, AiUnavailableError } from "../ai/ai.types";
+import { AiBudgetExceededError, AiDeclinedError, AiUnavailableError } from "../ai/ai.types";
 import { NotificationsService } from "../notifications/notifications.controller";
 import { TimelineService } from "../timeline/timeline.service";
 import { IMAGE_SYSTEM_PROMPT, ImageAnalysisSchema, REPORT_SYSTEM_PROMPT, ReportExtractionSchema, type ImageAnalysis, type ReportExtraction } from "./document.prompts";
@@ -221,7 +221,7 @@ export class DocumentsService implements OnModuleInit {
       });
     } catch (error) {
       const reason =
-        error instanceof AiUnavailableError
+        error instanceof AiUnavailableError || error instanceof AiBudgetExceededError
           ? "The analysis couldn't be completed right now. Nothing was analysed — please try again later."
           : error instanceof AiDeclinedError
             ? "This file couldn't be analysed."
@@ -269,18 +269,16 @@ export class DocumentsService implements OnModuleInit {
 
   private async extractReport(userId: string, data: Buffer, contentType: SupportedContentType): Promise<Extract<StoredResult, { type: "report" }>> {
     const part = contentType === "application/pdf" ? ({ type: "pdf", base64: data.toString("base64") } as const) : ({ type: "image", mediaType: contentType, base64: data.toString("base64") } as const);
-    const { data: extraction, model } = await this.ai.generate({
-      feature: "document_extraction",
+    const { data: extraction, model, issues } = await this.ai.generate({
+      task: "report_analysis",
       system: [REPORT_SYSTEM_PROMPT],
       messages: [{ role: "user", content: [part, { type: "text", text: "Extract and explain this document." }] }],
       schema: ReportExtractionSchema,
-      effort: "high",
       userId,
     });
-    const texts = [extraction.summary, ...extraction.findings.map((f) => f.explanation), ...extraction.suggestedQuestions];
-    // Output that echoes instruction-like text, or diagnoses/doses, is treated as compromised.
-    const injectionDetected = extraction.containsInstructionsToAi || texts.some((t) => detectPromptInjection(t));
-    const unsafe = texts.some((t) => reviewAssistantText(t).length > 0);
+    // Output that echoes instruction-like text, or diagnoses/doses, is treated as compromised (gateway validation).
+    const injectionDetected = issues.includes("prompt_injection");
+    const unsafe = issues.some((i) => i === "overconfident_diagnosis" || i === "dosing_instruction");
     return {
       type: "report",
       model,
@@ -294,8 +292,8 @@ export class DocumentsService implements OnModuleInit {
   private async analyseImage(userId: string, data: Buffer, contentType: SupportedContentType, purpose: ImagePurpose | null, note?: string): Promise<Extract<StoredResult, { type: "image" }>> {
     const noteTriage = note ? triage(note) : null;
     const mediaType = contentType === "image/png" ? "image/png" : "image/jpeg";
-    const { data: analysis, model } = await this.ai.generate({
-      feature: "image_analysis",
+    const { data: analysis, model, issues } = await this.ai.generate({
+      task: "image_analysis",
       system: [IMAGE_SYSTEM_PROMPT],
       messages: [
         {
@@ -307,13 +305,11 @@ export class DocumentsService implements OnModuleInit {
         },
       ],
       schema: ImageAnalysisSchema,
-      effort: "high",
       userId,
     });
     const usable = analysis.quality === "good" && analysis.supported;
-    const texts = [...analysis.observations, ...analysis.recommendations, ...analysis.warningSigns, ...analysis.possibleCauses.map((c) => c.name)];
-    const injectionDetected = analysis.containsInstructionsToAi || texts.some((t) => detectPromptInjection(t));
-    const unsafe = texts.some((t) => reviewAssistantText(t).length > 0);
+    const injectionDetected = issues.includes("prompt_injection");
+    const unsafe = issues.some((i) => i === "overconfident_diagnosis" || i === "dosing_instruction");
     // Deterministic floor: an emergency note always results in emergency guidance.
     const urgency = noteTriage?.level === "emergency" ? "emergency" : noteTriage?.level === "urgent" && !["urgent", "emergency"].includes(analysis.careUrgency) ? "urgent" : analysis.careUrgency;
     return {

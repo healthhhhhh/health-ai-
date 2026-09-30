@@ -1,28 +1,36 @@
-import { AiUnavailableError, type AiProvider, type AiRequest, type AiResult } from "./ai.types";
+import { AiUnavailableError, type AiProvider, type AiProviderRequest, type AiProviderResponse, type AiTask, type AiUsage } from "./ai.types";
 
-type Handler = (request: AiRequest<unknown>) => unknown;
+type Handler = (request: AiProviderRequest) => unknown;
 
 /**
- * Test double. Each call is answered by the handler registered for its
- * feature; the answer still goes through the request's schema, exactly like
- * real provider output. Records requests so tests can assert on prompts.
+ * Test double. Each call is answered by the handler registered for its task
+ * ("chat" registers both chat tasks). Answers are returned unvalidated, like
+ * real provider output, so the gateway's validation is exercised. Records
+ * requests so tests can assert on prompts and routing.
  */
 export class FakeAiProvider implements AiProvider {
-  readonly name = "fake";
+  readonly name: string;
+  readonly defaultModel: string;
   available = true;
-  readonly requests: AiRequest<unknown>[] = [];
-  private readonly handlers = new Map<string, Handler>();
+  usage: AiUsage;
+  readonly requests: AiProviderRequest[] = [];
+  private readonly handlers = new Map<AiTask, Handler>();
 
-  on(feature: AiRequest<unknown>["feature"], handler: Handler) {
-    this.handlers.set(feature, handler);
+  constructor(options: { name?: string; model?: string; usage?: AiUsage } = {}) {
+    this.name = options.name ?? "fake";
+    this.defaultModel = options.model ?? "fake-model";
+    this.usage = options.usage ?? { inputTokens: 10, outputTokens: 20 };
+  }
+
+  on(task: AiTask | "chat", handler: Handler) {
+    for (const t of task === "chat" ? (["health_chat", "complex_health"] as const) : [task]) this.handlers.set(t, handler);
     return this;
   }
 
-  async generate<T>(request: AiRequest<T>): Promise<AiResult<T>> {
-    this.requests.push(request as AiRequest<unknown>);
-    const handler = this.handlers.get(request.feature);
+  async generate(request: AiProviderRequest): Promise<AiProviderResponse> {
+    this.requests.push(request);
+    const handler = this.handlers.get(request.task);
     if (!this.available || !handler) throw new AiUnavailableError();
-    const data = request.schema.parse(handler(request as AiRequest<unknown>));
-    return { data, model: "fake-model", usage: { inputTokens: 10, outputTokens: 20 } };
+    return { data: handler(request), model: request.model, usage: this.usage };
   }
 }
