@@ -72,22 +72,52 @@ Current medications (instructions verbatim): Medication B: "…" [user_reported,
 Past medications (not current): Medication A [stopped 2026-07-28]
 ```
 
-## 5. Retrieval for the AI Health Assistant
+## 5. Retrieval for the AI Health Assistant (Phase 2C)
 
-`MemoryService.relevant(userId, text)` = user-scoped nearest neighbours (cosine distance < 0.6)
-∪ full-text matches ∪ the four most recent reported/confirmed facts; superseded rows excluded.
-Each memory is rendered by `describeMemory(memory, today)`:
+The model never receives the whole history. For each question, `MemoryService.relevant` gathers
+candidates — user-scoped nearest neighbours (pgvector cosine), full-text matches, facts in the
+categories the question touches, and the four most recent reported/confirmed facts — and
+`selectMemoriesForContext` (`memory-retrieval.ts`, pure and unit-tested) ranks them:
+
+- **score = relevance × provenance weight × time weight.** Relevance is the strongest of
+  similarity, text rank, category match (0.5) and recency (0.2). Provenance weights: clinician /
+  confirmed 1, reported 0.9, document / Apple Health 0.8, unconfirmed AI inference 0.4. Current
+  facts don't fade; past (ended) facts halve every ~2 years, never below 0.15.
+- **Never sent:** superseded facts, facts the person excluded from AI (`ai_excluded`), other
+  people's data, and unconfirmed AI inferences that are merely recent rather than relevant.
+- **Budget:** at most 12 facts and ~2,400 characters.
+
+The prompt separates current facts from past ones, each rendered by `describeMemory`:
 
 ```
-Previous relevant history (each with its source and date; unconfirmed items are not facts):
-- User reported: Evening headaches (about 3 months ago, 2026-06-30)
-- Unconfirmed AI inference — not verified; do not treat as fact: Possible poor sleep (2 days ago, 2026-09-28)
+Previous relevant history (selected for this question; each with its source and date; …):
+Current:
+- User reported: Evening headaches after screen time (about 3 months ago, 2026-06-30)
+Past (no longer current — use only as history):
+- User reported: Frequent headaches as a teenager (about 18 years ago, 2008-01-01; no longer current since 2012-01-01)
 ```
 
-The date used is the event date (`occurred_on`) when known, otherwise when it was recorded. An
-`ended_on` date adds "no longer current since …". Everything inside `<health_context>` is data,
-never instructions — document text in particular can't override safety rules (the system prompt
-says so, and document analysis runs injection detection).
+Alongside it: the current record (conditions, allergies, medications — always, they're short and
+safety-relevant), past record items limited to those the question mentions plus the 5 most recent,
+and — only for metrics the question is about — a daily health line comparing the last 7 days with
+the person's previous 30 days ("below your usual range", never "normal").
+
+Each answer returns what it was based on (`context`: the facts used, whether the profile was
+used, which daily metrics), shown as "AI-generated · based on … · not a diagnosis"; used facts
+get `last_used_at`. Everything inside `<health_context>` is data, never instructions — document
+text in particular can't override safety rules. Emergencies bypass retrieval and the model.
+
+### Lifecycle and controls
+
+| Status (derived) | Meaning | In AI context |
+|---|---|---|
+| `current` | No end date, not corrected | Yes, when relevant |
+| `historical` | `ended_on` in the past ("no longer true") | Yes, labelled past, fading with age |
+| `superseded` | Replaced by a correction | Never |
+
+People can list by status/category/text, edit or confirm, end a fact, correct it (supersede),
+see its correction history, stop the AI using it (`ai_excluded`) without changing or confirming
+it, delete one, delete all (explicit confirmation), and export everything.
 
 ## 6. Retention, correction, export, deletion
 
