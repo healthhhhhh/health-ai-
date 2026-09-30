@@ -167,6 +167,19 @@ describe("preview API", () => {
     expect(finished.body.history?.status).toBe("complete");
   });
 
+  it("keeps memories with current/past status and lets people stop the AI using one, like the real API", async () => {
+    const token = await signIn();
+    const created = await call<{ id: string; temporalStatus: string; aiExcluded: boolean }>("memories", "POST", { fact: "Walks every morning" }, token);
+    expect(created.body).toMatchObject({ temporalStatus: "current", aiExcluded: false });
+    const excluded = await call<{ aiExcluded: boolean; status: string }>(`memories/${created.body.id}`, "PATCH", { aiExcluded: true }, token);
+    expect(excluded.body).toMatchObject({ aiExcluded: true, status: "user_reported" }); // not confirmed by this
+    const ended = await call<{ temporalStatus: string }>(`memories/${created.body.id}/end`, "POST", { endedOn: "2026-01-01" }, token);
+    expect(ended.body.temporalStatus).toBe("historical");
+    const past = await call<{ id: string }[]>("memories?status=historical", "GET", undefined, token);
+    expect(past.body.map((m) => m.id)).toContain(created.body.id);
+    expect((await call("memories", "DELETE", { confirm: "yes" }, token)).status).toBe(400);
+  });
+
   it("marks notifications read", async () => {
     const token = await signIn();
     const list = await call<{ unreadCount: number }>("notifications", "GET", undefined, token);

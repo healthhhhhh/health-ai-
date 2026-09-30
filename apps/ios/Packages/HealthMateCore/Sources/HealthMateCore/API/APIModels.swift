@@ -216,6 +216,12 @@ public struct MemoryRecord: Codable, Equatable, Identifiable, Sendable {
     /// A correction replaced this fact; `priorStatus` keeps where it originally came from.
     public var supersededBy: String? = nil
     public var priorStatus: MemoryStatus? = nil
+    /// Phase 2C: "current", "historical" (ended) or "superseded" (corrected).
+    public var temporalStatus: String? = nil
+    /// Kept, but never given to the AI Health Assistant.
+    public var aiExcluded: Bool? = nil
+    public var lastUsedAt: Date? = nil
+    public var isPast: Bool { temporalStatus == "historical" }
 }
 
 // MARK: Chat
@@ -266,8 +272,31 @@ public struct AssistantAnswer: Codable, Equatable, Sendable {
     public let escalation: Escalation?
     public let notice: String?
     public let safetyAdjusted: Bool
+    /// Phase 2C: what the answer was based on (nil from older servers and Preview).
+    public var context: AnswerContext? = nil
 
     public struct MemorySuggestion: Codable, Equatable, Sendable { public let fact: String }
+}
+
+/// The few facts and data an answer used — never the whole history.
+public struct AnswerContext: Codable, Equatable, Sendable {
+    public struct UsedMemory: Codable, Equatable, Sendable {
+        public let id: String
+        public let fact: String
+        /// "current" or "historical".
+        public let temporalStatus: String
+        public let occurredOn: String?
+    }
+    public let memories: [UsedMemory]
+    public let usedProfile: Bool
+    /// Daily health metrics summarised for the answer, e.g. "sleep".
+    public let healthMetrics: [String]
+
+    public init(memories: [UsedMemory], usedProfile: Bool, healthMetrics: [String]) {
+        self.memories = memories
+        self.usedProfile = usedProfile
+        self.healthMetrics = healthMetrics
+    }
 }
 
 public enum AssistantPayload: Codable, Equatable, Sendable {

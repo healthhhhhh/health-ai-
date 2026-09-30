@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Mascot } from "@/components/illustrations/mascot";
 import { Button } from "@/components/ui/button";
 import { ChatBubble } from "@/components/ui/chat-bubble";
+import { describeBasis } from "@/lib/ai-basis";
 import { EscalationCard } from "./escalation-card";
 
 const avatar = <Mascot size={32} decorative animated={false} />;
@@ -51,6 +52,7 @@ function Answer({
 }) {
   // The per-answer label already says it's a sample, so the sample notice isn't repeated.
   const notice = sample && answer.notice === SAMPLE_NOTICE ? null : answer.notice;
+  const basis = describeBasis(answer.context);
   return (
     <div className="flex flex-col gap-3">
       {answer.escalation && <EscalationCard escalation={answer.escalation} />}
@@ -99,7 +101,7 @@ function Answer({
         ))}
         <p className="flex items-center gap-1.5 text-xs text-text-muted">
           {sample ? <FlaskConical aria-hidden className="size-3.5" /> : <Sparkles aria-hidden className="size-3.5" />}
-          {sample ? "Sample response in Preview mode · not a real AI, not medical advice" : "AI-generated · not a diagnosis"}
+          {sample ? "Sample response in Preview mode · not a real AI, not medical advice" : `AI-generated${basis ? ` · based on ${basis}` : ""} · not a diagnosis`}
           {answer.safetyAdjusted && " · A safety check replaced part of this answer."}
         </p>
       </div>

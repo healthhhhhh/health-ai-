@@ -116,6 +116,12 @@ export interface MemoryRecord {
   supersededBy?: string | null;
   supersededAt?: ISO | null;
   priorStatus?: Exclude<MemoryStatus, "superseded"> | null;
+  /** Phase 2C: current / historical (ended) / superseded (corrected). */
+  temporalStatus?: "current" | "historical" | "superseded";
+  /** Kept, but never given to the AI Health Assistant. */
+  aiExcluded?: boolean;
+  /** When this fact last informed an AI answer. */
+  lastUsedAt?: ISO | null;
 }
 
 /** `POST /v1/memories/:id/supersede` */
@@ -160,9 +166,19 @@ export interface AssistantAnswer {
   warningSigns: string[];
   careRecommendation: { level: CareLevel; text: string } | null;
   memorySuggestions: { fact: string }[];
+  /** Phase 2C: what the answer was based on (optional for older servers and Preview). */
+  context?: AnswerContext;
   escalation: Escalation | null;
   notice: string | null;
   safetyAdjusted: boolean;
+}
+
+/** The few facts and data an answer used — never the whole history. */
+export interface AnswerContext {
+  memories: { id: string; fact: string; status: MemoryStatus; temporalStatus: "current" | "historical"; occurredOn: string | null }[];
+  usedProfile: boolean;
+  /** Daily health metrics summarised for the answer, e.g. "sleep". */
+  healthMetrics: MeasurementKind[];
 }
 
 export type AssistantPayload = AssistantAnswer | { kind: "escalation"; escalation: Escalation };

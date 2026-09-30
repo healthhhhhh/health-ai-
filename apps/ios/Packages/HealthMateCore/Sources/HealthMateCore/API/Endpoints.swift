@@ -279,6 +279,18 @@ extension APIClient {
         try await sendNoContent(Endpoint("DELETE", "memories/\(id)"))
     }
 
+    /// Keeps a fact but stops (or restarts) the AI Health Assistant using it. Doesn't confirm or change it.
+    public func setMemoryAIExcluded(_ id: String, excluded: Bool) async throws -> MemoryRecord {
+        struct Body: Encodable { let aiExcluded: Bool }
+        return try await send(.json("PATCH", "memories/\(id)", Body(aiExcluded: excluded)))
+    }
+
+    /// "No longer true": the fact becomes history (not a correction). Today when no date is given.
+    public func endMemory(_ id: String, on day: String? = nil) async throws -> MemoryRecord {
+        struct Body: Encodable { let endedOn: String? }
+        return try await send(.json("POST", "memories/\(id)/end", Body(endedOn: day)))
+    }
+
     // MARK: Documents
 
     /// Creates the record, uploads the bytes to the signed URL, then starts processing.

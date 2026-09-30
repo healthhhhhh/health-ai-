@@ -163,6 +163,8 @@ struct MemoryListView: View {
                         Text(memory.fact).font(.hmBody).foregroundStyle(HM.Colors.textPrimary)
                         HStack(spacing: 6) {
                             StatusBadge(status: memory.status == .aiInferred ? .warning : .neutral, text: memory.status.label)
+                            if memory.isPast { StatusBadge(status: .neutral, text: "Past") }
+                            if memory.aiExcluded == true { StatusBadge(status: .neutral, text: "Not used in AI chat") }
                             Text(memory.createdAt, format: .dateTime.day().month().year())
                                 .font(.hmMicro)
                                 .foregroundStyle(HM.Colors.textMuted)
@@ -171,6 +173,26 @@ struct MemoryListView: View {
                     .padding(.vertical, 2)
                 }
                 .accessibilityHint("Edit or confirm")
+                .swipeActions(edge: .leading) {
+                    if memory.status != .superseded, let excluded = memory.aiExcluded {
+                        Button(excluded ? "Use in chat" : "Don't use in chat") {
+                            Task {
+                                await model.setMemoryAIExcluded(memory, excluded: !excluded)
+                                results = nil
+                            }
+                        }
+                        .tint(HM.Colors.purple)
+                        if !memory.isPast {
+                            Button("No longer true") {
+                                Task {
+                                    await model.endMemory(memory)
+                                    results = nil
+                                }
+                            }
+                            .tint(HM.Colors.textSecondary)
+                        }
+                    }
+                }
             }
             .onDelete { offsets in
                 let targets = offsets.map { shown[$0] }

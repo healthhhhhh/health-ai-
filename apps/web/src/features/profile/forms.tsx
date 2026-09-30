@@ -6,7 +6,7 @@ import { useActionState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { addAllergy, addCondition, addMedication, addMemory, confirmMemory, deleteMemory, removeProfileItem, updateDetails, type FormState } from "./actions";
+import { addAllergy, addCondition, addMedication, addMemory, confirmMemory, deleteMemory, removeProfileItem, setMemoryAiExcluded, updateDetails, type FormState } from "./actions";
 
 function Feedback({ state, success }: { state: FormState; success?: string }) {
   if (state.error)
@@ -138,10 +138,26 @@ export function MemoryRow({ memory }: { memory: MemoryRecord }) {
     <li className="flex items-start gap-3 py-3">
       <div className="min-w-0 flex-1">
         <p className="text-body text-text-primary">{memory.fact}</p>
-        <StatusBadge status={memory.status === "ai_inferred" ? "warning" : "neutral"} showIcon={memory.status === "ai_inferred"} className="mt-1">
-          {MEMORY_LABEL[memory.status]}
-        </StatusBadge>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={memory.status === "ai_inferred" ? "warning" : "neutral"} showIcon={memory.status === "ai_inferred"}>
+            {MEMORY_LABEL[memory.status]}
+          </StatusBadge>
+          {memory.temporalStatus === "historical" && <StatusBadge status="neutral">Past{memory.endedOn ? ` · until ${memory.endedOn}` : ""}</StatusBadge>}
+          {memory.aiExcluded && <StatusBadge status="neutral">Not used in AI chat</StatusBadge>}
+        </div>
       </div>
+      {memory.status !== "superseded" && memory.aiExcluded !== undefined && (
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto"
+          disabled={pending}
+          aria-label={memory.aiExcluded ? `Use in AI chat: ${memory.fact}` : `Don't use in AI chat: ${memory.fact}`}
+          onClick={() => start(async () => void (await setMemoryAiExcluded(memory.id, !memory.aiExcluded)))}
+        >
+          {memory.aiExcluded ? "Use in chat" : "Don't use in chat"}
+        </Button>
+      )}
       {memory.status === "ai_inferred" && (
         <Button variant="link" size="sm" className="h-auto" disabled={pending} onClick={() => start(async () => void (await confirmMemory(memory.id)))}>
           <Check aria-hidden /> Confirm

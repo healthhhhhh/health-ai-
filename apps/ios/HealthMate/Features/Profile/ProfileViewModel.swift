@@ -69,6 +69,16 @@ final class ProfileViewModel {
         _ = await mutate { try await self.api.deleteMemory(memory.id) }
     }
 
+    /// Keep the fact but stop (or restart) the AI Health Assistant using it.
+    func setMemoryAIExcluded(_ memory: MemoryRecord, excluded: Bool) async {
+        _ = await mutate { _ = try await self.api.setMemoryAIExcluded(memory.id, excluded: excluded) }
+    }
+
+    /// "No longer true": kept as history, not deleted or corrected.
+    func endMemory(_ memory: MemoryRecord) async {
+        _ = await mutate { _ = try await self.api.endMemory(memory.id) }
+    }
+
     func searchMemories(_ query: String) async -> [MemoryRecord] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return memories }

@@ -6,8 +6,8 @@ real, long-lived health record. It is split so each part can be verified before 
 | Part | Scope | Status |
 |---|---|---|
 | **2A** | Real authentication (Supabase Auth, email/password), user profile and preferences, normalized longitudinal health schema with provenance, health-memory foundation, RLS/storage review, data controls | **this document** |
-| 2B | Daily health records and Apple Health (HealthKit): permissions, sync, history import, offline/error states — [`phase2b-plan.md`](phase2b-plan.md) | in progress |
-| 2C | Real AI in chat/reports/photos on the new memory model (retrieval, confirmation UX, extraction into structured facts) | not started |
+| 2B | Daily health records and Apple Health (HealthKit): permissions, sync, history import, offline/error states — [`phase2b-plan.md`](phase2b-plan.md) | done |
+| 2C | Long-term health memory + real AI chat: memory lifecycle and controls, ranked budgeted retrieval, relevant daily data, "based on" transparency — [`phase2c-plan.md`](phase2c-plan.md) | in progress |
 | 2D | OAuth (Apple, Google), push notifications | not started |
 
 Rules that apply to every part: [`CLAUDE.md`](../CLAUDE.md). Memory design:

@@ -342,23 +342,46 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
 
   // Health memory
   if (a === "memories") {
+    // Same lifecycle as the API (Phase 2C): temporal status is derived; excluded facts are kept.
+    const withStatus = (m: MemoryRecord): MemoryRecord => ({
+      ...m,
+      aiExcluded: m.aiExcluded ?? false,
+      temporalStatus: m.status === "superseded" ? "superseded" : m.endedOn && m.endedOn <= nowIso().slice(0, 10) ? "historical" : "current",
+    });
     if (!b && method === "GET") {
       const q = text(ctx.url.searchParams.get("q"), 200).toLowerCase();
-      return json(q ? view.memories.filter((m) => m.fact.toLowerCase().includes(q)) : view.memories);
+      const status = ctx.url.searchParams.get("status");
+      return json(
+        view.memories
+          .map(withStatus)
+          .filter((m) => (!q || m.fact.toLowerCase().includes(q)) && (!status || status === "all" || m.temporalStatus === status)),
+      );
     }
     if (!b && method === "POST") {
       const memory: MemoryRecord = { id: newId(), fact: text(input.fact, 500), source: text(input.source, 40) || "user_entry", status: input.status === "user_confirmed" ? "user_confirmed" : "user_reported", createdAt: nowIso() };
       account.memories.unshift(memory);
-      return json(memory, 201);
+      return json(withStatus(memory), 201);
+    }
+    if (!b && method === "DELETE") {
+      if (input.confirm !== "delete all memories") return fail(400, "validation_failed", "Check these fields: confirm.");
+      const removed = account.memories.length;
+      account.memories.splice(0, removed);
+      return json({ removed });
     }
     const memory = account.memories.find((m) => m.id === b);
     if (b && !memory) return fail(404, "not_found", "Memory not found.");
-    if (memory && method === "PATCH") {
+    if (memory && !c && method === "PATCH") {
       if (typeof input.fact === "string" && input.fact.trim()) memory.fact = text(input.fact, 500);
-      // Only the person's explicit action confirms a memory.
+      // Only the person's explicit action confirms a memory; choosing whether the AI uses it doesn't.
       if (input.confirm === true || typeof input.fact === "string") memory.status = "user_confirmed";
-      return json(memory);
+      if (typeof input.aiExcluded === "boolean") memory.aiExcluded = input.aiExcluded;
+      return json(withStatus(memory));
     }
+    if (memory && c === "end" && method === "POST") {
+      memory.endedOn = optionalText(input.endedOn, 10) ?? nowIso().slice(0, 10);
+      return json(withStatus(memory));
+    }
+    if (memory && c === "history" && method === "GET") return json([withStatus(memory)]);
     if (memory && method === "DELETE") {
       account.memories.splice(account.memories.indexOf(memory), 1);
       return noContent();

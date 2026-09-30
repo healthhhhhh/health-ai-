@@ -211,7 +211,8 @@ struct AssistantTurnView: View {
     }
 
     private func footer(_ answer: AssistantAnswer) -> String {
-        let base = isSample ? "Sample response in Preview mode · not a real AI, not medical advice" : "AI-generated · not a diagnosis"
+        let basis = AIBasis.describe(answer.context).map { " · based on \($0)" } ?? ""
+        let base = isSample ? "Sample response in Preview mode · not a real AI, not medical advice" : "AI-generated\(basis) · not a diagnosis"
         return answer.safetyAdjusted ? "\(base) · A safety check replaced part of this answer." : base
     }
 }

@@ -67,6 +67,11 @@ export async function confirmMemory(id: string, fact?: string): Promise<FormStat
   return run(() => api(`memories/${encodeURIComponent(id)}`, { method: "PATCH", json: fact ? { fact: fact.slice(0, 500) } : { confirm: true } }));
 }
 
+/** Keep a fact but stop (or start again) the AI Health Assistant using it. Doesn't confirm or change the fact. */
+export async function setMemoryAiExcluded(id: string, excluded: boolean): Promise<FormState> {
+  return run(() => api(`memories/${encodeURIComponent(id)}`, { method: "PATCH", json: { aiExcluded: excluded } }));
+}
+
 export async function deleteMemory(id: string): Promise<FormState> {
   return run(() => api(`memories/${encodeURIComponent(id)}`, { method: "DELETE" }));
 }

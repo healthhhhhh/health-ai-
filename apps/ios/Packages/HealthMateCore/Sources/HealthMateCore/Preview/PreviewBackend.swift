@@ -420,22 +420,45 @@ public final class PreviewBackend: @unchecked Sendable {
 
         // Health memory
         if a == "memories" {
+            // Same lifecycle as the API (Phase 2C): temporal status is derived; excluded facts are kept.
+            let today = String(ctx.now.prefix(10))
+            func withStatus(_ memory: JSONValue) -> JSONValue {
+                var m = memory
+                let ended = m["endedOn"].string.map { $0 <= today } ?? false
+                m["temporalStatus"] = .string(m["status"].string == "superseded" ? "superseded" : ended ? "historical" : "current")
+                if m["aiExcluded"].bool == nil { m["aiExcluded"] = .bool(false) }
+                return m
+            }
             if b == nil, method == "GET" {
                 let q = (ctx.query["q"] ?? "").lowercased()
-                return json(.array(view["memories"].array.filter { q.isEmpty || ($0["fact"].string ?? "").lowercased().contains(q) }))
+                let status = ctx.query["status"]
+                return json(.array(view["memories"].array.map(withStatus).filter {
+                    (q.isEmpty || ($0["fact"].string ?? "").lowercased().contains(q)) && (status == nil || status == "all" || $0["temporalStatus"].string == status)
+                }))
             }
             if b == nil, method == "POST" {
                 let memory: JSONValue = ["id": .string(newId()), "fact": .string(text(input["fact"], 500)), "source": .string(text(input["source"], 40).isEmpty ? "user_entry" : text(input["source"], 40)), "status": .string(input["status"].string == "user_confirmed" ? "user_confirmed" : "user_reported"), "createdAt": .string(ctx.now)]
                 ctx.account["memories"].items.insert(memory, at: 0)
-                return json(memory, 201)
+                return json(withStatus(memory), 201)
+            }
+            if b == nil, method == "DELETE" {
+                guard input["confirm"].string == "delete all memories" else { return fail(400, "validation_failed", "Check these fields: confirm.") }
+                let removed = ctx.account["memories"].array.count
+                ctx.account["memories"] = .array([])
+                return json(["removed": .number(Double(removed))])
             }
             if let id = b {
                 guard let index = ctx.account["memories"].array.firstIndex(where: { $0["id"].string == id }) else { return fail(404, "not_found", "Memory not found.") }
-                if method == "PATCH" {
+                if c == "end", method == "POST" {
+                    ctx.account["memories"].items[index]["endedOn"] = .string(input["endedOn"].string ?? today)
+                    return json(withStatus(ctx.account["memories"].array[index]))
+                }
+                if c == nil, method == "PATCH" {
                     if let fact = input["fact"].string, !fact.isEmpty { ctx.account["memories"].items[index]["fact"] = .string(text(input["fact"], 500)) }
-                    // Only the person's explicit action confirms a memory.
+                    // Only the person's explicit action confirms a memory; choosing whether the AI uses it doesn't.
                     if input["confirm"].bool == true || input["fact"].string != nil { ctx.account["memories"].items[index]["status"] = "user_confirmed" }
-                    return json(ctx.account["memories"].array[index])
+                    if let excluded = input["aiExcluded"].bool { ctx.account["memories"].items[index]["aiExcluded"] = .bool(excluded) }
+                    return json(withStatus(ctx.account["memories"].array[index]))
                 }
                 if method == "DELETE" { ctx.account["memories"].items.remove(at: index); return noContent() }
             }
