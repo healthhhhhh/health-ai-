@@ -15,12 +15,8 @@ struct DocumentsView: View {
     @State private var showReportCamera = false
     @State private var openedID: String?
 
-    /// Opens the photo check straight away (from Chat's "Check a photo").
-    private let startWithPhotoCheck: Bool
-
-    init(session: SessionStore, startWithPhotoCheck: Bool = false) {
+    init(session: SessionStore) {
         self.session = session
-        self.startWithPhotoCheck = startWithPhotoCheck
         _model = State(initialValue: DocumentsViewModel(api: session.api, isPreview: session.isPreview, onSessionEnded: { [session] in session.handle($0) }))
     }
 
@@ -108,16 +104,7 @@ struct DocumentsView: View {
         .navigationTitle("Reports & photos")
         .searchable(text: $model.query, prompt: "Search by name")
         .refreshable { await model.load() }
-        .task(id: hasConsent) {
-            guard session.isSignedIn && hasConsent else { return }
-            let openPhotoCheck = startWithPhotoCheck && model.state == .idle
-            await model.load()
-            if openPhotoCheck {
-                // A sheet can't be presented while this screen's own sheet is still animating in.
-                try? await Task.sleep(for: .milliseconds(700))
-                showPhotoCheck = true
-            }
-        }
+        .task(id: hasConsent) { if session.isSignedIn && hasConsent { await model.load() } }
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.pdf, .jpeg, .png, .heic]) { result in
             guard case .success(let url) = result else { return }
             importFile(url)

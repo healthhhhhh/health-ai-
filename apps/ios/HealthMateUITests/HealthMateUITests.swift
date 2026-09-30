@@ -139,7 +139,8 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Instructions, exactly as entered"].firstMatch.exists)
         XCTAssertTrue(app.staticTexts["As prescribed · after breakfast"].exists, "verbatim: \(screen(app))")
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        let details = app.buttons["Morning medication details"]
+        // SwiftUI can expose a navigation link more than once in the accessibility tree.
+        let details = app.buttons["Morning medication details"].firstMatch
         XCTAssertTrue(details.waitForExistence(timeout: 5), "row: \(screen(app))")
         details.tap()
         XCTAssertTrue(app.staticTexts["Last 7 days"].waitForExistence(timeout: 5), "detail: \(screen(app))")
@@ -179,7 +180,8 @@ final class HealthMateUITests: XCTestCase {
         let account = app.buttons["Account & password"]
         for _ in 0..<4 where !account.isHittable { app.swipeUp() }
         account.tap()
-        XCTAssertTrue(app.staticTexts["alex.morgan@example.com"].waitForExistence(timeout: 8), "account: \(screen(app))")
+        // LabeledContent combines its label and value ("Email, alex.morgan@example.com").
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'alex.morgan@example.com'")).firstMatch.waitForExistence(timeout: 8), "account: \(screen(app))")
     }
 
     /// Largest accessibility text size in dark mode: every tab still loads its main content.

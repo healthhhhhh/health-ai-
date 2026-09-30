@@ -18,7 +18,11 @@ struct ChatView: View {
     @State private var showHistory = false
     @State private var gateEscalation: Escalation?
     @State private var showReports = false
-    @State private var reportsStartWithPhoto = false
+    /// "Check a photo": the flow is presented straight from Chat (not nested in another sheet), then its result.
+    @State private var photoModel: DocumentsViewModel?
+    @State private var showPhotoCheck = false
+    @State private var photoResultID: String?
+    @State private var showPhotoResult = false
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -108,8 +112,21 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showReports) {
                 NavigationStack {
-                    DocumentsView(session: session, startWithPhotoCheck: reportsStartWithPhoto)
+                    DocumentsView(session: session)
                         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showReports = false } } }
+                }
+            }
+            .sheet(isPresented: $showPhotoCheck, onDismiss: { if photoResultID != nil { showPhotoResult = true } }) {
+                if let photoModel {
+                    PhotoCheckView(model: photoModel) { record in photoResultID = record.id }
+                }
+            }
+            .sheet(isPresented: $showPhotoResult, onDismiss: { photoResultID = nil }) {
+                if let photoModel, let photoResultID {
+                    NavigationStack {
+                        DocumentDetailView(model: photoModel, documentID: photoResultID)
+                            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showPhotoResult = false } } }
+                    }
                 }
             }
         }
@@ -185,8 +202,8 @@ struct ChatView: View {
         VStack(spacing: 6) {
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    Button { reportsStartWithPhoto = false; showReports = true } label: { Label("Upload a report", systemImage: "doc.text") }
-                    Button { reportsStartWithPhoto = true; showReports = true } label: { Label("Check a photo", systemImage: "camera") }
+                    Button { showReports = true } label: { Label("Upload a report", systemImage: "doc.text") }
+                    Button { checkPhoto() } label: { Label("Check a photo", systemImage: "camera") }
                 } label: {
                     Image(systemName: "paperclip")
                         .font(.system(size: 17, weight: .semibold))
@@ -242,10 +259,22 @@ struct ChatView: View {
         Task { await model.send() }
     }
 
+    /// Opens the photo check, or Reports & photos first when sign-in or consent is still needed.
+    private func checkPhoto() {
+        guard session.isSignedIn, session.hasConsent("document_processing") else {
+            showReports = true
+            return
+        }
+        photoModel = DocumentsViewModel(api: session.api, isPreview: session.isPreview, onSessionEnded: { [session] in session.handle($0) })
+        photoResultID = nil
+        showPhotoCheck = true
+    }
+
     private func consumePendingQuestion() {
         guard let question = pendingQuestion else { return }
-        // "Ask the AI Health Assistant" from a report brings the question back here.
+        // "Ask the AI Health Assistant" from a report or photo result brings the question back here.
         showReports = false
+        showPhotoResult = false
         if canChat {
             pendingQuestion = nil
             Task { await model.send(question) }
