@@ -10,7 +10,10 @@ import { AccountController } from "./modules/account/account.controller";
 import { AccountService } from "./modules/account/account.service";
 import { AiGateway } from "./modules/ai/ai.gateway";
 import { AI_PROVIDER, type AiProvider } from "./modules/ai/ai.types";
-import { AuthController } from "./modules/auth/auth.controller";
+import { AuthController, IdentitiesController } from "./modules/auth/auth.controller";
+import { ID_TOKEN_VERIFIERS, idTokenVerifiersFor, type IdTokenVerifiers } from "./modules/auth/oauth";
+import { PUSH_PROVIDER, pushProviderFor, type PushProvider } from "./modules/notifications/push";
+import { DevicesController, PushService } from "./modules/notifications/push.service";
 import { AuthService } from "./modules/auth/auth.service";
 import { TokenService } from "./modules/auth/token.service";
 import { IDENTITY, LocalIdentityProvider, SupabaseIdentityProvider, type IdentityProvider } from "./modules/auth/identity";
@@ -71,6 +74,10 @@ export interface AppDependencies {
   jobQueue?: JobQueue;
   embeddings?: EmbeddingProvider;
   identity?: IdentityProvider;
+  /** Defaults from config (GOOGLE_CLIENT_IDS). */
+  idTokenVerifiers?: IdTokenVerifiers;
+  /** Defaults from config (PUSH_PROVIDER). */
+  pushProvider?: PushProvider;
   /** Defaults to in-memory counters (single instance). */
   rateLimitStore?: RateLimitStore;
 }
@@ -112,6 +119,9 @@ export class AppModule {
               })
             : new LocalIdentityProvider(auth, tokens, deps.database)),
       },
+      { provide: ID_TOKEN_VERIFIERS, useFactory: () => deps.idTokenVerifiers ?? idTokenVerifiersFor(deps.config) },
+      { provide: PUSH_PROVIDER, useFactory: () => deps.pushProvider ?? pushProviderFor(deps.config) },
+      PushService,
       DocumentsService,
       HealthDataService,
       PlanService,
@@ -125,6 +135,8 @@ export class AppModule {
       controllers: [
         HealthController,
         AuthController,
+        IdentitiesController,
+        DevicesController,
         ProfileController,
         AccountController,
         ChatController,

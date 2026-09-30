@@ -9,6 +9,8 @@ import { RateLimiter } from "../src/common/rate-limit";
 import { loadConfig } from "../src/config";
 import { createDatabase, migrate, type Database } from "../src/db/database";
 import { FakeAiProvider } from "../src/modules/ai/fake.provider";
+import type { IdTokenVerifiers } from "../src/modules/auth/oauth";
+import type { PushProvider } from "../src/modules/notifications/push";
 import { JobQueue } from "../src/modules/documents/job-queue";
 import { LocalObjectStorage } from "../src/modules/documents/storage";
 
@@ -27,14 +29,14 @@ export async function testDatabase(): Promise<Database> {
   return createDatabase({ url: process.env.TEST_DATABASE_URL, poolSize: 4 });
 }
 
-/** A full app with a fake AI provider. */
-export async function createTestContext(): Promise<TestContext> {
-  const config = loadConfig({ NODE_ENV: "test", PUBLIC_BASE_URL: "http://127.0.0.1" } as NodeJS.ProcessEnv);
+/** A full app with a fake AI provider (and, when given, test ID-token verifiers and push provider). */
+export async function createTestContext(options: { env?: Record<string, string>; idTokenVerifiers?: IdTokenVerifiers; pushProvider?: PushProvider } = {}): Promise<TestContext> {
+  const config = loadConfig({ NODE_ENV: "test", PUBLIC_BASE_URL: "http://127.0.0.1", ...options.env } as NodeJS.ProcessEnv);
   const db = await testDatabase();
   await migrate(db);
   const ai = new FakeAiProvider();
   const storage = new LocalObjectStorage(mkdtempSync(join(tmpdir(), "hm-uploads-")), config.PUBLIC_BASE_URL, config.jwtSecret);
-  const app = await createApp({ config, database: db, aiProvider: ai, storage }, { logger: false });
+  const app = await createApp({ config, database: db, aiProvider: ai, storage, idTokenVerifiers: options.idTokenVerifiers, pushProvider: options.pushProvider }, { logger: false });
   const http = request(app.getHttpServer());
   return {
     app,

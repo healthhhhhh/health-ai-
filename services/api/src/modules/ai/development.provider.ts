@@ -50,8 +50,7 @@ export function selectedContext(system: string[]): { memories: string[]; daily: 
   const history = lines.slice(historyStart + 1, dailyStart);
   // Drop "none relevant" placeholders and the headings they stand under.
   const memories = history.filter((l, i) => l !== "- none relevant" && history[i + 1] !== "- none relevant");
-  if (!memories.some((l) => l.startsWith("- "))) return { memories: [], daily: daily(lines, dailyStart, end) };
-  return { memories, daily: daily(lines, dailyStart, end) };
+  return { memories: memories.some((l) => l.startsWith("- ")) ? memories : [], daily: daily(lines, dailyStart, end) };
 }
 
 const daily = (lines: string[], start: number, end: number) =>

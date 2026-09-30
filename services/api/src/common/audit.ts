@@ -14,7 +14,11 @@ export type AuditAction =
   | "document.download"
   | "account.delete_requested"
   | "auth.password_reset_requested"
-  | "auth.password_changed";
+  | "auth.password_changed"
+  | "auth.identity_linked"
+  | "auth.identity_unlinked"
+  | "push.device_registered"
+  | "push.device_unregistered";
 
 /**
  * Security audit trail. Metadata must never contain health content — only

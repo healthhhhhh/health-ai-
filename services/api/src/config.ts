@@ -38,6 +38,24 @@ const schema = z.object({
   /** Run background jobs inside the API process too (development convenience when using Redis). */
   RUN_WORKER_IN_API: z.enum(["true", "false"]).optional(),
 
+  /**
+   * Google sign-in: the OAuth client IDs (iOS and/or web) whose ID tokens are
+   * accepted, comma-separated. Public identifiers, free to create in Google
+   * Cloud. Unset: Google sign-in answers "not available".
+   */
+  GOOGLE_CLIENT_IDS: z.string().optional(),
+
+  /** log | apns | none. Default: log outside production (nothing is sent), none in production. */
+  PUSH_PROVIDER: z.enum(["log", "apns", "none"]).optional(),
+  /** 32-byte key (base64) that encrypts stored device tokens. Dev/test: a random per-process key when unset. */
+  PUSH_TOKEN_KEY: z.string().optional(),
+  /** APNs token auth (.p8 key). Only read when PUSH_PROVIDER=apns — needs the paid Apple Developer Program. */
+  APNS_KEY_ID: z.string().optional(),
+  APNS_TEAM_ID: z.string().optional(),
+  APNS_BUNDLE_ID: z.string().optional(),
+  /** The .p8 file's contents (PEM); "\n" escapes are accepted. */
+  APNS_PRIVATE_KEY: z.string().optional(),
+
   /** HMAC secret for local access tokens and local signed file URLs (≥ 32 chars). */
   JWT_SECRET: z.string().min(32).optional(),
   /** Server-side only. Never shipped to the iOS or web clients. */
@@ -75,6 +93,10 @@ export type AppConfig = Env & {
   jwtSecret: string;
   aiEnabled: boolean;
   aiProvider: "anthropic" | "development" | "none";
+  googleClientIds: string[];
+  pushProvider: "log" | "apns" | "none";
+  /** 32 bytes, or null when device tokens can't be stored (production without PUSH_TOKEN_KEY). */
+  pushTokenKey: Buffer | null;
   authProvider: "local" | "supabase";
   storageProvider: "local" | "supabase";
   embeddingsProvider: "supabase" | "hash" | "none";
@@ -102,6 +124,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     if (condition) throw new Error(message);
   };
   need(aiProvider === "anthropic" && !cfg.ANTHROPIC_API_KEY, "AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY");
+
+  const googleClientIds = (cfg.GOOGLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+  const pushProvider = cfg.PUSH_PROVIDER ?? (production ? "none" : "log");
+  const pushTokenKey = cfg.PUSH_TOKEN_KEY ? Buffer.from(cfg.PUSH_TOKEN_KEY, "base64") : production ? null : randomBytes(32);
+  need(pushTokenKey !== null && pushTokenKey.length !== 32, "PUSH_TOKEN_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)");
+  if (pushProvider === "apns") {
+    need(!cfg.APNS_KEY_ID || !cfg.APNS_TEAM_ID || !cfg.APNS_BUNDLE_ID || !cfg.APNS_PRIVATE_KEY, "PUSH_PROVIDER=apns needs APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID and APNS_PRIVATE_KEY");
+    need(!cfg.PUSH_TOKEN_KEY, "PUSH_PROVIDER=apns needs PUSH_TOKEN_KEY");
+  }
   if (authProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_PUBLISHABLE_KEY || !cfg.SUPABASE_SECRET_KEY, "Supabase Auth needs SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY");
   if (storageProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY, "Supabase Storage needs SUPABASE_URL and SUPABASE_SECRET_KEY");
   if (embeddingsProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY || !cfg.EMBED_FUNCTION_SECRET, "Supabase embeddings need SUPABASE_URL, SUPABASE_SECRET_KEY and EMBED_FUNCTION_SECRET");
@@ -118,6 +149,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     jwtSecret: cfg.JWT_SECRET ?? randomBytes(48).toString("base64url"),
     aiEnabled: aiProvider !== "none",
     aiProvider,
+    googleClientIds,
+    pushProvider,
+    pushTokenKey,
     authProvider,
     storageProvider,
     embeddingsProvider,

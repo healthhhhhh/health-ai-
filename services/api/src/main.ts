@@ -24,7 +24,7 @@ async function main() {
   await app.listen(config.PORT);
   logger.log(
     `HealthMate API listening on :${config.PORT} (database: ${config.DATABASE_URL ? "postgres" : "embedded"}, auth: ${config.authProvider}, storage: ${config.storageProvider}, ` +
-      `embeddings: ${config.embeddingsProvider}, jobs: ${config.REDIS_URL ? "redis" : "in-process"}, ai: ${aiProvider.name})`,
+      `embeddings: ${config.embeddingsProvider}, jobs: ${config.REDIS_URL ? "redis" : "in-process"}, ai: ${aiProvider.name}, push: ${config.pushProvider})`,
   );
 }
 

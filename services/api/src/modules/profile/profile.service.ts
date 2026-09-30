@@ -1,3 +1,4 @@
+import type { OAuthProvider } from "../auth/oauth";
 import { Inject, Injectable } from "@nestjs/common";
 import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
@@ -128,17 +129,25 @@ export class ProfileService {
   }
 
   async account(userId: string) {
-    const { rows } = await this.db.query<{ email: string; auth_provider: "local" | "supabase"; email_verified_at: Date | null; created_at: Date; onboarding_completed_at: Date | null }>(
-      `SELECT u.email, u.auth_provider, u.email_verified_at, u.created_at, p.onboarding_completed_at FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.id = $1`,
+    type Row = { email: string; auth_provider: "local" | "supabase"; has_password: boolean; email_verified_at: Date | null; created_at: Date; onboarding_completed_at: Date | null; identities: { provider: OAuthProvider; created_at: string }[] };
+    const { rows } = await this.db.query<Row>(
+      `SELECT u.email, u.auth_provider, u.password_hash IS NOT NULL AS has_password, u.email_verified_at, u.created_at, p.onboarding_completed_at,
+              COALESCE((SELECT json_agg(json_build_object('provider', i.provider, 'created_at', i.created_at) ORDER BY i.provider) FROM auth_identities i WHERE i.user_id = u.id), '[]') AS identities
+         FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.id = $1`,
       [userId],
     );
     const row = rows[0];
     if (!row) throw notFound("Account");
+    // Local accounts know whether a password exists. Supabase keeps passwords itself: an
+    // account whose first identity arrived with it (within a minute) was created by that
+    // sign-in and has no password; every other Supabase account signed up with one.
+    const createdByIdentity = row.identities.some((i) => Math.abs(new Date(i.created_at).getTime() - row.created_at.getTime()) < 60_000);
+    const hasPassword = row.auth_provider === "local" ? row.has_password : !createdByIdentity;
     return {
       email: row.email,
       // Local (development) accounts have no email step.
       emailVerified: row.auth_provider === "local" || row.email_verified_at !== null,
-      signInMethods: ["password" as const],
+      signInMethods: [...(hasPassword ? (["password"] as const) : []), ...row.identities.map((i) => i.provider)],
       createdAt: row.created_at.toISOString(),
       onboardingCompleted: row.onboarding_completed_at !== null,
     };

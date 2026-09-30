@@ -99,7 +99,7 @@ describe("row level security", () => {
     // Only the server-only tables have RLS without policies (i.e. deny everyone but the API).
     expect((await q(`SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = c.oid)`)).sort()).toEqual(
-      ["ai_usage", "audit_logs", "documents_legacy", "refresh_tokens", "safety_events", "schema_migrations"],
+      ["ai_usage", "audit_logs", "documents_legacy", "push_devices", "refresh_tokens", "safety_events", "schema_migrations"],
     );
   });
 
@@ -135,7 +135,8 @@ describe("row level security", () => {
     await db.query(`INSERT INTO symptoms (user_id, name) VALUES ($1, 'Cough')`, [alice]);
     await db.query(`INSERT INTO health_measurements (user_id, kind, value, unit, recorded_at, source) VALUES ($1, 'steps', 100, 'count', now(), 'apple_health')`, [alice]);
     await db.query(`INSERT INTO mood_checkins (user_id, mood) VALUES ($1, 'good')`, [alice]);
-    for (const table of ["conversations", "messages", "medical_documents", "symptoms", "health_measurements", "mood_checkins", "healthkit_measurements"]) {
+    await db.query(`INSERT INTO auth_identities (user_id, provider, subject, email) VALUES ($1, 'google', 'rls-sub', 'alice@gmail.com')`, [alice]);
+    for (const table of ["conversations", "messages", "medical_documents", "symptoms", "health_measurements", "mood_checkins", "healthkit_measurements", "auth_identities"]) {
       await as(alice, async (q) => expect(await count(q, `SELECT 1 FROM ${table}`), `${table} (owner)`).toBeGreaterThan(0));
       await as(bob, async (q) => expect(await count(q, `SELECT 1 FROM ${table}`), `${table} (other)`).toBe(0));
     }
@@ -146,10 +147,13 @@ describe("row level security", () => {
 
   it("hides server-only tables from signed-in people and everything from anonymous callers", async () => {
     await db.query(`INSERT INTO audit_logs (user_id, action) VALUES ($1, 'auth.login')`, [alice]);
+    await db.query(`INSERT INTO push_devices (user_id, platform, environment, token_hash, token_ciphertext) VALUES ($1, 'ios', 'sandbox', repeat('a', 64), 'v1.x.y.z')`, [alice]);
     await as(alice, async (q) => {
       expect(await count(q, `SELECT 1 FROM audit_logs`)).toBe(0);
       expect(await count(q, `SELECT 1 FROM refresh_tokens`)).toBe(0);
     });
+    // Device tokens are server-only, even for their owner.
+    await expect(as(alice, (q) => q.query(`SELECT 1 FROM push_devices`))).rejects.toThrow(/permission denied/);
     await expect(as(null, (q) => q.query(`SELECT 1 FROM health_conditions`))).rejects.toThrow(/permission denied/);
     await expect(as(null, (q) => q.query(`SELECT 1 FROM users`))).rejects.toThrow(/permission denied/);
   });

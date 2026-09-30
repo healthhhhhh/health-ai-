@@ -7,8 +7,8 @@ real, long-lived health record. It is split so each part can be verified before 
 |---|---|---|
 | **2A** | Real authentication (Supabase Auth, email/password), user profile and preferences, normalized longitudinal health schema with provenance, health-memory foundation, RLS/storage review, data controls | **this document** |
 | 2B | Daily health records and Apple Health (HealthKit): permissions, sync, history import, offline/error states — [`phase2b-plan.md`](phase2b-plan.md) | done |
-| 2C | Long-term health memory + real AI chat: memory lifecycle and controls, ranked budgeted retrieval, relevant daily data, "based on" transparency — [`phase2c-plan.md`](phase2c-plan.md) | in progress |
-| 2D | OAuth (Apple, Google), push notifications | not started |
+| 2C | Long-term health memory + real AI chat: memory lifecycle and controls, ranked budgeted retrieval, relevant daily data, "based on" transparency — [`phase2c-plan.md`](phase2c-plan.md) | done |
+| 2D | Free-only: Google sign-in (server), push device registry + dispatch (log adapter; APNs adapter off). Apple sign-in and real APNs need the Apple Developer Program — [`phase2d-plan.md`](phase2d-plan.md) | done (free scope) |
 
 Rules that apply to every part: [`CLAUDE.md`](../CLAUDE.md). Memory design:
 [`health-memory-architecture.md`](health-memory-architecture.md). Backend/Supabase details:

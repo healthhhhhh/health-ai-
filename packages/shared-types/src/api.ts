@@ -468,6 +468,46 @@ export interface NotificationPreferences {
 
 export type OAuthProvider = "google" | "apple";
 
+/**
+ * `POST /v1/auth/oauth` (Phase 2D). `idToken` is what Google Sign-In returned
+ * on the device; without it (or for Apple, not set up yet) the server answers 501.
+ */
+export interface OAuthSignInRequest {
+  provider: OAuthProvider;
+  idToken?: string;
+  /** The value the app asked the provider to embed in the token. */
+  nonce?: string;
+  timeZone?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface OAuthSignInResponse extends AuthResponse {
+  /** First sign-in: the account was just created (clients open onboarding). */
+  isNewUser: boolean;
+}
+
+/** `POST /v1/me/devices` (Phase 2D). The token is write-only. */
+export interface PushDeviceRegistration {
+  platform: "ios";
+  /** APNs device token, hex. */
+  token: string;
+  environment: "sandbox" | "production";
+  appVersion?: string;
+}
+
+/** `GET /v1/me/devices` → `{ devices: PushDevice[] }`. */
+export interface PushDevice {
+  id: string;
+  platform: "ios";
+  environment: "sandbox" | "production";
+  appVersion: string | null;
+  createdAt: ISO;
+  lastRegisteredAt: ISO;
+  /** false once the push service reported the token as no longer valid. */
+  active: boolean;
+}
+
 export interface AccountSummary {
   email: string;
   emailVerified: boolean;

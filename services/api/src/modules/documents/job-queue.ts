@@ -11,6 +11,8 @@ export interface JobPayloads {
   "embed-memory": { userId: string; memoryId: string };
   /** Remove a deleted account's files from Storage. */
   "delete-user-files": { userId: string };
+  /** Push a committed in-app notification to the person's devices. */
+  "push-notification": { userId: string; notificationId: string };
   /** Server-sent reminders (not used yet: iPhone reminders are scheduled on the device). */
   "send-reminder": { userId: string; reminderId: string };
 }

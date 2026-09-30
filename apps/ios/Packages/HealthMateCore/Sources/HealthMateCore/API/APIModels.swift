@@ -92,6 +92,24 @@ public struct AccountSummary: Codable, Equatable, Sendable {
     public let onboardingCompleted: Bool
 }
 
+/// A device registered for push notifications (`/v1/me/devices`, Phase 2D).
+/// The token itself is write-only: the server never returns it.
+public struct PushDevice: Codable, Equatable, Sendable, Identifiable {
+    public let id: String
+    public let platform: String
+    /// "sandbox" (development builds) or "production".
+    public let environment: String
+    public let appVersion: String?
+    public let createdAt: Date
+    public let lastRegisteredAt: Date
+    /// false once the push service reported the token as no longer valid.
+    public let active: Bool
+}
+
+public struct PushDeviceList: Codable, Equatable, Sendable {
+    public let devices: [PushDevice]
+}
+
 /// Which reminders and updates the person wants, and how private they are.
 public struct NotificationPreferences: Codable, Equatable, Sendable {
     public struct QuietHours: Codable, Equatable, Sendable {

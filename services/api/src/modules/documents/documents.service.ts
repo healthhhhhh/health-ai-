@@ -232,7 +232,7 @@ export class DocumentsService implements OnModuleInit {
   }
 
   private async saveReport(userId: string, id: string, result: Extract<StoredResult, { type: "report" }>) {
-    await this.db.transaction(async (tx) => {
+    const notificationId = await this.db.transaction(async (tx) => {
       const { rows } = await tx.query<{ id: string }>(
         `INSERT INTO document_analysis (user_id, document_id, model, readable, summary, suggested_questions, injection_detected, result)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb) RETURNING id`,
@@ -248,12 +248,13 @@ export class DocumentsService implements OnModuleInit {
       }
       await tx.query(`UPDATE medical_documents SET status = 'ready', document_type = $3, processed_at = now() WHERE id = $1 AND user_id = $2`, [id, userId, result.documentType]);
       // Generic wording: no health details in notifications.
-      await this.notifications.notify(userId, { category: "report", title: "Your report summary is ready", body: "Open it to see the plain-language summary and questions for your clinician.", link: `/reports/${id}`, aiGenerated: true }, tx);
+      return this.notifications.notify(userId, { category: "report", title: "Your report summary is ready", body: "Open it to see the plain-language summary and questions for your clinician.", link: `/reports/${id}`, aiGenerated: true }, tx);
     });
+    await this.notifications.deliver(userId, notificationId);
   }
 
   private async saveImage(userId: string, id: string, result: Extract<StoredResult, { type: "image" }>) {
-    await this.db.transaction(async (tx) => {
+    const notificationId = await this.db.transaction(async (tx) => {
       await tx.query(
         `INSERT INTO image_analysis (user_id, image_id, model, quality, supported, care_urgency, injection_detected, note_triage_level, result)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
@@ -261,8 +262,9 @@ export class DocumentsService implements OnModuleInit {
       );
       // The note has served its purpose; don't keep it longer than needed.
       await tx.query(`UPDATE health_images SET status = 'ready', note = NULL, processed_at = now() WHERE id = $1 AND user_id = $2`, [id, userId]);
-      await this.notifications.notify(userId, { category: "report", title: "Your photo check is ready", body: "Open it to see what could be described and suggested next steps.", link: `/reports/${id}`, aiGenerated: true }, tx);
+      return this.notifications.notify(userId, { category: "report", title: "Your photo check is ready", body: "Open it to see what could be described and suggested next steps.", link: `/reports/${id}`, aiGenerated: true }, tx);
     });
+    await this.notifications.deliver(userId, notificationId);
   }
 
   private async extractReport(userId: string, data: Buffer, contentType: SupportedContentType): Promise<Extract<StoredResult, { type: "report" }>> {

@@ -1,3 +1,5 @@
+import { findLinkedUser } from "../auth/identity-links";
+import type { VerifiedIdentity } from "../auth/oauth";
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { AuditService } from "../../common/audit";
 import { ApiError } from "../../common/errors";
@@ -23,6 +25,9 @@ export class AccountService {
     const q = async (sql: string) => (await this.db.query(sql, [userId])).rows;
     const sections = {
       account: q(`SELECT email, email_verified_at, created_at FROM users WHERE id = $1`),
+      signInIdentities: q(`SELECT provider, email, created_at, last_sign_in_at FROM auth_identities WHERE user_id = $1 ORDER BY created_at`),
+      // Device tokens are never exported (they're only useful for sending pushes).
+      pushDevices: q(`SELECT platform, environment, app_version, created_at, last_registered_at, disabled_at FROM push_devices WHERE user_id = $1 ORDER BY created_at`),
       profile: q(
         `SELECT first_name, last_name, date_of_birth::text AS date_of_birth, sex, height_cm, time_zone, goals, unit_system, onboarding_completed_at FROM profiles WHERE user_id = $1`,
       ),
@@ -111,9 +116,12 @@ export class AccountService {
    * account is marked first, and `finishPendingDeletions` completes any
    * deletion interrupted part-way (e.g. Storage unavailable).
    */
-  async delete(userId: string, password: string) {
-    if (!(await this.identity.verifyPassword(userId, password))) {
-      throw new ApiError("forbidden", "Password is incorrect.", HttpStatus.FORBIDDEN);
+  /** Needs the password, or a fresh sign-in with an identity linked to this account. */
+  async delete(userId: string, proof: { password: string } | { identity: VerifiedIdentity }) {
+    if ("password" in proof) {
+      if (!(await this.identity.verifyPassword(userId, proof.password))) throw new ApiError("forbidden", "Password is incorrect.", HttpStatus.FORBIDDEN);
+    } else if ((await findLinkedUser(this.db, proof.identity.provider, proof.identity.subject)) !== userId) {
+      throw new ApiError("forbidden", "That sign-in doesn't belong to this account.", HttpStatus.FORBIDDEN);
     }
     await this.db.query(`UPDATE users SET deletion_requested_at = COALESCE(deletion_requested_at, now()) WHERE id = $1`, [userId]);
     await this.audit.log("account.delete_requested", userId);

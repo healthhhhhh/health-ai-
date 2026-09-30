@@ -4,6 +4,7 @@ import { AuthGuard, UserId } from "../../common/auth";
 import { notFound, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
+import { PushService } from "./push.service";
 
 export type NotificationCategory = "medication" | "task" | "appointment" | "report" | "insight" | "account";
 
@@ -38,7 +39,10 @@ const toRecord = (r: Row): NotificationRecord => ({
  */
 @Injectable()
 export class NotificationsService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(PushService) private readonly push: PushService,
+  ) {}
 
   async list(userId: string) {
     const { rows } = await this.db.query<Row>(`SELECT ${COLUMNS} FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [userId]);
@@ -58,6 +62,14 @@ export class NotificationsService {
       [userId, input.category, input.title.slice(0, 120), (input.body ?? "").slice(0, 500), input.link ?? null, input.aiGenerated ?? false],
     );
     return rows[0]?.id ?? null;
+  }
+
+  /**
+   * Sends a push copy of a notification. Call after the transaction that
+   * created it has committed (the push job reads the row).
+   */
+  async deliver(userId: string, notificationId: string | null) {
+    if (notificationId) await this.push.enqueue(userId, notificationId);
   }
 
   async setRead(userId: string, id: string, read: boolean) {

@@ -182,6 +182,37 @@ describe("Supabase Auth adapter", () => {
     const { provider } = await setup(() => ({ status: 503 }));
     await expect(provider.login("a@example.com", "p")).rejects.toMatchObject({ status: 503 });
   });
+
+  it("signs in with a Google ID token through Supabase and records the identity", async () => {
+    const id = "55555555-5555-4555-8555-555555555555";
+    const { provider, calls, db } = await setup(() => ({ body: { ...session, user: { id } } }));
+    await db.query(`INSERT INTO auth.users (id, email) VALUES ($1, 'sam@gmail.com')`, [id]);
+    const identity = { provider: "google" as const, subject: "google-sub-1", email: "sam@gmail.com", emailVerified: true, givenName: "Sam", familyName: "Rivera" };
+    const input = { identity, idToken: "header.payload.signature-long-enough", nonce: "nonce-12345678", profile: { firstName: "Sam", lastName: "Rivera", timeZone: "UTC" } };
+
+    const first = await provider.signInWithIdToken(input);
+    expect(first).toMatchObject({ userId: id, isNewUser: true, tokens: { accessToken: "at", refreshToken: "rt" } });
+    const call = calls.at(-1)!;
+    expect(call.url).toBe(`${URL_}/auth/v1/token?grant_type=id_token`);
+    expect(call.headers.apikey).toBe(PUBLISHABLE);
+    expect(call.body).toEqual({ provider: "google", id_token: input.idToken, nonce: "nonce-12345678" });
+    expect((await db.query(`SELECT provider, subject FROM auth_identities WHERE user_id = $1`, [id])).rows).toEqual([{ provider: "google", subject: "google-sub-1" }]);
+    expect((await db.query<{ first_name: string }>(`SELECT first_name FROM profiles WHERE user_id = $1`, [id])).rows[0]!.first_name).toBe("Sam");
+
+    const again = await provider.signInWithIdToken(input);
+    expect(again.isNewUser).toBe(false);
+    // Linking is Supabase's own flow; this API doesn't offer it there yet.
+    await expect(provider.linkIdentity()).rejects.toMatchObject({ status: 501 });
+  });
+
+  it("refuses ID tokens Supabase rejects, and fails closed when it's down", async () => {
+    const identity = { provider: "google" as const, subject: "s", email: null, emailVerified: false, givenName: null, familyName: null };
+    const input = { identity, idToken: "header.payload.signature-long-enough", profile: { firstName: "", lastName: "", timeZone: "UTC" } };
+    const rejected = await setup(() => ({ status: 400, body: { error_code: "bad_oauth_callback" } }));
+    await expect(rejected.provider.signInWithIdToken(input)).rejects.toMatchObject({ status: 401, code: "invalid_token" });
+    const down = await setup(() => ({ status: 503 }));
+    await expect(down.provider.signInWithIdToken(input)).rejects.toMatchObject({ status: 503 });
+  });
 });
 
 describe("Supabase Storage adapter", () => {

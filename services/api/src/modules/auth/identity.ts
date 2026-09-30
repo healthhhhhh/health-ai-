@@ -3,9 +3,20 @@ import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { ApiError, unauthorized } from "../../common/errors";
 import type { Database } from "../../db/database";
 import type { AuthService } from "./auth.service";
+import { fillProfileName, findLinkedUser, linkIdentity, providerName, touchIdentity } from "./identity-links";
+import { invalidIdToken, type OAuthProvider, type VerifiedIdentity } from "./oauth";
 import type { TokenPair, TokenService } from "./token.service";
 
 export type AuthResult = { userId: string; tokens: TokenPair } | { userId: string | null; confirmationRequired: true };
+
+export interface IdTokenSignIn {
+  /** Already verified by the provider's `IdTokenVerifier`. */
+  identity: VerifiedIdentity;
+  /** The raw token, for identity services that verify it again themselves (Supabase). */
+  idToken: string;
+  nonce?: string;
+  profile: { firstName: string; lastName: string; timeZone: string };
+}
 
 /**
  * Who a person is. The API's `/v1/auth/*` routes and its guard depend on this
@@ -36,6 +47,11 @@ export interface IdentityProvider {
   resendVerification(email: string): Promise<void>;
   /** Removes the identity and (by cascade) every HealthMate row. Idempotent. */
   deleteIdentity(userId: string): Promise<void>;
+  /** Signs in with a verified Google (later Apple) identity, creating the account on first use. */
+  signInWithIdToken(input: IdTokenSignIn): Promise<{ userId: string; tokens: TokenPair; isNewUser: boolean }>;
+  /** Connects a verified identity to the signed-in account. */
+  linkIdentity(userId: string, identity: VerifiedIdentity): Promise<void>;
+  unlinkIdentity(userId: string, provider: OAuthProvider): Promise<void>;
 }
 
 export const IDENTITY = Symbol("IDENTITY");
@@ -81,6 +97,15 @@ export class LocalIdentityProvider implements IdentityProvider {
     throw new ApiError("invalid_token", "This confirmation link is invalid or has expired.", HttpStatus.BAD_REQUEST);
   }
   async resendVerification(): Promise<void> {}
+  signInWithIdToken(input: IdTokenSignIn) {
+    return this.auth.signInWithIdentity(input.identity, input.profile);
+  }
+  linkIdentity(userId: string, identity: VerifiedIdentity) {
+    return this.auth.linkIdentity(userId, identity);
+  }
+  unlinkIdentity(userId: string, provider: OAuthProvider) {
+    return this.auth.unlinkIdentity(userId, provider);
+  }
   async deleteIdentity(userId: string) {
     await this.db.transaction(async (tx) => {
       await this.tokens.revokeAll(userId, tx);
@@ -255,6 +280,41 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     if (!res.ok && res.status !== 404) throw this.unavailable(res.status);
     // The auth.users trigger (migration 0005) deletes public.users; make sure even if it didn't run.
     await this.db.query(`DELETE FROM users WHERE id = $1`, [userId]);
+  }
+
+  /**
+   * Supabase's ID-token grant (the Google provider must be enabled in the
+   * Supabase dashboard with the same client IDs). Supabase creates the user or
+   * links it by its own rules; we record the identity for `signInMethods`.
+   */
+  async signInWithIdToken(input: IdTokenSignIn) {
+    const { identity } = input;
+    const res = await this.call("POST", "/token?grant_type=id_token", { provider: identity.provider, id_token: input.idToken, ...(input.nonce ? { nonce: input.nonce } : {}) });
+    if (res.status >= 400 && res.status < 500) {
+      const body = (await res.json().catch(() => ({}))) as { error_code?: string };
+      this.logger.warn(`Supabase ID-token sign-in refused (${res.status}${body.error_code ? `, ${body.error_code}` : ""})`);
+      throw invalidIdToken();
+    }
+    if (!res.ok) throw this.unavailable(res.status);
+    const session = (await res.json()) as GoTrueSession;
+    const userId = session.user.id;
+    const knownBefore = (await findLinkedUser(this.db, identity.provider, identity.subject)) === userId;
+    // public.users is created by the auth.users trigger; skip the record if it isn't there yet.
+    const { rows } = await this.db.query<{ onboarding_completed_at: Date | null }>(`SELECT onboarding_completed_at FROM profiles WHERE user_id = $1`, [userId]);
+    if (rows[0]) {
+      if (knownBefore) await touchIdentity(this.db, userId, identity);
+      else await linkIdentity(this.db, userId, identity).catch((error) => this.logger.warn(`Couldn't record the ${providerName(identity.provider)} identity (${error instanceof Error ? error.name : "error"})`));
+      await fillProfileName(this.db, userId, input.profile.firstName, input.profile.lastName);
+    }
+    return { userId, tokens: toPair(session), isNewUser: !knownBefore && !rows[0]?.onboarding_completed_at };
+  }
+
+  /** Supabase links identities through its own OAuth flow; not offered by this API yet. */
+  async linkIdentity(): Promise<void> {
+    throw new ApiError("not_available", "Connecting another sign-in method isn't available on this server yet.", HttpStatus.NOT_IMPLEMENTED);
+  }
+  async unlinkIdentity(): Promise<void> {
+    throw new ApiError("not_available", "Disconnecting a sign-in method isn't available on this server yet.", HttpStatus.NOT_IMPLEMENTED);
   }
 
   private adminHeaders(): Record<string, string> {

@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Inject, Post, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Headers, HttpCode, HttpStatus, Inject, Param, Post, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
@@ -6,6 +6,8 @@ import { ApiError, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { CONFIG, type AppConfig } from "../../config";
 import { IDENTITY, type IdentityProvider } from "./identity";
+import { providerName } from "./identity-links";
+import { ID_TOKEN_VERIFIERS, type IdTokenVerifiers, type OAuthProvider } from "./oauth";
 
 const email = z.string().trim().email().max(254);
 /** NIST 800-63B: length over composition rules; long passphrases allowed. */
@@ -26,7 +28,20 @@ const ResetCompleteBody = z.object({ accessToken: z.string().min(16).max(4096), 
 const ChangePasswordBody = z.object({ currentPassword: z.string().min(1).max(256), newPassword: password });
 // Supabase's confirmation link carries `token_hash`; the web page forwards it as `token`.
 const VerifyEmailBody = z.object({ token: z.string().min(8).max(512) });
-const OAuthBody = z.object({ provider: z.enum(["apple", "google"]) }).passthrough();
+const provider = z.enum(["apple", "google"]);
+/** `idToken` comes from the provider's SDK on the device (Google Sign-In); `nonce` is the value the app asked it to embed. */
+const OAuthBody = z.object({
+  provider,
+  idToken: z.string().min(20).max(4096).optional(),
+  nonce: z.string().min(8).max(256).optional(),
+  timeZone: z.string().max(64).default("UTC"),
+  firstName: z.string().trim().max(80).optional(),
+  lastName: z.string().trim().max(80).optional(),
+});
+const LinkBody = z.object({ provider, idToken: z.string().min(20).max(4096), nonce: z.string().min(8).max(256).optional() });
+
+const notAvailable = (p: OAuthProvider) =>
+  new ApiError("not_available", `Signing in with ${providerName(p)} isn't available on this server yet. Use your email instead.`, HttpStatus.NOT_IMPLEMENTED);
 
 /**
  * Same contract for local auth (development) and Supabase Auth (production):
@@ -38,6 +53,7 @@ export class AuthController {
   constructor(
     @Inject(IDENTITY) private readonly identity: IdentityProvider,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(ID_TOKEN_VERIFIERS) private readonly verifiers: IdTokenVerifiers,
   ) {}
 
   @Post("register")
@@ -107,14 +123,27 @@ export class AuthController {
   }
 
   /**
-   * Continue with Apple / Google: the UI is in place, the provider setup
-   * arrives in Phase 2D. Clients show "isn't available on this server yet".
+   * Continue with Google (Phase 2D): the app sends the ID token it got from
+   * Google; the server verifies it against Google's keys and signs the person
+   * in, creating the account on first use. Apple and requests without a token
+   * (apps that can't obtain one yet) get 501, which clients show as
+   * "isn't available on this server yet".
    */
   @Post("oauth")
+  @HttpCode(200)
   @RateLimit("auth-oauth", 10, 60_000)
-  oauth(@Body() body: unknown) {
-    parseBody(OAuthBody, body);
-    throw new ApiError("not_available", "Signing in with Apple or Google isn't available yet. Use your email instead.", HttpStatus.NOT_IMPLEMENTED);
+  async oauth(@Body() body: unknown) {
+    const input = parseBody(OAuthBody, body);
+    const verifier = this.verifiers[input.provider];
+    if (!verifier || !input.idToken) throw notAvailable(input.provider);
+    const identity = await verifier.verify(input.idToken, input.nonce);
+    const { userId, tokens, isNewUser } = await this.identity.signInWithIdToken({
+      identity,
+      idToken: input.idToken,
+      nonce: input.nonce,
+      profile: { firstName: input.firstName || identity.givenName || "", lastName: input.lastName || identity.familyName || "", timeZone: input.timeZone },
+    });
+    return { userId, ...tokens, isNewUser };
   }
 
   /** Always 202, whether or not the email has an account. */
@@ -133,5 +162,32 @@ export class AuthController {
   async completePasswordReset(@Body() body: unknown) {
     const { accessToken, password: newPassword } = parseBody(ResetCompleteBody, body);
     await this.identity.completePasswordReset(accessToken, newPassword);
+  }
+}
+
+/** Sign-in methods connected to the signed-in account (local accounts; Supabase links through its own flow). */
+@Controller("v1/me/identities")
+@UseGuards(AuthGuard, RateLimitGuard)
+export class IdentitiesController {
+  constructor(
+    @Inject(IDENTITY) private readonly identity: IdentityProvider,
+    @Inject(ID_TOKEN_VERIFIERS) private readonly verifiers: IdTokenVerifiers,
+  ) {}
+
+  @Post()
+  @HttpCode(204)
+  @RateLimit("identities-link", 10, 60_000)
+  async link(@UserId() userId: string, @Body() body: unknown) {
+    const input = parseBody(LinkBody, body);
+    const verifier = this.verifiers[input.provider];
+    if (!verifier) throw notAvailable(input.provider);
+    await this.identity.linkIdentity(userId, await verifier.verify(input.idToken, input.nonce));
+  }
+
+  @Delete(":provider")
+  @HttpCode(204)
+  @RateLimit("identities-unlink", 10, 60_000)
+  async unlink(@UserId() userId: string, @Param("provider") value: string) {
+    await this.identity.unlinkIdentity(userId, parseBody(provider, value));
   }
 }

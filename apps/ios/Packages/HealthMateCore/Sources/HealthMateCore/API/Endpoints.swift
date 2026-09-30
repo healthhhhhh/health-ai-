@@ -34,7 +34,17 @@ extension APIClient {
         try await sendNoContent(.json("POST", "auth/resend-verification", Body(email: email), authenticated: false))
     }
 
-    /// Continue with Apple or Google. Phase 1 (Preview mode) signs in to the sample account; the real API answers 501 until OAuth is set up (Phase 2D).
+    /// Continue with Google using the ID token that Google Sign-In returned on this device (Phase 2D).
+    /// `nonce`: the value the app asked Google to embed, if any. Apple answers 501 until it's set up.
+    public func signIn(with provider: String, idToken: String, nonce: String?) async throws -> AuthResponse {
+        struct Body: Encodable { let provider: String; let idToken: String; let nonce: String?; let timeZone: String }
+        let response: AuthResponse = try await send(.json("POST", "auth/oauth", Body(provider: provider, idToken: idToken, nonce: nonce, timeZone: TimeZone.current.identifier), authenticated: false))
+        await store(response.tokens)
+        return response
+    }
+
+    /// Continue with Apple or Google without a provider token. Preview mode signs in to the sample account;
+    /// the real API answers 501 ("isn't available on this server yet").
     public func signIn(with provider: String) async throws -> AuthResponse {
         struct Body: Encodable { let provider: String; let timeZone: String }
         let response: AuthResponse = try await send(.json("POST", "auth/oauth", Body(provider: provider, timeZone: TimeZone.current.identifier), authenticated: false))
@@ -156,6 +166,25 @@ extension APIClient {
 
     public func deleteNotification(_ id: String) async throws {
         try await sendNoContent(Endpoint("DELETE", "notifications/\(id)"))
+    }
+
+    // MARK: Push devices (Phase 2D; the server logs pushes until APNs is configured)
+
+    public func pushDevices() async throws -> [PushDevice] {
+        let list: PushDeviceList = try await send(Endpoint("GET", "me/devices"))
+        return list.devices
+    }
+
+    /// Registers this device's APNs token (hex). `environment`: "sandbox" or "production".
+    public func registerPushDevice(token: String, environment: String, appVersion: String?) async throws -> PushDevice {
+        struct Body: Encodable { let platform: String; let token: String; let environment: String; let appVersion: String? }
+        return try await send(.json("POST", "me/devices", Body(platform: "ios", token: token, environment: environment, appVersion: appVersion)))
+    }
+
+    /// Forgets this device's token (before signing out on it).
+    public func unregisterPushDevice(token: String) async throws {
+        struct Body: Encodable { let token: String }
+        try await sendNoContent(.json("DELETE", "me/devices", Body(token: token)))
     }
 
     // MARK: Care
