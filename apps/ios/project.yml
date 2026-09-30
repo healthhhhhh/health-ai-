@@ -54,6 +54,8 @@ targets:
       properties:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: []
+        # Lets HealthKit wake the app (at most hourly) when new data arrives, to keep the account in sync.
+        com.apple.developer.healthkit.background-delivery: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.healthmate.app

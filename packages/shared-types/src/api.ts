@@ -388,6 +388,28 @@ export interface HealthKitConnection {
   connectedAt: ISO | null;
   disconnectedAt: ISO | null;
   lastSyncAt: ISO | null;
+  /** Phase 2B: the first import of past Apple Health data (optional for older servers). */
+  history?: { status: "not_started" | "importing" | "complete" | "failed"; from: string | null; daysRequested: number | null };
+  /** The last sync problem, as a code (never health content). */
+  lastError?: { code: string; at: ISO } | null;
+}
+
+/** One day of one metric (`GET /v1/health-data/daily`): Apple Health preferred over readings entered by hand. */
+export interface DailyHealthRecord {
+  /** The person's local day, YYYY-MM-DD (sleep: the day they woke up). */
+  day: string;
+  kind: MeasurementKind;
+  unit: string;
+  /** Daily total (steps, sleep, active energy, water) or daily average (the rest). */
+  value: number;
+  min: number | null;
+  max: number | null;
+  sampleCount: number | null;
+  source: "apple_health" | "user_entered";
+  /** false while the day is still in progress. */
+  isComplete: boolean;
+  timeZone: string;
+  updatedAt: ISO;
 }
 
 export interface ReminderRecord {

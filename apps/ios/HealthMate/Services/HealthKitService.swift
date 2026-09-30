@@ -8,6 +8,36 @@ protocol HealthDataReading: Sendable {
     var isAvailable: Bool { get }
     func requestAuthorization() async throws
     func dailyValues(_ metric: TrackedMetric, days: Int, now: Date) async throws -> [DailyValue]
+    /// Every tracked metric for local days in [from, to), for syncing to the account.
+    func dailyMetricValues(from: Date, to: Date) async throws -> [DailyMetricValue]
+    /// True when HealthMate should ask again (e.g. a data type was added since the person last answered).
+    /// HealthKit never reveals whether *read* access was granted, only whether asking would show the sheet.
+    func shouldRequestAuthorization() async -> Bool
+}
+
+extension HealthDataReading {
+    func dailyMetricValues(from: Date, to: Date) async throws -> [DailyMetricValue] {
+        let calendar = Calendar.current
+        let days = max(1, calendar.dateComponents([.day], from: from, to: to).day ?? 1)
+        let last = calendar.date(byAdding: .second, value: -1, to: to) ?? to
+        var result: [DailyMetricValue] = []
+        for metric in TrackedMetric.allCases {
+            for value in try await dailyValues(metric, days: days, now: last) where value.date >= from && value.date < to {
+                result.append(DailyMetricValue(metric: metric, day: value.date, value: value.value))
+            }
+        }
+        return result
+    }
+
+    func shouldRequestAuthorization() async -> Bool { false }
+}
+
+/// The sync engine's view of the reader.
+struct HealthReaderSource: DailyHealthSource {
+    let reader: any HealthDataReading
+    func dailyMetricValues(from: Date, to: Date) async throws -> [DailyMetricValue] {
+        try await reader.dailyMetricValues(from: from, to: to)
+    }
 }
 
 final class HealthKitService: HealthDataReading, @unchecked Sendable {
@@ -34,10 +64,75 @@ final class HealthKitService: HealthDataReading, @unchecked Sendable {
         }
     }
 
-    func requestAuthorization() async throws {
-        var read: Set<HKObjectType> = Set(Self.quantityTypes.values.map { HKQuantityType($0) })
+    private static var readTypes: Set<HKObjectType> {
+        var read: Set<HKObjectType> = Set(quantityTypes.values.map { HKQuantityType($0) })
         read.insert(HKCategoryType(.sleepAnalysis))
-        try await store.requestAuthorization(toShare: [], read: read)
+        return read
+    }
+
+    func requestAuthorization() async throws {
+        try await store.requestAuthorization(toShare: [], read: Self.readTypes)
+    }
+
+    func shouldRequestAuthorization() async -> Bool {
+        guard isAvailable else { return false }
+        return (try? await store.statusForAuthorizationRequest(toShare: [], read: Self.readTypes)) == .shouldRequest
+    }
+
+    /// Full days for syncing: totals (or average, lowest and highest) per metric, as HealthKit computes them
+    /// across iPhone and Apple Watch without double counting.
+    func dailyMetricValues(from: Date, to: Date) async throws -> [DailyMetricValue] {
+        var result: [DailyMetricValue] = []
+        for metric in TrackedMetric.allCases {
+            if metric == .sleep {
+                for value in try await sleepMinutes(start: from, end: to) where value.date < to {
+                    result.append(DailyMetricValue(metric: .sleep, day: value.date, value: value.value))
+                }
+                continue
+            }
+            guard let identifier = Self.quantityTypes[metric] else { continue }
+            let descriptor = HKStatisticsCollectionQueryDescriptor(
+                predicate: HKSamplePredicate.quantitySample(type: HKQuantityType(identifier), predicate: HKQuery.predicateForSamples(withStart: from, end: to)),
+                options: metric.isCumulative ? .cumulativeSum : [.discreteAverage, .discreteMin, .discreteMax],
+                anchorDate: from,
+                intervalComponents: DateComponents(day: 1)
+            )
+            let collection = try await descriptor.result(for: store)
+            let unit = Self.unit(for: metric)
+            collection.enumerateStatistics(from: from, to: to) { statistics, _ in
+                if metric.isCumulative {
+                    if let sum = statistics.sumQuantity() {
+                        result.append(DailyMetricValue(metric: metric, day: statistics.startDate, value: sum.doubleValue(for: unit)))
+                    }
+                } else if let average = statistics.averageQuantity() {
+                    result.append(DailyMetricValue(
+                        metric: metric,
+                        day: statistics.startDate,
+                        value: average.doubleValue(for: unit),
+                        min: statistics.minimumQuantity()?.doubleValue(for: unit),
+                        max: statistics.maximumQuantity()?.doubleValue(for: unit)
+                    ))
+                }
+            }
+        }
+        return result
+    }
+
+    /// Wakes HealthMate (hourly at most) when new Apple Health data arrives, so it can sync in the background.
+    /// Needs the HealthKit background-delivery entitlement; if it fails, syncing waits for the next app open.
+    func observeChanges(_ onChange: @escaping @Sendable () async -> Void) {
+        let types: [HKSampleType] = Self.quantityTypes.values.map { HKQuantityType($0) } + [HKCategoryType(.sleepAnalysis)]
+        for type in types {
+            let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
+                guard error == nil else { completion(); return }
+                Task {
+                    await onChange()
+                    completion()
+                }
+            }
+            store.execute(query)
+            store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+        }
     }
 
     func dailyValues(_ metric: TrackedMetric, days: Int, now: Date) async throws -> [DailyValue] {

@@ -15,37 +15,42 @@ final class HealthDashboardViewModel {
         case failed(String)
     }
 
-    /// Account sync status, shown on the dashboard.
-    enum SyncStatus: Equatable {
-        case idle, syncing
-        case succeeded(String)
-        case failed(String)
-    }
+    /// Account sync status, shown on the dashboard (owned by the app-wide `HealthSyncCoordinator`).
+    typealias SyncStatus = HealthSyncCoordinator.Status
 
     static let periods = [7, 30, 90]
 
     private(set) var state: State = .notConnected
     var periodDays = 7
     private(set) var series: [TrackedMetric: [DailyValue]] = [:]
-    private(set) var syncStatus: SyncStatus = .idle
-    private(set) var lastSyncedAt: Date?
     /// When the person last disconnected (so the connect card can say so).
     private(set) var disconnectedAt: Date?
+    /// A data type was added since the person last answered the Apple Health sheet.
+    private(set) var needsAccessReview = false
+    /// How much history to import when connecting.
+    var historyLength: HealthHistoryLength
 
+    let sync: HealthSyncCoordinator
     private let reader: any HealthDataReading
     private let api: APIClient
     private let defaults: UserDefaults
     private let now: () -> Date
     private static let connectedKey = HealthConnection.defaultsKey
-    private static let lastSyncKey = "hmHealthLastSyncedAt"
     private static let disconnectedKey = "hmHealthDisconnectedAt"
 
-    init(reader: any HealthDataReading, api: APIClient, defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init) {
+    var syncStatus: SyncStatus { sync.status }
+    var lastSyncedAt: Date? { sync.lastSyncedAt }
+    var syncProgress: HealthSyncProgress? { sync.progress }
+
+    /// `sync` is the app-wide coordinator; without one (e.g. a metric opened from Home) nothing is uploaded from here.
+    init(reader: any HealthDataReading, api: APIClient, sync: HealthSyncCoordinator? = nil, defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init) {
         self.reader = reader
         self.api = api
+        let sync = sync ?? HealthSyncCoordinator(api: api, reader: reader, defaults: defaults, accountAllowsSync: { false })
+        self.sync = sync
         self.defaults = defaults
         self.now = now
-        lastSyncedAt = defaults.object(forKey: Self.lastSyncKey) as? Date
+        historyLength = sync.historyLength
         disconnectedAt = defaults.object(forKey: Self.disconnectedKey) as? Date
         if !reader.isAvailable {
             state = .unavailable
@@ -55,7 +60,7 @@ final class HealthDashboardViewModel {
     }
 
     var isConnected: Bool { defaults.bool(forKey: Self.connectedKey) && reader.isAvailable }
-    var syncing: Bool { syncStatus == .syncing }
+    var syncing: Bool { sync.syncing }
 
     func connect() async {
         guard reader.isAvailable else { state = .unavailable; return }
@@ -64,10 +69,19 @@ final class HealthDashboardViewModel {
             defaults.set(true, forKey: Self.connectedKey)
             defaults.removeObject(forKey: Self.disconnectedKey)
             disconnectedAt = nil
+            needsAccessReview = false
             await load()
+            // Imports the chosen history in the background of this screen (only when sync is on).
+            await sync.connected(history: historyLength)
         } catch {
             state = .denied((error as? LocalizedError)?.errorDescription ?? "Apple Health access is turned off for HealthMate. Turn it on in Settings › Health › Data Access & Devices.")
         }
+    }
+
+    /// Shows "Review Apple Health access" when the permission sheet has something new to ask.
+    func checkAccess() async {
+        guard isConnected else { return }
+        needsAccessReview = await reader.shouldRequestAuthorization()
     }
 
     /// Stops reading on this device. Apple Health itself is unchanged.
@@ -78,7 +92,7 @@ final class HealthDashboardViewModel {
         disconnectedAt = date
         series = [:]
         state = .notConnected
-        syncStatus = .idle
+        sync.disconnected()
         if removeSyncedData { try? await api.disconnectAppleHealth() }
     }
 
@@ -113,26 +127,16 @@ final class HealthDashboardViewModel {
     /// Days in the loaded series (newest first) — today's snapshot compares with these.
     var days: [HealthDay] { HealthHistory.days(from: series) }
 
-    /// Uploads completed days to the person's account (requires the health_data_sync consent).
-    func sync() async {
-        guard isConnected, !syncing else { return }
-        syncStatus = .syncing
-        let uploads = TrackedMetric.allCases.flatMap { TrendAnalysis.uploads(for: $0, values: series[$0] ?? [], now: now()) }
-        guard !uploads.isEmpty else { syncStatus = .succeeded("Nothing new to sync."); return }
-        do {
-            var inserted = 0
-            for start in stride(from: 0, to: uploads.count, by: 500) {
-                inserted += try await api.uploadMeasurements(Array(uploads[start..<min(start + 500, uploads.count)]))
-            }
-            let date = now()
-            lastSyncedAt = date
-            defaults.set(date, forKey: Self.lastSyncKey)
-            syncStatus = .succeeded(inserted == 0 ? "Already up to date." : "Synced \(inserted) day\(inserted == 1 ? "" : "s") of data.")
-        } catch APIError.network {
-            syncStatus = .failed("You're offline, so nothing was synced. Your data is safe on this iPhone.")
-        } catch {
-            syncStatus = .failed((error as? LocalizedError)?.errorDescription ?? "Sync didn't complete. Please try again.")
-        }
+    /// Syncs Apple Health to the person's account now (requires the health_data_sync consent).
+    /// The first sync also imports the chosen history; later ones keep recent days current.
+    func syncNow() async {
+        guard isConnected else { return }
+        await sync.syncNow()
+    }
+
+    func setHistoryLength(_ length: HealthHistoryLength) async {
+        historyLength = length
+        await sync.setHistoryLength(length)
     }
 }
 

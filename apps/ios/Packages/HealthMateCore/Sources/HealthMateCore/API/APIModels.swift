@@ -528,3 +528,43 @@ public struct CareProviderRecord: Codable, Equatable, Identifiable, Sendable {
     public let website: String?
     public let notes: String?
 }
+
+
+// MARK: Daily health data & Apple Health connection (Phase 2B)
+
+/// One day of one metric from the account (`GET /v1/health-data/daily`).
+public struct DailyHealthRecord: Codable, Equatable, Sendable {
+    public let day: String
+    public let kind: String
+    public let unit: String
+    public let value: Double
+    public let min: Double?
+    public let max: Double?
+    public let sampleCount: Int?
+    /// "apple_health" or "user_entered".
+    public let source: String
+    /// false while the day is still in progress.
+    public let isComplete: Bool
+    public let timeZone: String
+}
+
+/// The account's view of the Apple Health connection (`GET /v1/healthkit/connection`).
+public struct HealthKitConnectionRecord: Codable, Equatable, Sendable {
+    public struct History: Codable, Equatable, Sendable {
+        /// "not_started", "importing", "complete" or "failed".
+        public let status: String
+        public let from: String?
+        public let daysRequested: Int?
+    }
+    public struct LastError: Codable, Equatable, Sendable {
+        public let code: String
+        public let at: Date
+    }
+    /// "never_connected", "connected" or "disconnected".
+    public let status: String
+    public let deviceName: String?
+    public let scopes: [String]
+    public let lastSyncAt: Date?
+    public var history: History? = nil
+    public var lastError: LastError? = nil
+}

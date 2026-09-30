@@ -4,6 +4,7 @@ import type {
   AccountSummary,
   AnalysisResult,
   AppointmentRecord,
+  DailyHealthRecord,
   AssistantAnswer,
   AssistantPayload,
   CareProviderRecord,
@@ -469,6 +470,38 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
       return json({ inserted: list.length }, 201);
     }
     if (b === "apple-health" && method === "DELETE") return disconnectHealthKit(account);
+    // Daily records (Phase 2B), from the sample series.
+    if (b === "daily" && method === "GET") {
+      const from = ctx.url.searchParams.get("from") ?? "";
+      const to = ctx.url.searchParams.get("to") ?? "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return fail(400, "validation_failed", "Check these fields: from, to.");
+      const kinds = ctx.url.searchParams.get("kinds")?.split(",").filter(Boolean);
+      const records: DailyHealthRecord[] = [];
+      for (const [kind, series] of Object.entries(view.measurements.daily) as [MeasurementKind, { date: string; value: number; min: number; max: number; count: number }[]][]) {
+        if (kinds?.length && !kinds.includes(kind)) continue;
+        const unit = view.measurements.latest.find((m) => m.kind === kind)?.unit ?? "";
+        for (const p of series) {
+          const day = p.date.slice(0, 10);
+          if (day < from || day > to) continue;
+          records.push({ day, kind, unit, value: p.value, min: p.min, max: p.max, sampleCount: p.count, source: "apple_health", isComplete: true, timeZone: "UTC", updatedAt: nowIso() });
+        }
+      }
+      return json({ records: records.sort((x, y) => x.day.localeCompare(y.day) || x.kind.localeCompare(y.kind)) });
+    }
+    if (b === "daily" && method === "PUT") {
+      const records = Array.isArray(input.records) ? input.records : [];
+      if (!records.length || records.length > 500) return fail(400, "validation_failed", "Check these fields: records.");
+      account.healthKit = { ...account.healthKit, lastSyncAt: nowIso() };
+      return json({ upserted: records.length, unchanged: 0, ignoredOlder: 0 });
+    }
+  }
+  if (a === "healthkit" && b === "sync-runs") {
+    if (!c && method === "POST") return json({ id: newId() }, 201);
+    if (c && method === "PATCH") {
+      if (input.status !== "failed") account.healthKit = { ...account.healthKit, lastSyncAt: nowIso() };
+      if (input.historyComplete === true) account.healthKit = { ...account.healthKit, history: { status: "complete", from: optionalText(input.oldestDay, 10), daysRequested: account.healthKit.history?.daysRequested ?? null } };
+      return json(account.healthKit);
+    }
   }
   if (a === "healthkit" && b === "connection") {
     if (method === "GET") return json(view.healthKit);

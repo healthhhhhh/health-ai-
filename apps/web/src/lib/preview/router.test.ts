@@ -149,6 +149,24 @@ describe("preview API", () => {
     expect(consents.body.every((c) => !c.granted)).toBe(true);
   });
 
+  it("serves daily records and accepts Apple Health sync runs like the real API", async () => {
+    const token = await signIn();
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    const daily = await call<{ records: { day: string; kind: string; source: string }[] }>(`health-data/daily?from=${weekAgo}&to=${today}&kinds=steps`, "GET", undefined, token);
+    expect(daily.status).toBe(200);
+    expect(daily.body.records.length).toBeGreaterThan(0);
+    expect(daily.body.records.every((r) => r.kind === "steps" && r.source === "apple_health" && r.day >= weekAgo && r.day <= today)).toBe(true);
+    expect((await call("health-data/daily?from=2026-09-10&to=2026-09-01", "GET", undefined, token)).status).toBe(400);
+
+    const run = await call<{ id: string }>("healthkit/sync-runs", "POST", { kind: "initial_import" }, token);
+    expect(run.status).toBe(201);
+    const upload = await call<{ upserted: number }>("health-data/daily", "PUT", { timeZone: "UTC", syncRunId: run.body.id, records: [{ day: today, kind: "steps", value: 100, isComplete: false, computedAt: new Date().toISOString() }] }, token);
+    expect(upload.body.upserted).toBe(1);
+    const finished = await call<{ history?: { status: string } }>(`healthkit/sync-runs/${run.body.id}`, "PATCH", { status: "succeeded", daysSent: 1, recordsUpserted: 1, oldestDay: today, historyComplete: true }, token);
+    expect(finished.body.history?.status).toBe("complete");
+  });
+
   it("marks notifications read", async () => {
     const token = await signIn();
     const list = await call<{ unreadCount: number }>("notifications", "GET", undefined, token);

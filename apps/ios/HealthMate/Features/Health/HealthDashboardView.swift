@@ -13,10 +13,10 @@ struct HealthDashboardView: View {
     @State private var confirmDisconnect = false
     @Environment(\.openURL) private var openURL
 
-    init(session: SessionStore, reader: any HealthDataReading) {
+    init(session: SessionStore, reader: any HealthDataReading, sync: HealthSyncCoordinator) {
         self.session = session
         self.reader = reader
-        _model = State(initialValue: HealthDashboardViewModel(reader: reader, api: session.api))
+        _model = State(initialValue: HealthDashboardViewModel(reader: reader, api: session.api, sync: sync))
     }
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
@@ -83,7 +83,7 @@ struct HealthDashboardView: View {
                         Menu {
                             Button { openHealthApp() } label: { Label("Add a reading in Apple Health", systemImage: "plus") }
                             if session.isSignedIn && session.hasConsent("health_data_sync") {
-                                Button { Task { await model.sync() } } label: { Label("Sync to my account", systemImage: "arrow.triangle.2.circlepath") }
+                                Button { Task { await model.syncNow() } } label: { Label("Sync to my account", systemImage: "arrow.triangle.2.circlepath") }
                             }
                             Button(role: .destructive) { confirmDisconnect = true } label: { Label("Disconnect Apple Health", systemImage: "xmark.circle") }
                         } label: {
@@ -102,12 +102,34 @@ struct HealthDashboardView: View {
                 Text("HealthMate stops reading your data. To fully revoke access, also turn it off in Settings › Health › Data Access.")
             }
         }
-        .task { await model.load() }
+        .task {
+            await model.load()
+            await model.checkAccess()
+        }
         .onChange(of: model.periodDays) { _, _ in Task { await model.load() } }
     }
 
     @ViewBuilder
     private var dashboard: some View {
+        if model.needsAccessReview {
+            // HealthKit has something new to ask (e.g. a data type added in an update).
+            HStack(alignment: .top, spacing: 12) {
+                IconBadge(systemName: "heart.text.square", tone: .blue)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Review Apple Health access").font(.hmBodyEmphasis).foregroundStyle(HM.Colors.textPrimary)
+                    Text("HealthMate can read more types of data now. Choose what to share — you can change it any time in Settings › Health.")
+                        .font(.hmCaption)
+                        .foregroundStyle(HM.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Review access") { Task { await model.connect() } }
+                        .font(.hmCaption.weight(.semibold))
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .hmCard()
+        }
         SyncStatusCard(model: model, session: session)
 
         if model.state == .loaded && !model.hasAnyData {
@@ -176,7 +198,7 @@ private struct LinkCard: View {
     }
 }
 
-/// Apple Health is read on this iPhone; syncing copies completed days to the account.
+/// Apple Health is read on this iPhone; syncing keeps the account's daily records current (and imports history once).
 private struct SyncStatusCard: View {
     let model: HealthDashboardViewModel
     let session: SessionStore
@@ -187,15 +209,31 @@ private struct SyncStatusCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.hmBodyEmphasis).foregroundStyle(HM.Colors.textPrimary)
                 Text(detail).font(.hmCaption).foregroundStyle(HM.Colors.textSecondary).fixedSize(horizontal: false, vertical: true)
-                if case .failed = model.syncStatus {
-                    Button("Try again") { Task { await model.sync() } }
-                        .font(.hmCaption.weight(.semibold))
-                        .padding(.top, 2)
-                } else if canSync, !model.syncing {
-                    Button("Sync now") { Task { await model.sync() } }
-                        .font(.hmCaption.weight(.semibold))
-                        .padding(.top, 2)
+                if let progress = model.syncProgress, progress.isImportingHistory, canSync {
+                    ProgressView(value: Double(progress.historyDaysImported), total: Double(max(progress.historyDaysTotal, 1)))
+                        .accessibilityLabel("History imported")
+                        .accessibilityValue("\(progress.historyDaysImported) of \(progress.historyDaysTotal) days")
+                        .padding(.top, 4)
                 }
+                HStack(spacing: 14) {
+                    if case .failed = model.syncStatus {
+                        Button("Try again") { Task { await model.syncNow() } }
+                    } else if canSync, !model.syncing {
+                        Button("Sync now") { Task { await model.syncNow() } }
+                    }
+                    if canSync, !model.syncing {
+                        Menu {
+                            Picker("History to keep in your account", selection: Binding(get: { model.historyLength }, set: { length in Task { await model.setHistoryLength(length) } })) {
+                                ForEach(HealthHistoryLength.allCases) { Text($0.label).tag($0) }
+                            }
+                        } label: {
+                            Text("History: \(model.historyLength.label)")
+                        }
+                        .accessibilityLabel("History to import: \(model.historyLength.label)")
+                    }
+                }
+                .font(.hmCaption.weight(.semibold))
+                .padding(.top, 2)
             }
             Spacer(minLength: 0)
             if model.syncing { ProgressView().accessibilityLabel("Syncing") }
@@ -225,7 +263,7 @@ private struct SyncStatusCard: View {
 
     private var title: String {
         switch model.syncStatus {
-        case .syncing: "Syncing to your account…"
+        case .syncing: model.syncProgress?.isImportingHistory == true ? "Importing your Apple Health history…" : "Syncing to your account…"
         case .failed: "Sync didn't complete"
         default: "Apple Health connected"
         }
@@ -233,12 +271,19 @@ private struct SyncStatusCard: View {
 
     private var detail: String {
         switch model.syncStatus {
-        case .syncing: return "Copying completed days to your health history."
+        case .syncing:
+            if let progress = model.syncProgress, progress.isImportingHistory {
+                return "\(progress.historyDaysImported) of \(progress.historyDaysTotal) days so far. You can keep using HealthMate."
+            }
+            return "Copying your recent days to your health history."
         case .failed(let message): return message
         case .succeeded(let message): return "\(message)\(lastSynced)"
         case .idle:
             if !session.isSignedIn { return "Readings stay on this iPhone. Sign in to keep them in your health history." }
             if !canSync { return "Readings stay on this iPhone. Turn on Health data sync in Profile › Privacy to keep them in your health history." }
+            if let progress = model.syncProgress, progress.isImportingHistory {
+                return "History import paused at \(progress.historyDaysImported) of \(progress.historyDaysTotal) days. It continues the next time you open HealthMate."
+            }
             return model.lastSyncedAt == nil ? "Not synced to your account yet." : "Up to date\(lastSynced)"
         }
     }

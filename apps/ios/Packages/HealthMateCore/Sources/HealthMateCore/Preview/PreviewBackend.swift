@@ -533,6 +533,34 @@ public final class PreviewBackend: @unchecked Sendable {
                 return json(["inserted": .number(Double(list.count))], 201)
             }
             if b == "apple-health", method == "DELETE" { ctx.account["healthKit"]["status"] = "disconnected"; ctx.account["healthKit"]["disconnectedAt"] = .string(ctx.now); return json(["removed": 0]) }
+            // Daily records (Phase 2B): accepted and counted; the sample series stays the source of what's shown.
+            if b == "daily", method == "PUT" {
+                let records = input["records"].array
+                guard !records.isEmpty, records.count <= 500 else { return fail(400, "validation_failed", "Check these fields: records.") }
+                ctx.account["healthKit"]["lastSyncAt"] = .string(ctx.now)
+                return json(["upserted": .number(Double(records.count)), "unchanged": 0, "ignoredOlder": 0])
+            }
+            if b == "daily", method == "GET" {
+                let from = ctx.query["from"] ?? "", to = ctx.query["to"] ?? ""
+                let kinds = ctx.query["kinds"].map { $0.split(separator: ",").map(String.init) }
+                var records: [JSONValue] = []
+                for (kind, series) in view["measurements"]["daily"].object where kinds?.contains(kind) ?? true {
+                    let unit = view["measurements"]["latest"].array.first(where: { $0["kind"].string == kind })?["unit"] ?? ""
+                    for point in series.array {
+                        guard let day = point["date"].string.map({ String($0.prefix(10)) }), day >= from, day <= to else { continue }
+                        records.append(["day": .string(day), "kind": .string(kind), "unit": unit, "value": point["value"], "min": nil, "max": nil, "sampleCount": nil, "source": "apple_health", "isComplete": true, "timeZone": "UTC"])
+                    }
+                }
+                return json(["records": .array(records.sorted { ($0["day"].string ?? "", $0["kind"].string ?? "") < ($1["day"].string ?? "", $1["kind"].string ?? "") })])
+            }
+        }
+        if a == "healthkit", b == "sync-runs" {
+            if c == nil, method == "POST" { return json(["id": .string(newId())], 201) }
+            if c != nil, method == "PATCH" {
+                if input["status"].string != "failed" { ctx.account["healthKit"]["lastSyncAt"] = .string(ctx.now) }
+                if input["historyComplete"].bool == true { ctx.account["healthKit"]["history"] = ["status": "complete", "from": input["oldestDay"], "daysRequested": nil] }
+                return json(ctx.account["healthKit"])
+            }
         }
         if a == "healthkit", b == "connection" {
             if method == "GET" { return json(view["healthKit"]) }

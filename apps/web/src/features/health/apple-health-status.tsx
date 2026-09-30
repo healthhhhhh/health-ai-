@@ -8,10 +8,13 @@ import { TurnOnSyncButton } from "./turn-on-sync-button";
 
 const SCOPE_LABEL: Record<string, string> = { steps: "Steps", heart_rate: "Heart rate", resting_heart_rate: "Resting heart rate", sleep: "Sleep", active_energy: "Active energy", weight: "Weight" };
 
+const formatDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const historyLabel = (days: number) => (days >= 700 ? "2 years" : days >= 360 ? "1 year" : days >= 85 ? "3 months" : `${days} days`);
+
 /** Apple Health readings older than this are shown as "hasn't synced recently". */
 export const STALE_SYNC_HOURS = 36;
 
-export type AppleHealthState = "permission" | "never_connected" | "disconnected" | "stale" | "connected" | "unknown";
+export type AppleHealthState = "permission" | "never_connected" | "disconnected" | "stale" | "importing" | "connected" | "unknown";
 
 /** Which connection state to show, from the sync consent and the connection record. */
 export function appleHealthState(connection: HealthKitConnection | null, syncConsent: boolean, now = new Date()): AppleHealthState {
@@ -20,6 +23,7 @@ export function appleHealthState(connection: HealthKitConnection | null, syncCon
   if (connection.status === "never_connected") return "never_connected";
   if (connection.status === "disconnected") return "disconnected";
   if (!connection.lastSyncAt || now.getTime() - new Date(connection.lastSyncAt).getTime() > STALE_SYNC_HOURS * 3_600_000) return "stale";
+  if (connection.history?.status === "importing" || connection.history?.status === "failed") return "importing";
   return "connected";
 }
 
@@ -39,6 +43,17 @@ export function AppleHealthStatus({ connection, syncConsent, now }: { connection
       body: (
         <>
           Last synced {lastSync}. Shares {connection?.scopes.map((s) => SCOPE_LABEL[s] ?? s).join(", ") || "the readings you chose"}. Your iPhone keeps syncing in the background.
+        </>
+      ),
+    },
+    importing: {
+      icon: <Smartphone />,
+      tone: "blue",
+      title: "Importing your Apple Health history",
+      body: (
+        <>
+          {connection?.history?.from ? `Days from ${formatDay(connection.history.from)} onwards are here so far. ` : ""}Your iPhone continues the import whenever HealthMate is open there
+          {connection?.history?.daysRequested ? ` (up to ${historyLabel(connection.history.daysRequested)})` : ""}. Last synced {lastSync}.
         </>
       ),
     },

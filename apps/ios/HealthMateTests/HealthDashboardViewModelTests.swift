@@ -47,10 +47,38 @@ final class HealthDashboardViewModelTests: XCTestCase {
     }
 
     func testSyncFailureIsShownAndCanBeRetried() async {
-        let model = HealthDashboardViewModel(reader: StaticHealthReader(values: [.steps: values(14, 8000)]), api: offlineAPI(), defaults: defaults())
+        let store = defaults()
+        let api = offlineAPI()
+        let reader = StaticHealthReader(values: [.steps: values(14, 8000)])
+        let sync = HealthSyncCoordinator(api: api, reader: reader, defaults: store, accountAllowsSync: { true })
+        let model = HealthDashboardViewModel(reader: reader, api: api, sync: sync, defaults: store)
         await model.connect()
-        await model.sync()
-        guard case .failed = model.syncStatus else { return XCTFail("expected a sync failure, got \(model.syncStatus)") }
+        await model.syncNow()
+        // Offline: a plain message, and the import will resume (nothing lost).
+        XCTAssertEqual(model.syncStatus, .failed(HealthSyncFailure.offline.message))
         XCTAssertNil(model.lastSyncedAt)
+        XCTAssertEqual(DefaultsHealthSyncStateStore(defaults: store).load()?.lastErrorCode, "offline")
+    }
+
+    func testNothingLeavesTheIPhoneWithoutSignInAndConsent() async {
+        let store = defaults()
+        let reader = StaticHealthReader(values: [.steps: values(14, 8000)])
+        let sync = HealthSyncCoordinator(api: offlineAPI(), reader: reader, defaults: store, accountAllowsSync: { false })
+        let model = HealthDashboardViewModel(reader: reader, api: offlineAPI(), sync: sync, defaults: store)
+        await model.connect()
+        await model.syncNow()
+        XCTAssertEqual(model.syncStatus, .idle)
+        XCTAssertEqual(model.state, .loaded, "Apple Health is still shown on this iPhone")
+    }
+
+    func testDisconnectForgetsSyncProgress() async {
+        let store = defaults()
+        let reader = StaticHealthReader(values: [.steps: values(14, 8000)])
+        let sync = HealthSyncCoordinator(api: offlineAPI(), reader: reader, defaults: store, accountAllowsSync: { true })
+        let model = HealthDashboardViewModel(reader: reader, api: offlineAPI(), sync: sync, defaults: store)
+        await model.connect()
+        XCTAssertNotNil(DefaultsHealthSyncStateStore(defaults: store).load())
+        await model.disconnect(removeSyncedData: false)
+        XCTAssertNil(DefaultsHealthSyncStateStore(defaults: store).load())
     }
 }

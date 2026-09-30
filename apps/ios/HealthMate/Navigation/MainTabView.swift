@@ -15,6 +15,7 @@ struct MainTabView: View {
     @State private var showCareFinder = false
     @State private var showCare = false
     @State private var showVoice = false
+    @State private var healthSync: HealthSyncCoordinator
     @Environment(\.scenePhase) private var scenePhase
 
     init(services: AppServices, session: SessionStore, onRestartOnboarding: @escaping () -> Void) {
@@ -24,6 +25,7 @@ struct MainTabView: View {
         _homeModel = State(initialValue: HomeViewModel(service: services.healthData))
         _planStore = State(initialValue: PlanStore(repository: services.planRepository, reminders: services.reminders))
         _chatModel = State(initialValue: ChatViewModel(api: services.api, onSessionEnded: { [session] error in session.handle(error) }))
+        _healthSync = State(initialValue: HealthSyncCoordinator(session: session, reader: services.healthReader))
         var initial = AppTab.home
         #if DEBUG
         // `-hmInitialTab plans` lets CI screenshot a specific tab.
@@ -62,7 +64,7 @@ struct MainTabView: View {
             .tabItem { Label(AppTab.chat.title, systemImage: AppTab.chat.systemImage) }
             .tag(AppTab.chat)
 
-            HealthDashboardView(session: session, reader: services.healthReader)
+            HealthDashboardView(session: session, reader: services.healthReader, sync: healthSync)
                 .tabItem { Label(AppTab.health.title, systemImage: AppTab.health.systemImage) }
                 .tag(AppTab.health)
 
@@ -79,15 +81,33 @@ struct MainTabView: View {
             selection = .chat
         })
         .sensoryFeedback(.selection, trigger: selection)
-        .task { await planStore.loadIfNeeded() }
+        .task {
+            await planStore.loadIfNeeded()
+            // Keeps Apple Health in step with the account (only when signed in with sync turned on).
+            await healthSync.syncIfNeeded()
+        }
         // Home reflects the account and Apple Health, so refresh it when either may have changed.
-        .onChange(of: session.state) { _, _ in Task { await homeModel.load() } }
+        .onChange(of: session.state) { _, _ in
+            Task {
+                await homeModel.load()
+                await healthSync.syncIfNeeded()
+            }
+        }
         .onChange(of: selection) { _, tab in
             if tab == .home { Task { await homeModel.load() } }
             if tab == .plans { Task { await planStore.load() } } // picks up changes made on the web
         }
+        // Turning on Apple Health sync in Privacy starts the import straight away.
+        .onChange(of: session.hasConsent("health_data_sync")) { _, granted in
+            if granted { Task { await healthSync.syncIfNeeded() } }
+        }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await planStore.load() } }
+            if phase == .active {
+                Task {
+                    await planStore.load()
+                    await healthSync.syncIfNeeded()
+                }
+            }
         }
         .sheet(isPresented: $showCareFinder) {
             CareFinderView()

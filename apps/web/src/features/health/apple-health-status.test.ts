@@ -22,6 +22,14 @@ describe("Apple Health connection state", () => {
     expect(appleHealthState(null, true, now)).toBe("unknown");
   });
 
+  it("shows a history import in progress, or resuming after a problem", () => {
+    expect(appleHealthState(connection({ history: { status: "importing", from: "2026-06-01", daysRequested: 365 } }), true, now)).toBe("importing");
+    expect(appleHealthState(connection({ history: { status: "failed", from: null, daysRequested: 365 } }), true, now)).toBe("importing");
+    expect(appleHealthState(connection({ history: { status: "complete", from: "2025-09-30", daysRequested: 365 } }), true, now)).toBe("connected");
+    // A stale sync is the more useful thing to say.
+    expect(appleHealthState(connection({ lastSyncAt: "2026-09-20T09:00:00Z", history: { status: "importing", from: null, daysRequested: 365 } }), true, now)).toBe("stale");
+  });
+
   it("flags a connection that hasn't synced for a day and a half", () => {
     expect(appleHealthState(connection({ lastSyncAt: "2026-09-27T09:00:00Z" }), true, now)).toBe("stale");
     expect(appleHealthState(connection({ lastSyncAt: null }), true, now)).toBe("stale");

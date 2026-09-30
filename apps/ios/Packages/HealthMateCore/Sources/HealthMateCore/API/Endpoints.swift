@@ -320,6 +320,28 @@ extension APIClient {
         try await send(Endpoint("GET", "health-data/trends", query: [URLQueryItem(name: "kind", value: kind), URLQueryItem(name: "days", value: String(days))]))
     }
 
+    // MARK: Daily health data & Apple Health sync (Phase 2B)
+
+    /// Registers the connection and what the person chose to share (needs the health_data_sync consent).
+    @discardableResult
+    public func connectHealthKit(deviceName: String?, deviceId: String, scopes: [String], historyDays: Int) async throws -> HealthKitConnectionRecord {
+        struct Body: Encodable { let deviceName: String?; let deviceId: String; let scopes: [String]; let historyDays: Int }
+        return try await send(.json("PUT", "healthkit/connection", Body(deviceName: deviceName, deviceId: deviceId, scopes: scopes, historyDays: historyDays)))
+    }
+
+    public func healthKitConnection() async throws -> HealthKitConnectionRecord {
+        try await send(Endpoint("GET", "healthkit/connection"))
+    }
+
+    /// One value per day and metric (Apple Health preferred). At most 400 days per call.
+    public func dailyHealth(from: String, to: String, kinds: [String] = []) async throws -> [DailyHealthRecord] {
+        struct Page: Decodable { let records: [DailyHealthRecord] }
+        var query = [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)]
+        if !kinds.isEmpty { query.append(URLQueryItem(name: "kinds", value: kinds.joined(separator: ","))) }
+        let page: Page = try await send(Endpoint("GET", "health-data/daily", query: query))
+        return page.records
+    }
+
     public func disconnectAppleHealth() async throws {
         struct Result: Decodable { let removed: Int }
         let _: Result = try await send(Endpoint("DELETE", "health-data/apple-health"))
@@ -376,5 +398,24 @@ extension APIClient: PlanSyncTransport {
         struct Response: Decodable { let checkIn: MoodCheckIn? }
         let response: Response = try await send(Endpoint("GET", "check-ins/mood/latest"))
         return response.checkIn
+    }
+}
+
+
+extension APIClient: DailyHealthUploader {
+    public func startHealthSyncRun(kind: HealthSyncRunKind, deviceId: String) async throws -> String {
+        struct Body: Encodable { let kind: HealthSyncRunKind; let deviceId: String }
+        struct Created: Decodable { let id: String }
+        let created: Created = try await send(.json("POST", "healthkit/sync-runs", Body(kind: kind, deviceId: deviceId)))
+        return created.id
+    }
+
+    public func uploadDailyHealth(_ records: [DailyRecordUpload], timeZone: String, sourceDevice: String?, syncRunId: String?) async throws -> DailyUploadResult {
+        struct Body: Encodable { let timeZone: String; let sourceDevice: String?; let syncRunId: String?; let records: [DailyRecordUpload] }
+        return try await send(.json("PUT", "health-data/daily", Body(timeZone: timeZone, sourceDevice: sourceDevice, syncRunId: syncRunId, records: records)))
+    }
+
+    public func finishHealthSyncRun(_ id: String, report: HealthSyncReport) async throws {
+        let _: HealthKitConnectionRecord = try await send(.json("PATCH", "healthkit/sync-runs/\(id)", report))
     }
 }

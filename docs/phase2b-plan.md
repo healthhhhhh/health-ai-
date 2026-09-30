@@ -146,7 +146,24 @@ history import status when the server reports it. Preview router gains the daily
   cursor, consent stops, bad batch skipped), models decode/encode.
 - Existing web e2e + accessibility and iOS UI tests unchanged (Preview mode).
 
-## 5. Manual testing (needs a real iPhone with Apple Health data)
+## 5. Implementation notes
+
+- Server: `services/api/migrations/0009_daily_health_records.sql`,
+  `src/modules/health-data/*` (daily upserts, sync runs, trends/latest from daily records),
+  tests `test/daily-health.test.ts` (+ RLS in `test/rls.test.ts`).
+- iOS Core: `HealthMateCore/Health/HealthSync.swift` (planner, state, engine, failures),
+  tests `HealthSyncTests.swift`; API calls in `Endpoints.swift` (`APIClient: DailyHealthUploader`).
+- iOS app: `Services/HealthKitService.swift` (full-range daily reader with min/max,
+  `shouldRequestAuthorization`, background delivery), `Services/HealthSyncCoordinator.swift`
+  (triggers, status), `Features/Health/HealthDashboard*` (existing sync card shows import
+  progress, history length and errors; "Review Apple Health access" prompt).
+- Upgrading from the old manual sync: people already connected get a one-year history import on
+  the next app open (when signed in with sync on); days the old sync uploaded were copied into
+  daily records by the migration, so nothing is lost or double-counted.
+- Preview mode: the sample reader and Preview backends support every new route; automatic sync
+  is off in Preview (only "Sync now"), so screenshots and UI tests are unchanged.
+
+## 6. Manual testing (needs a real iPhone with Apple Health data)
 
 HealthKit has no data in CI's simulator; the import, background delivery and permission sheets
 are checked by hand — see the Phase 2B report for the checklist.

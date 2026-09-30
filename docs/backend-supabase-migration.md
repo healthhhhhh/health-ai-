@@ -169,6 +169,19 @@ New tables `notification_preferences`, `notifications` (server-written), `treatm
 `current_medications`, `current_conditions`, `current_allergies`; all under RLS (tested in
 `test/rls.test.ts`). Export format is now `healthmate-export-v2`.
 
+## 10b. Phase 2B additions
+
+Migration `0009_daily_health_records.sql` — see [`phase2b-plan.md`](phase2b-plan.md):
+
+| Group | Routes |
+|---|---|
+| Daily records | `PUT /v1/health-data/daily` (Apple Health days from the iPhone; newest computation wins), `GET /v1/health-data/daily?from&to&kinds` |
+| Sync runs | `POST /v1/healthkit/sync-runs`, `PATCH /v1/healthkit/sync-runs/:id` (counts and error codes only) |
+| Changed | `trends` / `latest` read daily records (Apple Health preferred); `POST measurements` refuses raw Apple Health samples (double-count risk) but still accepts whole days from older apps; `GET/PUT /v1/healthkit/connection` carry history-import status |
+
+New tables `daily_health_records`, `health_sync_runs` (owner read-only under RLS; the API writes),
+view `daily_health_summary`. Export includes both.
+
 ## 11. Environment variables
 
 See [`.env.example`](../.env.example). Server-only: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
