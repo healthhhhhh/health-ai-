@@ -279,8 +279,9 @@ test.describe("home destinations and notifications", () => {
     await expect(page.getByRole("heading", { name: "Last 30 days" })).toBeVisible();
 
     await page.goto("/home", { waitUntil: "networkidle" });
-    // An item from two days ago, so it is in Recent Activity at any time of day.
-    await page.getByRole("link", { name: /Example blood test analysed/ }).click();
+    // Whichever report is in Recent Activity: which sample items are "recent" depends on the time of day.
+    const activity = page.getByRole("heading", { name: "Recent Activity" }).locator("xpath=ancestor::*[.//ol][1]");
+    await activity.locator('a[href^="/reports/"]').first().click();
     await expect(page).toHaveURL(/\/reports\/[\w-]+$/);
 
     await page.goto("/home", { waitUntil: "networkidle" });
