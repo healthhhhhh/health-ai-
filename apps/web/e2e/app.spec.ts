@@ -48,6 +48,9 @@ async function signInFresh(page: Page) {
 async function expectCurrentPageAccessible(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // After a client-side redirect (e.g. a server action) Next.js streams the page metadata, so the
+  // <title> can arrive a moment after the heading. Wait for it: a page without a title fails the check.
+  await expect(page).toHaveTitle(/\S/);
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   expect(results.violations.map((v) => `${new URL(page.url()).pathname} ${v.id}: ${v.nodes.length}`)).toEqual([]);
 }
