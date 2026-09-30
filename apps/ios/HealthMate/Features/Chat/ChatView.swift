@@ -19,10 +19,16 @@ struct ChatView: View {
     @State private var gateEscalation: Escalation?
     @State private var showReports = false
     /// "Check a photo": the flow is presented straight from Chat (not nested in another sheet), then its result.
-    @State private var photoModel: DocumentsViewModel?
-    @State private var showPhotoCheck = false
-    @State private var photoResultID: String?
-    @State private var showPhotoResult = false
+    /// Items carry their model, so a sheet's content is never built without it.
+    @State private var photoCheck: PhotoFlow?
+    @State private var photoResult: PhotoFlow?
+    @State private var pendingPhotoResult: PhotoFlow?
+
+    struct PhotoFlow: Identifiable {
+        let id = UUID()
+        let model: DocumentsViewModel
+        var documentID: String?
+    }
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -116,17 +122,18 @@ struct ChatView: View {
                         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showReports = false } } }
                 }
             }
-            .sheet(isPresented: $showPhotoCheck, onDismiss: { if photoResultID != nil { showPhotoResult = true } }) {
-                if let photoModel {
-                    PhotoCheckView(model: photoModel) { record in photoResultID = record.id }
+            .sheet(item: $photoCheck, onDismiss: {
+                photoResult = pendingPhotoResult
+                pendingPhotoResult = nil
+            }) { flow in
+                PhotoCheckView(model: flow.model) { record in
+                    pendingPhotoResult = PhotoFlow(model: flow.model, documentID: record.id)
                 }
             }
-            .sheet(isPresented: $showPhotoResult, onDismiss: { photoResultID = nil }) {
-                if let photoModel, let photoResultID {
-                    NavigationStack {
-                        DocumentDetailView(model: photoModel, documentID: photoResultID)
-                            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showPhotoResult = false } } }
-                    }
+            .sheet(item: $photoResult) { flow in
+                NavigationStack {
+                    DocumentDetailView(model: flow.model, documentID: flow.documentID ?? "")
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { photoResult = nil } } }
                 }
             }
         }
@@ -265,16 +272,15 @@ struct ChatView: View {
             showReports = true
             return
         }
-        photoModel = DocumentsViewModel(api: session.api, isPreview: session.isPreview, onSessionEnded: { [session] in session.handle($0) })
-        photoResultID = nil
-        showPhotoCheck = true
+        pendingPhotoResult = nil
+        photoCheck = PhotoFlow(model: DocumentsViewModel(api: session.api, isPreview: session.isPreview, onSessionEnded: { [session] in session.handle($0) }))
     }
 
     private func consumePendingQuestion() {
         guard let question = pendingQuestion else { return }
         // "Ask the AI Health Assistant" from a report or photo result brings the question back here.
         showReports = false
-        showPhotoResult = false
+        photoResult = nil
         if canChat {
             pendingQuestion = nil
             Task { await model.send(question) }
