@@ -6,6 +6,7 @@ import { ApiError, notFound } from "../../common/errors";
 import { DATABASE, type Database } from "../../db/database";
 import { AiGateway } from "../ai/ai.gateway";
 import { AiDeclinedError, AiUnavailableError } from "../ai/ai.types";
+import { NotificationsService } from "../notifications/notifications.controller";
 import { TimelineService } from "../timeline/timeline.service";
 import { IMAGE_SYSTEM_PROMPT, ImageAnalysisSchema, REPORT_SYSTEM_PROMPT, ReportExtractionSchema, type ImageAnalysis, type ReportExtraction } from "./document.prompts";
 import { JobQueue } from "./job-queue";
@@ -96,6 +97,7 @@ export class DocumentsService implements OnModuleInit {
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(TimelineService) private readonly timeline: TimelineService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
   onModuleInit() {
@@ -245,6 +247,8 @@ export class DocumentsService implements OnModuleInit {
         );
       }
       await tx.query(`UPDATE medical_documents SET status = 'ready', document_type = $3, processed_at = now() WHERE id = $1 AND user_id = $2`, [id, userId, result.documentType]);
+      // Generic wording: no health details in notifications.
+      await this.notifications.notify(userId, { category: "report", title: "Your report summary is ready", body: "Open it to see the plain-language summary and questions for your clinician.", link: `/reports/${id}`, aiGenerated: true }, tx);
     });
   }
 
@@ -257,6 +261,7 @@ export class DocumentsService implements OnModuleInit {
       );
       // The note has served its purpose; don't keep it longer than needed.
       await tx.query(`UPDATE health_images SET status = 'ready', note = NULL, processed_at = now() WHERE id = $1 AND user_id = $2`, [id, userId]);
+      await this.notifications.notify(userId, { category: "report", title: "Your photo check is ready", body: "Open it to see what could be described and suggested next steps.", link: `/reports/${id}`, aiGenerated: true }, tx);
     });
   }
 

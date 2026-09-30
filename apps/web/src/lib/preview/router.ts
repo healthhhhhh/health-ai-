@@ -329,7 +329,7 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
       delete data.replies;
       delete data.fallbackReply;
       delete data.sampleAnalyses;
-      return json({ exportedAt: nowIso(), format: "healthmate-export-v1", preview: true, ...data });
+      return json({ exportedAt: nowIso(), format: "healthmate-export-v2", preview: true, ...data });
     }
     if (b === "delete" && method === "POST") {
       if (input.password === "wrong-password" || text(input.password).length < 8) return fail(403, "forbidden", "Password is incorrect.");

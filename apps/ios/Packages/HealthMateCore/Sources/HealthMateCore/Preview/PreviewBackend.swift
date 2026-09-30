@@ -405,7 +405,7 @@ public final class PreviewBackend: @unchecked Sendable {
                 var data = ctx.account.object
                 for key in ["replies", "fallbackReply", "sampleAnalyses"] { data[key] = nil }
                 data["exportedAt"] = .string(ctx.now)
-                data["format"] = "healthmate-export-v1"
+                data["format"] = "healthmate-export-v2"
                 data["preview"] = true
                 return json(.object(data))
             }

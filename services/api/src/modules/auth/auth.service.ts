@@ -71,6 +71,17 @@ export class AuthService {
     if (userId) await this.audit.log("auth.logout", userId);
   }
 
+  /** Local accounts: every refresh token is revoked, so other sessions end within the access-token lifetime. */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    if (!(await this.verifyPassword(userId, currentPassword))) throw new ApiError("forbidden", "Your current password is incorrect.", HttpStatus.FORBIDDEN);
+    const passwordHash = await hash(newPassword, ARGON2);
+    await this.db.transaction(async (tx) => {
+      await tx.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [userId, passwordHash]);
+      await this.tokens.revokeAll(userId, tx);
+      await this.audit.log("auth.password_changed", userId, {}, tx);
+    });
+  }
+
   async verifyPassword(userId: string, password: string): Promise<boolean> {
     const { rows } = await this.db.query<{ password_hash: string }>(`SELECT password_hash FROM users WHERE id = $1`, [userId]);
     return rows[0] ? verify(rows[0].password_hash, password) : false;

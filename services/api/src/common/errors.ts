@@ -7,6 +7,9 @@ export type ErrorCode =
   | "bad_request"
   | "validation_failed"
   | "unauthorized"
+  | "email_not_confirmed"
+  | "invalid_token"
+  | "not_available"
   | "forbidden"
   | "not_found"
   | "conflict"
@@ -61,6 +64,12 @@ export class ErrorFilter implements ExceptionFilter {
       const code: ErrorCode =
         status === 404 ? "not_found" : status === 413 ? "payload_too_large" : status === 401 ? "unauthorized" : status === 429 ? "rate_limited" : "bad_request";
       res.status(status).json({ error: { code, message: status === 404 ? "Not found." : "The request couldn't be processed." } });
+      return;
+    }
+    // A database constraint caught invalid input the schema allowed (e.g. an end date before a start date).
+    const pgCode = (exception as { code?: unknown } | null)?.code;
+    if (pgCode === "23514" || pgCode === "22007" || pgCode === "22008") {
+      res.status(HttpStatus.BAD_REQUEST).json({ error: { code: "validation_failed", message: "Those details don't fit together — check the dates and try again." } });
       return;
     }
     // Log the error type and stack only — never request bodies (health data).

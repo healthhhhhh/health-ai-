@@ -137,6 +137,47 @@ describe("Supabase Auth adapter", () => {
     await expect(provider.completePasswordReset(recovery, "same")).rejects.toMatchObject({ status: 400 });
   });
 
+  it("changes the password with the person's own session after checking the current one, and signs out other sessions", async () => {
+    const id = "66666666-6666-4666-8666-666666666666";
+    const { provider, calls, db } = await setup((call) => {
+      if (call.url.includes("grant_type=password")) return (call.body as { password: string }).password === "current passphrase" ? { body: { ...session, access_token: "check-at" } } : { status: 400, body: { error_code: "invalid_credentials" } };
+      if (call.method === "PUT") return (call.body as { password: string }).password === "same" ? { status: 422, body: { error_code: "same_password" } } : { body: {} };
+      return { body: {} };
+    });
+    await db.query(`INSERT INTO auth.users (id, email) VALUES ($1, 'pw@example.com')`, [id]);
+    await expect(provider.changePassword(id, "wrong", "a new passphrase", "person-at")).rejects.toMatchObject({ status: 403 });
+    calls.length = 0;
+    await provider.changePassword(id, "current passphrase", "a new passphrase", "person-at");
+    const steps = calls.map((c) => `${c.method} ${c.url.replace(URL_, "")} ${c.headers.Authorization ?? ""}`.trim());
+    expect(steps).toEqual([
+      "POST /auth/v1/token?grant_type=password", // check the current password…
+      "POST /auth/v1/logout?scope=local Bearer check-at", // …without leaving that check's session behind
+      "PUT /auth/v1/user Bearer person-at", // change it with the person's own session
+      "POST /auth/v1/logout?scope=others Bearer person-at", // and end every other session
+    ]);
+    await expect(provider.changePassword(id, "current passphrase", "same", "person-at")).rejects.toMatchObject({ status: 400 });
+    await expect(provider.changePassword(id, "current passphrase", "a new passphrase")).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("confirms an email with the link's token hash and resends without revealing accounts", async () => {
+    const { provider, calls } = await setup((call) => {
+      if (call.url.endsWith("/verify")) return (call.body as { token_hash: string }).token_hash === "good-hash" ? { body: session } : { status: 403, body: { error_code: "otp_expired" } };
+      if (call.url.endsWith("/resend")) return (call.body as { email: string }).email === "nobody@example.com" ? { status: 400 } : { body: {} };
+      return { body: {} };
+    });
+    expect(await provider.verifyEmail("good-hash")).toMatchObject({ userId: session.user.id, tokens: { accessToken: "at" } });
+    expect(calls[0]!.body).toEqual({ type: "email", token_hash: "good-hash" });
+    await expect(provider.verifyEmail("expired-hash")).rejects.toMatchObject({ status: 400, code: "invalid_token" });
+    await provider.resendVerification(" Someone@Example.com ");
+    expect(calls.at(-1)!.body).toEqual({ type: "signup", email: "someone@example.com" });
+    await expect(provider.resendVerification("nobody@example.com")).resolves.toBeUndefined();
+  });
+
+  it("reports an unconfirmed email with its own error code", async () => {
+    const { provider } = await setup(() => ({ status: 400, body: { error_code: "email_not_confirmed" } }));
+    await expect(provider.login("new@example.com", "p")).rejects.toMatchObject({ status: 401, code: "email_not_confirmed" });
+  });
+
   it("fails closed with a friendly error when Supabase Auth is down", async () => {
     const { provider } = await setup(() => ({ status: 503 }));
     await expect(provider.login("a@example.com", "p")).rejects.toMatchObject({ status: 503 });

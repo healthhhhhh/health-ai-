@@ -51,6 +51,15 @@ const schema = z.object({
   /** Public base URL used to build signed URLs for the local storage adapter. */
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:4000"),
   CORS_ORIGINS: z.string().optional(),
+
+  /**
+   * Retention of operational records (no health content), in days; 0 keeps
+   * them forever. Health data never expires automatically — people delete it
+   * themselves (docs/health-memory-architecture.md §6).
+   */
+  AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().min(0).default(400),
+  AI_USAGE_RETENTION_DAYS: z.coerce.number().int().min(0).default(400),
+  SAFETY_EVENT_RETENTION_DAYS: z.coerce.number().int().min(0).default(730),
 });
 
 type Env = z.infer<typeof schema>;

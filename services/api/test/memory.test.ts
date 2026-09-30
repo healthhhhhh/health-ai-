@@ -55,7 +55,7 @@ describe("health memory", () => {
     ctx.ai.on("chat", () => chatAnswer({ memorySuggestions: [] }));
     await ctx.http.post("/v1/conversations").set(user.auth).send({ message: "Why am I tired in the afternoon?" }).expect(201);
     const prompt = ctx.ai.requests.at(-1)!.system.join("\n");
-    expect(prompt).toContain("Often tired in the afternoon (unconfirmed)");
+    expect(prompt).toContain("Unconfirmed AI inference — not verified; do not treat as fact: Often tired in the afternoon (recorded today");
     // Only the person's explicit confirmation changes it.
     const confirmed = (await ctx.http.patch(`/v1/memories/${inferred.id}`).set(user.auth).send({ confirm: true }).expect(200)).body;
     expect(confirmed.status).toBe("user_confirmed");

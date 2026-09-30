@@ -1,5 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { notFound } from "../../common/errors";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { ApiError, notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
 
 export type TimelineEventType = "symptom" | "medication" | "measurement" | "report" | "image" | "chat" | "note" | "appointment";
@@ -17,6 +17,8 @@ export interface TimelineEvent {
 }
 
 type Row = { id: string; event_type: TimelineEventType; title: string; occurred_at: Date; source_type: TimelineSource; source_id: string | null; payload: Record<string, unknown> | null };
+
+const toEvent = (r: Row): TimelineEvent => ({ id: r.id, eventType: r.event_type, title: r.title, occurredAt: r.occurred_at.toISOString(), sourceType: r.source_type, sourceId: r.source_id, payload: r.payload });
 
 @Injectable()
 export class TimelineService {
@@ -41,9 +43,32 @@ export class TimelineService {
     );
     const page = rows.slice(0, limit);
     return {
-      events: page.map((r) => ({ id: r.id, eventType: r.event_type, title: r.title, occurredAt: r.occurred_at.toISOString(), sourceType: r.source_type, sourceId: r.source_id, payload: r.payload })),
+      events: page.map(toEvent),
       nextCursor: rows.length > limit ? page[page.length - 1]!.occurred_at.toISOString() : null,
     };
+  }
+
+  async get(userId: string, id: string): Promise<TimelineEvent> {
+    const { rows } = await this.db.query<Row>(`SELECT id, event_type, title, occurred_at, source_type, source_id, payload FROM timeline_events WHERE id = $2 AND user_id = $1`, [userId, id]);
+    if (!rows[0]) throw notFound("Timeline entry");
+    return toEvent(rows[0]);
+  }
+
+  /** Only entries the person added themselves can be edited; device, document and AI entries keep their provenance. */
+  async update(userId: string, id: string, patch: { title?: string; occurredAt?: string; details?: string | null }): Promise<TimelineEvent> {
+    const current = await this.get(userId, id);
+    if (current.sourceType !== "user_entered") throw new ApiError("forbidden", "Only entries you added can be edited.", HttpStatus.FORBIDDEN);
+    let payload = current.payload;
+    if (patch.details !== undefined) {
+      const rest = Object.fromEntries(Object.entries(payload ?? {}).filter(([k]) => k !== "details"));
+      payload = patch.details ? { ...rest, details: patch.details } : Object.keys(rest).length ? rest : null;
+    }
+    const { rows } = await this.db.query<Row>(
+      `UPDATE timeline_events SET title = $3, occurred_at = $4::timestamptz, payload = $5::jsonb WHERE id = $2 AND user_id = $1 AND source_type = 'user_entered'
+       RETURNING id, event_type, title, occurred_at, source_type, source_id, payload`,
+      [userId, id, patch.title ?? current.title, patch.occurredAt ?? current.occurredAt, payload ? JSON.stringify(payload) : null],
+    );
+    return toEvent(rows[0]!);
   }
 
   async remove(userId: string, id: string) {

@@ -22,18 +22,41 @@ export class AccountService {
   async export(userId: string) {
     const q = async (sql: string) => (await this.db.query(sql, [userId])).rows;
     const sections = {
-      account: q(`SELECT email, created_at FROM users WHERE id = $1`),
-      profile: q(`SELECT first_name, last_name, date_of_birth::text AS date_of_birth, sex, height_cm, time_zone FROM profiles WHERE user_id = $1`),
-      conditions: q(`SELECT name, status, source, notes, created_at FROM health_conditions WHERE user_id = $1 ORDER BY created_at`),
-      allergies: q(`SELECT substance, reaction, severity, source, created_at FROM allergies WHERE user_id = $1 ORDER BY created_at`),
-      medications: q(`SELECT name, instruction, source, active, created_at FROM medications WHERE user_id = $1 ORDER BY created_at`),
+      account: q(`SELECT email, email_verified_at, created_at FROM users WHERE id = $1`),
+      profile: q(
+        `SELECT first_name, last_name, date_of_birth::text AS date_of_birth, sex, height_cm, time_zone, goals, unit_system, onboarding_completed_at FROM profiles WHERE user_id = $1`,
+      ),
+      notificationPreferences: q(
+        `SELECT medication, task, appointment, report, insight, account, show_details, quiet_hours_enabled, quiet_start::text AS quiet_start, quiet_end::text AS quiet_end FROM notification_preferences WHERE user_id = $1`,
+      ),
+      // Full history, including stopped/resolved and superseded (corrected) rows with their links.
+      conditions: q(
+        `SELECT id, name, status, source, source_ref, notes, onset_on::text AS onset_on, resolved_on::text AS resolved_on, confidence, confirmed_at, superseded_by, superseded_at, created_at, updated_at
+           FROM health_conditions WHERE user_id = $1 ORDER BY created_at`,
+      ),
+      allergies: q(
+        `SELECT id, substance, reaction, severity, status, source, source_ref, noted_on::text AS noted_on, confidence, confirmed_at, superseded_by, superseded_at, created_at, updated_at
+           FROM allergies WHERE user_id = $1 ORDER BY created_at`,
+      ),
+      medications: q(
+        `SELECT id, name, instruction, source, source_ref, active, started_on::text AS started_on, stopped_on::text AS stopped_on, confidence, confirmed_at, superseded_by, superseded_at, created_at, updated_at
+           FROM medications WHERE user_id = $1 ORDER BY created_at`,
+      ),
+      treatmentPlans: q(
+        `SELECT id, title, description, care_provider_id, source, source_ref, status, started_on::text AS started_on, ended_on::text AS ended_on, confidence, confirmed_at, superseded_by, superseded_at, created_at, updated_at
+           FROM treatment_plans WHERE user_id = $1 ORDER BY created_at`,
+      ),
+      notifications: q(`SELECT category, title, body, link, ai_generated, read_at, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at`),
       symptoms: q(
-        `SELECT s.name, s.body_area, s.status, s.notes, s.first_noted_on::text AS first_noted_on, s.created_at,
+        `SELECT s.name, s.body_area, s.status, s.source, s.source_ref, s.notes, s.first_noted_on::text AS first_noted_on, s.resolved_on::text AS resolved_on, s.created_at,
                 COALESCE((SELECT json_agg(json_build_object('severity', e.severity, 'occurredAt', e.occurred_at, 'notes', e.notes, 'triageLevel', e.triage_level) ORDER BY e.occurred_at)
                           FROM symptom_events e WHERE e.symptom_id = s.id), '[]') AS events
            FROM symptoms s WHERE s.user_id = $1 ORDER BY s.created_at`,
       ),
-      memories: q(`SELECT fact, source, status, confidence, occurred_on::text AS occurred_on, confirmed_at, created_at FROM health_memories WHERE user_id = $1 ORDER BY created_at`),
+      memories: q(
+        `SELECT id, fact, category, source, source_id, status, prior_status, confidence, occurred_on::text AS occurred_on, ended_on::text AS ended_on, confirmed_at, superseded_by, superseded_at, created_at, updated_at
+           FROM health_memories WHERE user_id = $1 ORDER BY created_at`,
+      ),
       conversations: q(`SELECT id, title, created_at FROM conversations WHERE user_id = $1 ORDER BY created_at`),
       messages: q(`SELECT conversation_id, role, content, triage_level, created_at FROM messages WHERE user_id = $1 ORDER BY created_at`),
       documents: q(
@@ -53,7 +76,7 @@ export class AccountService {
       moodCheckIns: q(`SELECT mood, recorded_at FROM mood_checkins WHERE user_id = $1 ORDER BY recorded_at`),
       plan: q(`SELECT revision, updated_at FROM plans WHERE user_id = $1`),
       planItems: q(
-        `SELECT title, notes, kind, time_of_day::text AS time_of_day, repeat_type, repeat_days, repeat_day::text AS repeat_day, reminder_enabled, source, instruction,
+        `SELECT id, treatment_plan_id, title, notes, kind, time_of_day::text AS time_of_day, repeat_type, repeat_days, repeat_day::text AS repeat_day, reminder_enabled, source, instruction,
                 start_day::text AS start_day, end_day::text AS end_day, created_at
            FROM plan_items WHERE user_id = $1 ORDER BY position`,
       ),
@@ -66,10 +89,11 @@ export class AccountService {
     await this.audit.log("account.export", userId);
     return {
       exportedAt: new Date().toISOString(),
-      format: "healthmate-export-v1",
+      format: "healthmate-export-v2",
       ...data,
       account: data.account[0] ?? null,
       profile: data.profile[0] ?? null,
+      notificationPreferences: data.notificationPreferences[0] ?? null,
       plan: data.plan[0] ? { ...data.plan[0], items: data.planItems, completions: data.taskCompletions } : null,
     };
   }

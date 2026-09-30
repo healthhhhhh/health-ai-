@@ -28,6 +28,12 @@ export interface IdentityProvider {
   requestPasswordReset(email: string, redirectTo?: string): Promise<void>;
   /** Sets a new password using the access token from a reset link, then ends every other session. */
   completePasswordReset(recoveryToken: string, newPassword: string): Promise<void>;
+  /** Changes the password after checking the current one; other sessions are signed out. */
+  changePassword(userId: string, currentPassword: string, newPassword: string, accessToken?: string): Promise<void>;
+  /** Confirms an email address from the link in the confirmation email and starts a session. */
+  verifyEmail(tokenHash: string): Promise<{ userId: string; tokens: TokenPair }>;
+  /** Sends the confirmation email again. Never reveals whether the account exists. */
+  resendVerification(email: string): Promise<void>;
   /** Removes the identity and (by cascade) every HealthMate row. Idempotent. */
   deleteIdentity(userId: string): Promise<void>;
 }
@@ -67,6 +73,14 @@ export class LocalIdentityProvider implements IdentityProvider {
   async completePasswordReset(): Promise<void> {
     throw new ApiError("not_found", "Password reset isn't available in local development. Use Supabase Auth.", HttpStatus.NOT_IMPLEMENTED);
   }
+  changePassword(userId: string, currentPassword: string, newPassword: string) {
+    return this.auth.changePassword(userId, currentPassword, newPassword);
+  }
+  async verifyEmail(): Promise<{ userId: string; tokens: TokenPair }> {
+    // Local development accounts are usable straight away; there is no email step.
+    throw new ApiError("invalid_token", "This confirmation link is invalid or has expired.", HttpStatus.BAD_REQUEST);
+  }
+  async resendVerification(): Promise<void> {}
   async deleteIdentity(userId: string) {
     await this.db.transaction(async (tx) => {
       await this.tokens.revokeAll(userId, tx);
@@ -133,7 +147,7 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     const res = await this.call("POST", "/token?grant_type=password", { email: email.trim().toLowerCase(), password });
     if (res.status === 400 || res.status === 401 || res.status === 422) {
       const body = (await res.json().catch(() => ({}))) as { error_code?: string };
-      if (body.error_code === "email_not_confirmed") throw unauthorized("Confirm your email address first — check your inbox for the link.");
+      if (body.error_code === "email_not_confirmed") throw new ApiError("email_not_confirmed", "Confirm your email address first — check your inbox for the link.", HttpStatus.UNAUTHORIZED);
       throw unauthorized("Email or password is incorrect.");
     }
     if (!res.ok) throw this.unavailable(res.status);
@@ -199,6 +213,41 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     if (!res.ok) throw this.unavailable(res.status);
     // A reset usually means the old password may be known to someone else.
     await this.call("POST", "/logout?scope=global", undefined, auth).catch(() => undefined);
+  }
+
+  /**
+   * Checks the current password with a separate short-lived sign-in, then
+   * changes it with the person's own session and signs out every other
+   * session (anyone else who might know the old password).
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string, accessToken?: string) {
+    if (!accessToken) throw unauthorized();
+    if (!(await this.verifyPassword(userId, currentPassword))) throw new ApiError("forbidden", "Your current password is incorrect.", HttpStatus.FORBIDDEN);
+    const auth = { Authorization: `Bearer ${accessToken}` };
+    const res = await this.call("PUT", "/user", { password: newPassword }, auth);
+    if (res.status === 401 || res.status === 403) throw unauthorized();
+    if (res.status === 422 || res.status === 400) {
+      const body = (await res.json().catch(() => ({}))) as { error_code?: string };
+      if (body.error_code === "same_password") throw new ApiError("validation_failed", "Choose a password you haven't used for this account.", HttpStatus.BAD_REQUEST);
+      throw new ApiError("validation_failed", "Choose a longer or less common password.", HttpStatus.BAD_REQUEST);
+    }
+    if (!res.ok) throw this.unavailable(res.status);
+    await this.call("POST", "/logout?scope=others", undefined, auth).catch(() => undefined);
+  }
+
+  async verifyEmail(tokenHash: string) {
+    const res = await this.call("POST", "/verify", { type: "email", token_hash: tokenHash });
+    if (res.status >= 400 && res.status < 500) throw new ApiError("invalid_token", "This confirmation link is invalid or has expired.", HttpStatus.BAD_REQUEST);
+    if (!res.ok) throw this.unavailable(res.status);
+    const session = (await res.json()) as GoTrueSession;
+    if (!session.access_token) throw new ApiError("invalid_token", "This confirmation link is invalid or has expired.", HttpStatus.BAD_REQUEST);
+    return { userId: session.user.id, tokens: toPair(session) };
+  }
+
+  async resendVerification(email: string) {
+    const res = await this.call("POST", "/resend", { type: "signup", email: email.trim().toLowerCase() });
+    // Same answer whether or not the account exists (and when rate-limited).
+    if (!res.ok && res.status >= 500) throw this.unavailable(res.status);
   }
 
   async deleteIdentity(userId: string) {

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { notFound } from "../../common/errors";
-import { DATABASE, type Database } from "../../db/database";
+import { DATABASE, type Database, type Queryable } from "../../db/database";
 import { JobQueue } from "../documents/job-queue";
 import { EMBEDDINGS, toVectorLiteral, type EmbeddingProvider } from "./embeddings";
 
@@ -20,11 +20,24 @@ export interface Memory {
   status: MemoryStatus;
   confidence: number;
   occurredOn: string | null;
+  /** When the fact stopped being true, if it did (history, not a correction). */
+  endedOn: string | null;
+  category: MemoryCategory | null;
+  confirmedAt: string | null;
+  /** Set when a correction replaced this fact; `priorStatus` keeps its original provenance. */
+  supersededBy: string | null;
+  supersededAt: string | null;
+  priorStatus: Exclude<MemoryStatus, "superseded"> | null;
   createdAt: string;
   updatedAt: string;
 }
 
-type Row = { id: string; fact: string; source: MemorySource; source_id: string | null; status: MemoryStatus; confidence: number; occurred_on: string | null; created_at: Date; updated_at: Date };
+export type MemoryCategory = "condition" | "medication" | "allergy" | "symptom" | "measurement" | "procedure" | "lifestyle" | "family_history" | "other";
+
+type Row = {
+  id: string; fact: string; source: MemorySource; source_id: string | null; status: MemoryStatus; confidence: number; occurred_on: string | null; ended_on: string | null;
+  category: MemoryCategory | null; confirmed_at: Date | null; superseded_by: string | null; superseded_at: Date | null; prior_status: Memory["priorStatus"]; created_at: Date; updated_at: Date;
+};
 
 const toMemory = (r: Row): Memory => ({
   id: r.id,
@@ -34,11 +47,18 @@ const toMemory = (r: Row): Memory => ({
   status: r.status,
   confidence: Number(r.confidence),
   occurredOn: r.occurred_on,
+  endedOn: r.ended_on,
+  category: r.category,
+  confirmedAt: r.confirmed_at ? r.confirmed_at.toISOString() : null,
+  supersededBy: r.superseded_by,
+  supersededAt: r.superseded_at ? r.superseded_at.toISOString() : null,
+  priorStatus: r.prior_status,
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
 });
 
-const COLUMNS = "id, fact, source, source_id, status, confidence, occurred_on::text AS occurred_on, created_at, updated_at";
+const COLUMNS =
+  "id, fact, source, source_id, status, confidence, occurred_on::text AS occurred_on, ended_on::text AS ended_on, category, confirmed_at, superseded_by, superseded_at, prior_status, created_at, updated_at";
 
 @Injectable()
 export class MemoryService implements OnModuleInit {
@@ -66,30 +86,58 @@ export class MemoryService implements OnModuleInit {
     return rows.map(toMemory);
   }
 
-  async create(userId: string, input: { fact: string; source: MemorySource; sourceId?: string | null; status: Exclude<MemoryStatus, "superseded">; confidence?: number; occurredOn?: string | null }): Promise<Memory> {
-    const { rows } = await this.db.query<Row>(
-      `INSERT INTO health_memories (user_id, fact, source, source_id, status, confidence, occurred_on, confirmed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $5 = 'user_confirmed' THEN now() END) RETURNING ${COLUMNS}`,
-      [userId, input.fact, input.source, input.sourceId ?? null, input.status, input.confidence ?? 1, input.occurredOn ?? null],
+  async create(
+    userId: string,
+    input: { fact: string; source: MemorySource; sourceId?: string | null; status: Exclude<MemoryStatus, "superseded">; confidence?: number; occurredOn?: string | null; endedOn?: string | null; category?: MemoryCategory | null },
+    tx: Queryable = this.db,
+  ): Promise<Memory> {
+    const { rows } = await tx.query<Row>(
+      `INSERT INTO health_memories (user_id, fact, source, source_id, status, confidence, occurred_on, ended_on, category, confirmed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $5 = 'user_confirmed' THEN now() END) RETURNING ${COLUMNS}`,
+      [userId, input.fact, input.source, input.sourceId ?? null, input.status, input.confidence ?? 1, input.occurredOn ?? null, input.endedOn ?? null, input.category ?? null],
     );
     const memory = toMemory(rows[0]!);
-    await this.queueEmbedding(userId, memory.id);
+    if (tx === this.db) await this.queueEmbedding(userId, memory.id);
     return memory;
   }
 
-  /** A user edit or confirmation always results in `user_confirmed`. */
-  async update(userId: string, id: string, patch: { fact?: string; confirm?: boolean }): Promise<Memory> {
+  /** A user edit or confirmation always results in `user_confirmed`. Superseded history can't be edited. */
+  async update(userId: string, id: string, patch: { fact?: string; confirm?: boolean; occurredOn?: string | null; endedOn?: string | null }): Promise<Memory> {
+    const touched = patch.fact !== undefined || patch.confirm === true || patch.occurredOn !== undefined || patch.endedOn !== undefined;
     const { rows } = await this.db.query<Row>(
       `UPDATE health_memories SET fact = COALESCE($3, fact),
-         status = CASE WHEN $4 OR $3 IS NOT NULL THEN 'user_confirmed' ELSE status END,
-         confirmed_at = CASE WHEN $4 OR $3 IS NOT NULL THEN now() ELSE confirmed_at END,
-         confidence = CASE WHEN $4 OR $3 IS NOT NULL THEN 1 ELSE confidence END
-       WHERE id = $2 AND user_id = $1 RETURNING ${COLUMNS}`,
-      [userId, id, patch.fact ?? null, patch.confirm ?? false],
+         occurred_on = CASE WHEN $5 THEN $6::date ELSE occurred_on END,
+         ended_on = CASE WHEN $7 THEN $8::date ELSE ended_on END,
+         status = CASE WHEN $4 THEN 'user_confirmed' ELSE status END,
+         confirmed_at = CASE WHEN $4 THEN now() ELSE confirmed_at END,
+         confidence = CASE WHEN $4 THEN 1 ELSE confidence END
+       WHERE id = $2 AND user_id = $1 AND status <> 'superseded' RETURNING ${COLUMNS}`,
+      [userId, id, patch.fact ?? null, touched, patch.occurredOn !== undefined, patch.occurredOn ?? null, patch.endedOn !== undefined, patch.endedOn ?? null],
     );
     if (!rows[0]) throw notFound("Memory");
     if (patch.fact) await this.queueEmbedding(userId, id);
     return toMemory(rows[0]);
+  }
+
+  /**
+   * A correction: the new fact replaces the old one, which is kept as
+   * history (status `superseded`, linked, original provenance in
+   * `prior_status`) and never used as context again.
+   */
+  async supersede(userId: string, id: string, replacement: { fact: string; occurredOn?: string | null; endedOn?: string | null }): Promise<{ superseded: Memory; replacement: Memory }> {
+    const result = await this.db.transaction(async (tx) => {
+      const { rows: old } = await tx.query<Row>(`SELECT ${COLUMNS} FROM health_memories WHERE id = $2 AND user_id = $1 AND status <> 'superseded' FOR UPDATE`, [userId, id]);
+      if (!old[0]) throw notFound("Memory");
+      const next = await this.create(
+        userId,
+        { fact: replacement.fact, source: "user_entry", status: "user_confirmed", occurredOn: replacement.occurredOn ?? old[0].occurred_on, endedOn: replacement.endedOn ?? null, category: old[0].category },
+        tx,
+      );
+      const { rows } = await tx.query<Row>(`UPDATE health_memories SET status = 'superseded', superseded_by = $3 WHERE id = $2 AND user_id = $1 RETURNING ${COLUMNS}`, [userId, id, next.id]);
+      return { superseded: toMemory(rows[0]!), replacement: next };
+    });
+    await this.queueEmbedding(userId, result.replacement.id);
+    return result;
   }
 
   async remove(userId: string, id: string) {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
 import { parseBody } from "../../common/errors";
@@ -6,6 +6,7 @@ import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { AccountService } from "../account/account.service";
 import { ChatService } from "./chat.service";
 
+const RenameBody = z.object({ title: z.string().trim().min(1).max(200) });
 const MessageBody = z.object({ message: z.string().trim().min(1).max(4000) });
 
 @Controller("v1/conversations")
@@ -32,6 +33,11 @@ export class ChatController {
   @Get(":id")
   get(@UserId() userId: string, @Param("id", ParseUUIDPipe) id: string) {
     return this.chat.get(userId, id);
+  }
+
+  @Patch(":id")
+  rename(@UserId() userId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: unknown) {
+    return this.chat.rename(userId, id, parseBody(RenameBody, body).title);
   }
 
   @Post(":id/messages")

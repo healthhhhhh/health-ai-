@@ -58,6 +58,17 @@ export class ChatService {
     @Inject(TimelineService) private readonly timeline: TimelineService,
   ) {}
 
+  /** Renames a conversation (the person's own label; nothing about the content changes). */
+  async rename(userId: string, id: string, title: string): Promise<Conversation> {
+    const { rows } = await this.db.query<{ id: string; title: string; created_at: Date; updated_at: Date }>(
+      `UPDATE conversations SET title = $3 WHERE id = $2 AND user_id = $1 RETURNING id, title, created_at, updated_at`,
+      [userId, id, title],
+    );
+    const r = rows[0];
+    if (!r) throw notFound("Conversation");
+    return { id: r.id, title: r.title, createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString() };
+  }
+
   async list(userId: string): Promise<Conversation[]> {
     const { rows } = await this.db.query<{ id: string; title: string; created_at: Date; updated_at: Date }>(
       `SELECT id, title, created_at, updated_at FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 100`,

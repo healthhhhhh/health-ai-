@@ -79,7 +79,7 @@ describe("profile and data controls", () => {
     await ctx.http.post("/v1/me/conditions").set(user.auth).send({ name: "Asthma" }).expect(201);
     const exported = await ctx.http.get("/v1/me/export").set(user.auth).expect(200);
     expect(exported.body.conditions[0].name).toBe("Asthma");
-    expect(exported.body.format).toBe("healthmate-export-v1");
+    expect(exported.body.format).toBe("healthmate-export-v2");
 
     await ctx.http.post("/v1/me/delete").set(user.auth).send({ password: "wrong" }).expect(403);
     await ctx.http.post("/v1/me/delete").set(user.auth).send({ password: "correct horse battery" }).expect(204);

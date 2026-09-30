@@ -201,6 +201,58 @@ describe("timeline policies", () => {
   });
 });
 
+describe("Phase 2A tables and policies", () => {
+  it("lets people edit only the timeline entries they added", async () => {
+    const own = (await as(alice, (q) => q.query<{ id: string }>(`INSERT INTO timeline_events (user_id, event_type, title, occurred_at, source_type) VALUES ($1, 'note', 'Tired', now(), 'user_entered') RETURNING id`, [alice]))).rows[0]!.id;
+    const device = (await db.query<{ id: string }>(`INSERT INTO timeline_events (user_id, event_type, title, occurred_at, source_type) VALUES ($1, 'measurement', 'Steps', now(), 'device') RETURNING id`, [alice])).rows[0]!.id;
+    expect(await changed(alice, `UPDATE timeline_events SET title = 'Very tired' WHERE id = $1 RETURNING id`, [own])).toBe(1);
+    expect(await changed(alice, `UPDATE timeline_events SET title = 'Edited' WHERE id = $1 RETURNING id`, [device])).toBe(0);
+    expect(await changed(bob, `UPDATE timeline_events SET title = 'Edited' WHERE id = $1 RETURNING id`, [own])).toBe(0);
+    await expect(as(alice, (q) => q.query(`UPDATE timeline_events SET source_type = 'clinician' WHERE id = $1`, [own]))).rejects.toThrow(/row-level security/);
+  });
+
+  it("keeps preferences, notifications and treatment plans private, with server-only writes where needed", async () => {
+    await as(alice, (q) => q.query(`INSERT INTO notification_preferences (user_id, insight) VALUES ($1, false)`, [alice]));
+    await db.query(`INSERT INTO notifications (user_id, category, title) VALUES ($1, 'report', 'Ready')`, [alice]);
+    await as(alice, (q) => q.query(`INSERT INTO treatment_plans (user_id, title, source) VALUES ($1, 'Physio', 'clinician_provided')`, [alice]));
+    for (const table of ["notification_preferences", "notifications", "treatment_plans"]) {
+      await as(alice, async (q) => expect(await count(q, `SELECT 1 FROM ${table}`), `${table} (owner)`).toBe(1));
+      await as(bob, async (q) => expect(await count(q, `SELECT 1 FROM ${table}`), `${table} (other)`).toBe(0));
+      await as(bob, async (q) => expect(await count(q, `UPDATE ${table} SET updated_at = now() WHERE user_id = $1 RETURNING 1`, [alice]), `${table} (other update)`).toBe(0));
+      await expect(as(null, (q) => q.query(`SELECT 1 FROM ${table}`))).rejects.toThrow(/permission denied/);
+    }
+    // People can't write notifications (e.g. a fake "message from your doctor") or record an extraction as their own entry.
+    await expect(as(alice, (q) => q.query(`INSERT INTO notifications (user_id, category, title) VALUES ($1, 'account', 'Fake')`, [alice]))).rejects.toThrow(/row-level security/);
+    await expect(as(alice, (q) => q.query(`INSERT INTO treatment_plans (user_id, title, source) VALUES ($1, 'Extracted', 'document_extracted')`, [alice]))).rejects.toThrow(/row-level security/);
+    await expect(as(bob, (q) => q.query(`INSERT INTO notification_preferences (user_id) VALUES ($1)`, [alice]))).rejects.toThrow(/row-level security/);
+  });
+
+  it("applies RLS through the current-state views", async () => {
+    await db.query(`INSERT INTO medications (user_id, name, instruction, source) VALUES ($1, 'Current med', 'As labelled', 'user_reported')`, [alice]);
+    await db.query(`INSERT INTO medications (user_id, name, instruction, source, active, stopped_on) VALUES ($1, 'Old med', 'As labelled', 'user_reported', false, '2026-01-01')`, [alice]);
+    await as(alice, async (q) => expect((await q.query<{ name: string }>(`SELECT name FROM current_medications`)).rows.map((r) => r.name)).toContain("Current med"));
+    await as(alice, async (q) => expect((await q.query<{ name: string }>(`SELECT name FROM current_medications`)).rows.map((r) => r.name)).not.toContain("Old med"));
+    for (const view of ["current_medications", "current_conditions", "current_allergies"]) {
+      await as(bob, async (q) => expect(await count(q, `SELECT 1 FROM ${view} WHERE user_id = $1`, [alice]), view).toBe(0));
+    }
+  });
+
+  it("keeps superseded memories as history with their original provenance", async () => {
+    const id = (await db.query<{ id: string }>(`INSERT INTO health_memories (user_id, fact, source, status) VALUES ($1, 'Wrong fact', 'user_entry', 'user_reported') RETURNING id`, [alice])).rows[0]!.id;
+    await as(alice, (q) => q.query(`UPDATE health_memories SET status = 'superseded' WHERE id = $1`, [id]));
+    const { rows } = await db.query<{ prior_status: string; superseded_at: Date | null }>(`SELECT prior_status, superseded_at FROM health_memories WHERE id = $1`, [id]);
+    expect(rows[0]).toMatchObject({ prior_status: "user_reported", superseded_at: expect.any(Date) });
+    await expect(as(alice, (q) => q.query(`UPDATE health_memories SET status = 'user_reported' WHERE id = $1`, [id]))).rejects.toThrow(/kept as history/);
+  });
+
+  it("mirrors email confirmation from Supabase Auth", async () => {
+    const id = await authUser("confirm@example.com", "Cam");
+    expect((await db.query<{ v: Date | null }>(`SELECT email_verified_at AS v FROM users WHERE id = $1`, [id])).rows[0]!.v).toBeNull();
+    await db.query(`UPDATE auth.users SET email_confirmed_at = now() WHERE id = $1`, [id]);
+    expect((await db.query<{ v: Date | null }>(`SELECT email_verified_at AS v FROM users WHERE id = $1`, [id])).rows[0]!.v).toBeInstanceOf(Date);
+  });
+});
+
 describe("storage policies", () => {
   it("keeps medical buckets private and each person's folder their own", async () => {
     const { rows } = await db.query<{ id: string; public: boolean }>(`SELECT id, public FROM storage.buckets WHERE id IN ('avatars', 'health-images', 'medical-reports') ORDER BY id`);

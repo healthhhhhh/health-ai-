@@ -1,7 +1,8 @@
 import { Body, Controller, Headers, HttpCode, HttpStatus, Inject, Post, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
-import { parseBody } from "../../common/errors";
+import { AuthGuard, UserId } from "../../common/auth";
+import { ApiError, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { CONFIG, type AppConfig } from "../../config";
 import { IDENTITY, type IdentityProvider } from "./identity";
@@ -22,6 +23,10 @@ const LoginBody = z.object({ email, password: z.string().min(1).max(256) });
 const RefreshBody = z.object({ refreshToken: z.string().min(8).max(512) });
 const ResetBody = z.object({ email });
 const ResetCompleteBody = z.object({ accessToken: z.string().min(16).max(4096), password });
+const ChangePasswordBody = z.object({ currentPassword: z.string().min(1).max(256), newPassword: password });
+// Supabase's confirmation link carries `token_hash`; the web page forwards it as `token`.
+const VerifyEmailBody = z.object({ token: z.string().min(8).max(512) });
+const OAuthBody = z.object({ provider: z.enum(["apple", "google"]) }).passthrough();
 
 /**
  * Same contract for local auth (development) and Supabase Auth (production):
@@ -71,6 +76,45 @@ export class AuthController {
   async logout(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     const accessToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
     await this.identity.logout(parseBody(RefreshBody, body).refreshToken, accessToken);
+  }
+
+  @Post("change-password")
+  @HttpCode(204)
+  @UseGuards(AuthGuard)
+  @RateLimit("auth-change-password", 5, 60_000)
+  async changePassword(@UserId() userId: string, @Body() body: unknown, @Headers("authorization") authorization?: string) {
+    const { currentPassword, newPassword } = parseBody(ChangePasswordBody, body);
+    if (currentPassword === newPassword) throw new ApiError("validation_failed", "Choose a password you haven't used here before.", HttpStatus.BAD_REQUEST);
+    await this.identity.changePassword(userId, currentPassword, newPassword, authorization?.slice(7));
+  }
+
+  /** The link in the confirmation email: confirms the address and starts a session. */
+  @Post("verify-email")
+  @HttpCode(200)
+  @RateLimit("auth-verify-email", 10, 60_000)
+  async verifyEmail(@Body() body: unknown) {
+    const { userId, tokens } = await this.identity.verifyEmail(parseBody(VerifyEmailBody, body).token);
+    return { userId, ...tokens };
+  }
+
+  /** Always 202, whether or not the email has an account. */
+  @Post("resend-verification")
+  @HttpCode(202)
+  @RateLimit("auth-resend-verification", 3, 60_000)
+  async resendVerification(@Body() body: unknown) {
+    await this.identity.resendVerification(parseBody(ResetBody, body).email);
+    return { ok: true };
+  }
+
+  /**
+   * Continue with Apple / Google: the UI is in place, the provider setup
+   * arrives in Phase 2C. Clients show "isn't available on this server yet".
+   */
+  @Post("oauth")
+  @RateLimit("auth-oauth", 10, 60_000)
+  oauth(@Body() body: unknown) {
+    parseBody(OAuthBody, body);
+    throw new ApiError("not_available", "Signing in with Apple or Google isn't available yet. Use your email instead.", HttpStatus.NOT_IMPLEMENTED);
   }
 
   /** Always 202, whether or not the email has an account. */

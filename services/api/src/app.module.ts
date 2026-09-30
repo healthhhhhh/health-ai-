@@ -29,6 +29,8 @@ import { STORAGE, type ObjectStorage } from "./modules/documents/storage";
 import { HealthDataController, HealthKitController } from "./modules/health-data/health-data.controller";
 import { HealthDataService } from "./modules/health-data/health-data.service";
 import { MemoryController } from "./modules/memory/memory.controller";
+import { NotificationsController, NotificationsService } from "./modules/notifications/notifications.controller";
+import { TreatmentPlansController, TreatmentPlansService } from "./modules/plan/treatment-plans.controller";
 import { MemoryService } from "./modules/memory/memory.service";
 import { ProfileController } from "./modules/profile/profile.controller";
 import { ProfileService } from "./modules/profile/profile.service";
@@ -115,6 +117,8 @@ export class AppModule {
       PlanService,
       SymptomsService,
       CareService,
+      NotificationsService,
+      TreatmentPlansService,
     ];
     return {
       module: AppModule,
@@ -135,6 +139,8 @@ export class AppModule {
         SymptomsController,
         CareController,
         HealthKitController,
+        NotificationsController,
+        TreatmentPlansController,
       ],
       providers,
     };

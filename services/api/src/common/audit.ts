@@ -13,7 +13,8 @@ export type AuditAction =
   | "document.delete"
   | "document.download"
   | "account.delete_requested"
-  | "auth.password_reset_requested";
+  | "auth.password_reset_requested"
+  | "auth.password_changed";
 
 /**
  * Security audit trail. Metadata must never contain health content — only

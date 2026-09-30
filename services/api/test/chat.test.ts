@@ -88,7 +88,7 @@ describe("chat safety pipeline", () => {
     await ctx.http.post("/v1/me/medications").set(user.auth).send({ name: "Evening tablet", instruction: "One at night", source: "clinician_provided" }).expect(201);
     await ctx.http.post("/v1/conversations").set(user.auth).send({ message: "migraine again today" }).expect(201);
     const system = ctx.ai.requests[0]!.system.join("\n");
-    expect(system).toContain("Gets migraines when dehydrated (user confirmed)");
+    expect(system).toContain("User confirmed: Gets migraines when dehydrated (recorded today");
     expect(system).toContain('"One at night" [clinician_provided]');
     expect(system).not.toContain("Other user secret fact");
   });

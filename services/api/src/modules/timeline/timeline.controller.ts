@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuthGuard, UserId } from "../../common/auth";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
@@ -14,6 +14,14 @@ const CreateBody = z.object({
   occurredAt: z.string().datetime({ offset: true }).optional(),
   details: z.string().max(1000).optional(),
 });
+
+const UpdateBody = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    occurredAt: z.string().datetime({ offset: true }),
+    details: z.string().max(1000).nullable(),
+  })
+  .partial();
 
 @Controller("v1/timeline")
 @UseGuards(AuthGuard, RateLimitGuard)
@@ -40,6 +48,17 @@ export class TimelineController {
       payload: input.details ? { details: input.details } : null,
     });
     return { id };
+  }
+
+  @Get(":id")
+  get(@UserId() userId: string, @Param("id", ParseUUIDPipe) id: string) {
+    return this.timeline.get(userId, id);
+  }
+
+  @Patch(":id")
+  update(@UserId() userId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: unknown) {
+    const patch = parseBody(UpdateBody, body);
+    return this.timeline.update(userId, id, { ...patch, details: patch.details === undefined ? undefined : patch.details?.trim() || null });
   }
 
   @Delete(":id")
