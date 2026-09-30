@@ -269,6 +269,11 @@ public struct HealthSyncProgress: Equatable, Sendable {
     public let historyDaysImported: Int
     public let historyDaysTotal: Int
     public var isImportingHistory: Bool { historyDaysImported < historyDaysTotal }
+
+    public init(historyDaysImported: Int, historyDaysTotal: Int) {
+        self.historyDaysImported = historyDaysImported
+        self.historyDaysTotal = historyDaysTotal
+    }
 }
 
 /// Runs one sync: reads each chunk, uploads it in batches, saves progress after
