@@ -15,6 +15,13 @@
 
 Each document below marks these as `‹TBD›`.
 
+**Age scope (revised 2026-10-01):**
+- **Long-term goal:** HealthMate for all ages.
+- **Initial release:** which age groups are enabled is **undecided** (Checklist §6.7).
+- **Code today:** no age screen, no parental consent and no child or teen safeguards (Audit §8).
+
+Each document below must be written for the scope actually chosen and built. It must not describe child or teen protections that don't exist. Requirements that apply only if minors are enabled are marked **[if minors]**.
+
 Every public document must match the code at the time it is published. Re-check against the Audit before publishing and after every change to data flows.
 
 ---
@@ -25,7 +32,11 @@ Every public document must match the code at the time it is published. Re-check 
 
 **Must cover:**
 1. **Parties:** the operator ‹TBD›: the individual developer, or a future entity (Checklist §10.1).
-2. **Eligibility: 18 or older, US residents** (decision). State how age is checked; this must match the age gate once built (Audit §8 — none exists today).
+2. **Eligibility**:
+   - Ages allowed at launch: ‹TBD per Checklist §6.7›. US residents.
+   - State how age is checked; the description must match the age screen once it is built (Audit §8 — none exists today).
+   - **[if minors]** Minors generally can't be bound by contract the way adults can **[COUNSEL]**. Terms for minors need a parent or guardian to agree. Utah's App Store Accountability Act bars enforcing terms against a minor unless parental consent was verified through the app store (Checklist §6.1.6).
+   - **[if caregivers]** Terms for adults managing a child's or teen's information: authority, and what happens at 18.
 3. **The nature of the service:** an AI health companion and information tool. Not medical care, not a doctor, not for emergencies. It incorporates the Medical Disclaimer (§3).
 4. **Accounts:** credentials, security, a single user per account, sign-in methods (email/password; Google if enabled).
 5. **User content:** reports, photos, notes and chat. The user's licence to the operator is limited to providing the service. The user is responsible for having the right to upload documents.
@@ -80,7 +91,13 @@ Every public document must match the code at the time it is published. Re-check 
 7. **Retention by category** (‹TBD› — Audit §5; there are no decided periods today), including backups and operational records.
 8. **Deletion** (§5 of this document), **export**, **correction**, and **consent withdrawal**, with honest exceptions. The queued-job gap must be fixed first, or disclosed (Audit §4.2).
 9. **Security:** describe it in general terms. Do not claim certifications or guarantees.
-10. **Children and age:** 18+ only, and what happens when an underage account is found (COPPA actual knowledge — Checklist §6.4).
+10. **Children and age.** Describe the age groups actually enabled, how age is determined, and what happens to accounts outside that scope (COPPA actual knowledge — Checklist §6.1.3).
+    - **[if under-13]** A COPPA-compliant children's privacy notice (§2A).
+    - **[if 13–17]** Teen-specific sections:
+      - state minors' rights (CT, CO, NY, MD, and others per counsel's map);
+      - no targeted advertising, sale or profiling;
+      - what parents can and cannot see;
+      - plain language a teen can understand.
 11. **State rights sections:** Washington, Nevada and Connecticut consumer-health-data rights; California (CMIA/CCPA if applicable); other states as counsel maps them. Include the request method, verification, timelines and appeals.
 12. **Breach notification commitment** consistent with the FTC HBNR and state law — no promises beyond the plan.
 13. **Location of processing and storage** (‹TBD› — region not chosen; Audit §3).
@@ -107,6 +124,20 @@ Every public document must match the code at the time it is published. Re-check 
 
 ---
 
+## 2A. Children's and teen documents [if minors]
+
+These are needed only if minors are enabled. **None of the underlying features exist** (Audit §8).
+
+| Document | Required when | Must cover | Open points |
+|---|---|---|---|
+| **COPPA online notice** (children's privacy notice) | Under-13 users enabled, or the service is found to be directed to children | Operator contact ‹TBD›. Each type of personal information collected from children and how it is used. **Each disclosure, including the AI provider**, and whether parents can consent to collection without that disclosure. The written data-retention policy. Parent rights (review, delete, revoke, refuse further collection). | Q25, Q26 |
+| **Direct notice to parents** (before collection) | Under-13 | Why the parent is contacted; what will be collected; that consent is required, with **separate consent for non-integral third-party disclosure** (2025 amendment); how to give consent; deletion of the parent's contact if consent isn't given within a reasonable time | Q26 |
+| **Verifiable parental consent records and forms** | Under-13 | The FTC-recognised method used; **purposes listed one by one**: account, AI chat, reports, photos, Apple Health sync, Apple Health in AI, memory, voice. Each revocable. | Q27 |
+| **Written data-retention policy** (COPPA; also CT/CO minors) | Under-13 (required); 13–17 (strongly indicated) | Purpose per data category, a retention period ‹TBD›, the deletion mechanism, **no indefinite retention** | Q28 |
+| **Written information-security program** | Under-13 (COPPA §312.8); good practice for all | Designated owner, risk assessment, safeguards, testing, vendor oversight, annual review | — |
+| **Teen privacy notice / in-product explanations** | 13–17 | Plain language; sensitive topics; confidentiality vs. parental access; crisis resources; what happens at 18 | Q29, Q30 |
+| **Parent/guardian terms and authority attestation** | Caregiver or dependent profiles | Proof of authority; custody changes; handover at 18 | Q31 |
+
 ## 3. Medical Disclaimer and AI Safety Notice
 
 **Purpose:** set expectations at the point of use. This supports FTC truthfulness, Apple 1.4.1 and FDA positioning.
@@ -121,6 +152,8 @@ Every public document must match the code at the time it is published. Re-check 
 7. Metrics are compared with the user's own usual range, never "normal" or "abnormal" (CLAUDE.md).
 8. No clinician reviews AI answers.
 9. Mental-health crisis resources (the code links findahelpline.com). Counsel to confirm whether a specific US resource, such as 988, must be named — product decision.
+
+10. **[if minors]** Age-appropriate versions: a teen version in plain language, and a parent-facing version for children. Pediatric limits: no weight-based dosing (the AI never gives doses — `ai.tasks.ts`); infant and child red flags need pediatric clinical review first (triage rules are adult-oriented and pending clinical review — Audit §8).
 
 **Placement requirements:** before first chat use, near every AI answer (it already exists as `Disclaimer`/`DisclaimerView` in the UI), and in the Terms. Urgent and warning content must stay visually distinct (CLAUDE.md).
 
@@ -143,6 +176,9 @@ Every public document must match the code at the time it is published. Re-check 
 | Withdrawal takes effect | Checked at request time; **background document jobs don't re-check** | Fix in engineering, or disclose |
 | Voice | `voice` consent exists; Apple speech may run server-side when on-device recognition is unsupported | Accurate copy |
 | Default state | Off until granted (`hasConsent` returns false when there's no record) | Keep this |
+| **Who consented** | Not recorded; there is only one account holder | **[if minors]** Record whether the user or a parent/guardian consented, the age group, and the method (VPC method for under-13) |
+| **Consent per purpose for minors** | One switch per feature; some flows (memory, Apple Health in AI) have no separate consent | **[if minors]** Granular, separately revocable consent for each purpose (Checklist §6.5) |
+| **Minors' AI disclosure** | Exact DOB goes to the AI provider | **[if minors]** Age band only; disclose the AI provider by name to parents/teens; review the provider's terms on minors' data **[FACT?]** |
 
 **Open questions:**
 - Q11. Must consent be re-collected when the AI provider or model family changes?
@@ -164,6 +200,12 @@ Every public document must match the code at the time it is published. Re-check 
 - Interrupted deletions are completed automatically. Confirmation method: ‹TBD› (none sent today).
 - **Retention for active accounts:** ‹TBD› per category. Today health data is kept until the user deletes it.
 
+**[if minors] Parent rights and minors' deletion:**
+- For under-13 users, parents can review, delete and revoke (COPPA).
+- For teens, whether parents may access or delete depends on state law and HealthMate's confidentiality decision **[COUNSEL]**.
+- Retention periods must be set per the written retention policy, not "until deleted".
+- At 18, offer the user review and deletion of data collected while a minor.
+
 **Open questions:**
 - Q13. Can de-linked operational records be kept after deletion under MHMDA/CTDPA, or must they be erased?
 - Q14. What backup retention is acceptable, and how should "deleted from backups" be handled (restore-and-purge)?
@@ -175,7 +217,8 @@ Every public document must match the code at the time it is published. Re-check 
 
 **Must cover:**
 - No use by anyone under 18.
-- No accounts for or about another person without authority. Product decision: may a caregiver use it for someone else? **The code supports only self-use.**
+- No accounts for or about another person without authority. **The code supports only self-use.** Caregiver use for a child or teen is part of the all-ages goal. It is not built, and the AUP must not permit it until parent/guardian accounts with proof of authority exist (Checklist §6.8 M17).
+- **[if minors]** Rules on what minors may upload. Photos of the body are off for minors at first (Checklist §6.5); no intimate images.
 - No uploading other people's health records without permission.
 - No attempts to extract the system prompt, inject instructions through documents, or misuse the AI. The code detects document prompt injection (`containsInstructionsToAi`).
 - No scraping, reverse engineering, abuse of rate limits, or security testing without permission. Point to the vulnerability-disclosure contact ‹TBD›.
@@ -233,6 +276,13 @@ Every public document must match the code at the time it is published. Re-check 
   - a bulk notification email path;
   - production access logging.
 
+### 8.2A Minors' procedures [if minors]
+- **Verify a parent's identity** before giving them a child's data. Do not ask for more of the child's health data to verify.
+- **Out-of-scope age discovered:** block or route the account, delete data collected without required consent, and log the decision without health content.
+- **Revoked parental consent:** stop processing, including queued jobs (Audit G6), and delete as required.
+- **Minors in incidents:** parent notification for under-13; state requirements.
+- **Turning 18:** re-consent and the deletion offer.
+
 ### 8.3 Change control for data flows
 Any new SDK, provider, data field, AI route (`AI_ROUTES`), log line or retention setting must:
 - update the Audit (§2–4);
@@ -258,8 +308,18 @@ Any new SDK, provider, data field, AI route (`AI_ROUTES`), log line or retention
 | Q17 | Disclosure of paid-tier limits | §7 |
 | Q18 | HBNR status (vendor of PHR?) and breach-content requirements | Checklist §1.2 |
 | Q19 | Confirm HIPAA non-applicability on current facts; triggers to watch | Checklist §2 |
-| Q20 | Obligations of an 18+ app under Texas SB 2420 and similar app-store age laws | Checklist §6.5 |
-| Q21 | Adequacy of self-attested age on web | Checklist §6.6 |
+| Q20 | App-store age-law obligations (Texas, Utah, Louisiana) for each launch option, including adults-only | Checklist §6.1.6 |
+| Q21 | Is a neutral, self-declared age screen on the web enough for each option? How does California AB 1043 (2027) apply? | Checklist §6.1.7 |
 | Q22 | Entity formation, insurance, and how the seller name appears on the App Store | Checklist §10.1–10.2 |
 | Q23 | Which state comprehensive privacy laws apply at expected scale | Checklist §3.5 |
 | Q24 | Whether SB 243, NY GBL Art. 47 or Utah HB 452 definitions cover HealthMate's persona and mood features | Checklist §3.6 |
+| Q25 | Does all-ages positioning or the "Mate" mascot make HealthMate "directed to children" or mixed-audience under COPPA, even in an adults-only launch? | Checklist §6.1.5 |
+| Q26 | Is the AI provider a COPPA "third party" needing **separate** parental consent, or is its processing integral to the service? | Checklist §6.2.4 |
+| Q27 | Which verifiable parental consent methods fit an individual developer, and is a paid verification vendor needed? | Checklist §6.2.3 |
+| Q28 | Retention periods for minors' data by category (COPPA written policy; CT/CO "no longer than necessary") | Checklist §6.2.7 |
+| Q29 | For 13–17-year-olds, who consents under MHMDA, NV, CT, CO and NY — the teen or a parent? Per state. | Checklist §6.3 |
+| Q30 | Teen confidentiality: what parents may see (state minor-consent laws for sexual/reproductive health, mental health, substance use); any reporting duty if abuse is disclosed | Checklist §6.3 |
+| Q31 | Caregiver/dependent profiles: proof of authority, COPPA status of parent-entered data, handover at 18, custody disputes | Checklist §6.4.3 |
+| Q32 | Can minors' medical reports, health images, symptom chats, Apple Health data and long-term memory be processed at all, and under which consents? | Checklist §6.5 |
+| Q33 | Do the AI provider's terms or usage policy allow processing minors' data, and on what conditions? | Checklist §6.5 |
+| Q34 | Which state minors' privacy and design-code laws apply at expected scale, given thresholds and litigation (CA AADC; MD Kids Code; TX SCOPE; VT and NE design codes) | Checklist §6.3 |

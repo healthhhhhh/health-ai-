@@ -16,7 +16,17 @@ Every statement is tagged:
 | **[COUNSEL]** | A question for a US privacy/healthcare lawyer. |
 | **[GAP]** | A difference between what the code does and what a launch is likely to need. |
 
-Confirmed product decisions used as inputs (from the operator, 2026-10-01): an individual developer with no registered company; the United States as the first market; a minimum age of 18; iOS plus a website; the features listed in §1. Nothing below assumes a company name, address, support contact, retention period, provider contract term or security certification. None of these exist yet.
+Confirmed product decisions used as inputs (from the operator, 2026-10-01): an individual developer with no registered company; the United States as the first market; iOS plus a website; the features listed in §1.
+
+**Age policy (revised 2026-10-01).** The earlier input "minimum age 18" is withdrawn as a permanent policy.
+
+| Layer | Status |
+|---|---|
+| **Desired long-term product** | An **all-ages** health companion: children, teenagers and adults. |
+| **Proposed initial launch scope** | **Undecided.** Options and a recommendation are in the Checklist (§6.7). |
+| **Implemented in code** | **No age determination and no age-based controls of any kind**: no age screen, no parental consent, no parent or guardian accounts, no child- or teen-specific behaviour (§8). |
+
+Nothing in this audit should be read as saying an age gate, parental consent or child-safety feature exists. Nothing below assumes a company name, address, support contact, retention period, provider contract term or security certification. None of these exist yet.
 
 ---
 
@@ -252,18 +262,35 @@ These are code-level controls only. They are **not** a security guarantee, certi
 5. **No encryption-at-rest configuration in code** (it relies on the provider) **[DEPLOY]**.
 6. **The demo server logs a fixed demo login** (`demo.ts`). It is non-production only and contains no real credentials.
 
-## 8. Age restriction: actual implementation status [CODE]
+## 8. Age handling: actual implementation status [CODE]
 
-**HealthMate does not currently prevent under-18 users from registering or using the service.** Verified:
+**HealthMate currently has no age determination of any kind.** It does not distinguish children, teenagers and adults. It cannot block, route or protect any age group, whatever launch scope is chosen. Verified:
 
 1. `POST /v1/auth/register` (`auth.controller.ts` `RegisterBody`) has no age, date-of-birth or attestation field and no check.
 2. `POST /v1/auth/oauth` (Google) creates accounts on first sign-in with no age check (`identity.ts` `signInWithIdToken`).
-3. `profiles.date_of_birth` is optional. `PATCH /v1/me` accepts any valid date (`profile.controller.ts` `day`), including dates that make the user a minor, and nothing reacts to it.
+3. `profiles.date_of_birth` is optional. `PATCH /v1/me` accepts any valid date (`profile.controller.ts` `day`), including dates showing the user is under 13 or under 18, and nothing reacts to it. **Entering a child's DOB can give HealthMate "actual knowledge" under COPPA** (Checklist §6.1.3), yet no code acts on it.
 4. No age gate, age checkbox or "18+" text exists in the web sign-up (`apps/web/src/app/sign-in`, `onboarding`) or the iOS onboarding (`OnboardingView.swift`, `SignInView.swift`, `AccountSetupView.swift`). A search for "18", "adult" and "years old" across clients, API and docs found nothing relevant.
 5. The iOS app does not use Apple's Declared Age Range API. The App Store age rating is not in the repository **[FACT?]**.
-6. No database constraint and no test enforces a minimum age.
+6. No database constraint and no test enforces any age rule.
+7. **No parent, guardian, child or dependent concept exists.** A search of the API, migrations, web, iOS and safety package for "parent", "guardian", "child", "minor" and "teen" found no such data model or flow. Accounts are single-user; there is no verifiable parental consent, parent dashboard, or parent export or deletion.
+8. **No age-aware behaviour.** The AI prompts (`chat.prompts.ts`, `document.prompts.ts`) assume an adult reader. The deterministic triage rules (`packages/safety/src/rules.ts`) are marked **"PENDING CLINICAL REVIEW"** and contain no pediatric rules.
+9. **The exact DOB goes to the AI provider** in the profile summary (`profile.service.ts` `contextSummary`, §4.2). For a minor, this tells the provider the user is a child.
+10. Consents (`consents` table) are given by the account holder only. No field records *who* consented (the user or a parent) or for which age group.
 
-The checklist and the legal-document requirements treat a working age gate as a **launch blocker**.
+A working age screen, with handling for the age groups chosen at launch, is a **launch blocker for every option** (Checklist §6.1, §6.8).
+
+### 8.1 What each data flow means if a minor uses HealthMate today
+
+| Flow (§4) | If the user is a minor, today | Assessment |
+|---|---|---|
+| Chat | Messages, DOB, conditions, medications and Apple Health summaries go to the AI provider (if configured) with adult prompts | Not safe to enable for minors (Checklist §6.5) |
+| Reports | The whole document, with the child's identifiers, goes to the AI provider; stored indefinitely | Not safe to enable |
+| Photos | Photo of the child uploaded, stored and sent to the AI **before** the model marks it unsupported | Not safe to enable — highest risk |
+| Apple Health | Synced with `health_data_sync` consent; summaries reach the AI under `ai_processing` | Not safe to enable |
+| Memory | Indefinite; includes AI inferences | Not safe to enable |
+| Deletion/export | The account holder only; no parent rights | Does not meet COPPA parent rights |
+
+See the Checklist, **§6.8 "Minors: Launch Blockers and Required Safeguards"**.
 
 ## 9. Public statements already in the product (representations)
 
@@ -284,7 +311,7 @@ The product already makes these statements. Each must be true at launch or be re
 
 | # | Gap | Severity for launch | Section |
 |---|---|---|---|
-| G1 | No minimum-age enforcement | **Blocker** | §8 |
+| G1 | No age determination or age-based controls (no age screen, no signal handling, no parental consent, no parent accounts) | **Blocker** for every launch option; minors need more (Checklist §6.8) | §8 |
 | G2 | Terms, Privacy Policy and Consumer Health Data Privacy Policy do not exist; links are placeholders; acceptance is not recorded | **Blocker** | §9 |
 | G3 | AI provider not named in consent; iOS onboarding consent omits external sharing; no separate collection vs. sharing consent | **Blocker** (Apple 5.1.2(i); state health-data laws) | §4.2 |
 | G4 | HealthKit-derived data sent to the AI provider without HealthKit-specific disclosure or permission | **Blocker** for an App Store build with HealthKit plus AI | §4.2 |
@@ -301,6 +328,8 @@ The product already makes these statements. Each must be true at launch or be re
 | G15 | Report/photo files sent to the AI unredacted (identifiers on documents) | Medium–High | §4.2 |
 | G16 | MapKit search reveals care-seeking intent plus location to Apple; not disclosed | Medium | §3 |
 | G17 | Regulatory status of symptom triage, image "possible causes" and report flags is unassessed (FDA) | **Blocker** for the image and report features until assessed | Checklist §4 |
+| G18 | No child- or teen-specific safeguards (age-aware AI, pediatric triage, feature gating, minors' retention, parent rights) | **Blocker** for enabling any user under 18 | §8, §8.1 |
+| G19 | Consent records don't say who consented (user vs. parent) or the age group | **Blocker** for minors | §8 |
 
 ## 11. Method and limits
 

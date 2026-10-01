@@ -2,7 +2,16 @@
 
 > **Status: working checklist for counsel review. Not legal advice and not a statement of compliance.** Nothing here has been confirmed by a lawyer.
 > Review date: **2026-10-01**. Code facts come from `docs/legal/HEALTHMATE_DATA_FLOW_AUDIT.md` (cited as "Audit §n").
-> Operator facts used: individual developer, no registered company, US-first, 18+, iOS + web, consumer-facing AI health companion. No partnerships with clinics, insurers or employers are known. If that changes, re-run §2.
+> Operator facts used: individual developer, no registered company, US-first, iOS + web, consumer-facing AI health companion. No partnerships with clinics, insurers or employers are known. If that changes, re-run §2.
+> **Age policy (revised 2026-10-01):** the **long-term product goal is all ages** (children, teenagers and adults). **Which age groups the initial public release enables is not yet decided** (§6.7). The earlier assumption of a permanent 18+ policy is withdrawn. Today's code has **no age determination and no age-based controls of any kind** (Audit §8). Every launch option therefore needs new work before release.
+
+**Three layers — always keep them apart:**
+
+| Layer | What it is | Where |
+|---|---|---|
+| **Desired long-term product** | All-ages health companion | Operator decision, 2026-10-01 |
+| **Proposed initial launch scope** | Not decided. Options compared in §6.7; recommendation in §6.7.4. | Decision pending (operator + lawyer) |
+| **Implemented in code** | No age gate, no age signal, no parental consent, no parent or guardian accounts, no child- or teen-specific controls. Single-user accounts only. | Audit §8 (verified from source) |
 
 **Legend**
 
@@ -172,21 +181,173 @@ Also:
 | 5.10 | Usage strings accurate (`project.yml`): microphone, speech, location, camera, HealthShare | Present. Speech server fallback not mentioned (Audit §9). | ⚠️ |
 | 5.11 | Guideline 4.8 (login services): if Google sign-in ships on iOS, offer an equivalent privacy-focused login such as Sign in with Apple | Google not wired on iOS yet; Apple verifier not implemented | n/a now — ❗ before shipping Google on iOS |
 | 5.12 | Guideline 1.4.1 medical apps (see §4) | Disclaimers present | ⚠️ |
-| 5.13 | Age rating set to match the 18+ policy; age-assurance laws (see §6) | Not in repo | ❌ |
+| 5.13 | App Store age rating must match the launch scope chosen in §6.7. Apple's ratings are now 4+, 9+, 13+, 16+ and 18+. The questionnaire includes medical/wellness topics, and developers can set a higher rating to reflect a minimum age (answers were required by Jan 31, 2026 to submit updates). **The rating is not an age gate**: it does not stop a person from using the web app or creating an account. | Not in repo | ❌ |
+| 5.15 | Kids-specific Apple rules if minors are enabled. Guideline 5.1.4: an app able to collect or share a minor's personal information (photos, chat, health data) needs a privacy policy and must follow children's privacy laws; birthdate and parental contact may be requested only for that purpose. Guideline 1.3: the Kids Category bars sending personal information or device information to third parties, which conflicts with sending children's data to a third-party AI. Guideline 2.3.8: "For Kids"/"For Children" metadata is reserved for the Kids Category. | No child features exist | n/a until minors are enabled — see §6 |
 | 5.14 | Fact: distributing on the App Store and using the HealthKit entitlement and APNs requires Apple Developer Program membership (paid). This is a launch dependency, not a development one. | — | Op |
 
 ---
 
-## 6. Adult-only access and age assurance
+## 6. Age groups, age assurance and minors
+
+**Product decision (2026-10-01):** HealthMate's long-term goal is to serve **children, teenagers and adults**. The age groups enabled at the initial public release are **undecided**. **No single US age rule applies nationwide.**
+- Federal COPPA covers children **under 13**.
+- Several states set extra duties for minors **under 18**: Connecticut, Colorado, New York, Maryland, California, Texas, Utah, Louisiana and others.
+- State consumer-health-data laws (Washington, Nevada, Connecticut) apply to consumers of **any age** and say little about who consents for a minor.
+
+### 6.1 Applies to every launch option (including adults-only)
 
 | # | Requirement | Code status | Status |
 |---|---|---|---|
-| 6.1 | Product decision: 18+. Needs **enforcement in code**, not only in Terms. | **No enforcement** (Audit §8): no age field at sign-up, no Google sign-in check, DOB optional and unvalidated, no client gate | ❌ **Blocker** |
-| 6.2 | Choose an age-assurance method proportionate to risk: self-declared DOB or attestation at sign-up (web and iOS, every sign-in method), and/or the Apple Declared Age Range signal on iOS | — | ❌ Op + Lawyer |
-| 6.3 | What happens when a user is or appears to be under 18 (DOB edit, support report): block, delete data, record the decision | — | ❌ |
-| 6.4 | **COPPA** (16 CFR Part 312; amended rule effective June 23, 2025, compliance by April 22, 2026): a general-audience service with **actual knowledge** that a user is under 13 must comply or delete. A DOB showing under 13 creates actual knowledge. | DOB is collected without any reaction | ❌ |
-| 6.5 | **State app-store age laws**: Texas SB 2420 (in force for new Texas Apple Accounts from June 4, 2026, per Apple) requires developers to use Apple's age signals (Declared Age Range API), the Significant Change API and consent-revocation notifications for minors. Utah and Louisiana have similar laws — confirm dates. | None implemented | ❌ **[COUNSEL]**: obligations for an 18+ app that blocks minors |
-| 6.6 | Web: there is no app-store signal, so self-attestation plus Terms. Counsel to confirm adequacy. | — | ❌ |
+| 6.1.1 | **Determine age before collecting health data**, on every sign-up path (email/password, Google, future Apple) and both platforms. Rules and documents alone do not count. | **None** (Audit §8): no age field at sign-up, no check on Google sign-in, DOB optional and unvalidated, no client gate, no Declared Age Range API | ❌ **Blocker** |
+| 6.1.2 | **Neutral age screen** (FTC COPPA FAQ). Ask for the full date of birth or age without hinting at the "right" answer (no "I am 18+" checkbox and no pre-filled adult date). Stop retries with a different age after a block (e.g. remember it on the device). Apply it before any health data is collected. | — | ❌ |
+| 6.1.3 | **Handle actual knowledge of an under-13 user.** COPPA covers a general-audience service once it has **actual knowledge** that a user is under 13; a DOB showing under 13 creates that knowledge (FTC COPPA FAQ). Without parental-consent features: do not collect, delete what was collected, and record the decision without keeping health content. | DOB edits are accepted and nothing reacts | ❌ **Blocker** |
+| 6.1.4 | **Handle discovered minors** outside the enabled scope: a DOB edit, a support report, an app-store age signal. Decide whether to block, delete or move them to a supported flow. | — | ❌ |
+| 6.1.5 | **"Directed to children" risk from all-ages positioning.** The FTC weighs subject matter, visual content, **animated characters**, child-oriented activities, advertising and audience evidence. The "Mate" mascot and all-ages marketing could make HealthMate a **mixed-audience** service: COPPA then applies to under-13 users identified by an age screen, and before that screen only the limited information allowed by §312.5(c) may be collected (per the 2025 definition of "mixed audience"). **[COUNSEL]** | Mascot exists (`Mascot` component on the web landing page) | ❌ assess |
+| 6.1.6 | **App-store age laws.** These require developers to request Apple's age category and parental-consent status, and to report significant changes; age data may only be used for age compliance and safety. Even an adults-only app must at least receive and act on the age signal **[COUNSEL]**. **Utah: the developer may not enforce its terms against a minor unless parental consent was verified through the app store.** | Not implemented: Declared Age Range API, PermissionKit Significant Change API, App Store server notifications | ❌ |
+| 6.1.7 | **Web has no app-store signal.** Self-declared age plus a neutral screen is the likely baseline. From **Jan 1, 2027**, California AB 1043 (Digital Age Assurance Act) requires developers to request an age-bracket signal from operating-system providers or app stores, possibly including browsers/OS on the web **[COUNSEL]**. The FTC's age-verification policy statement (Feb 25, 2026) says it will not bring COPPA enforcement over data collected *solely* to determine age, if specific conditions are met: use only for age, prompt deletion, notice, security, accuracy. | — | ❌ |
+| 6.1.8 | **App Store age rating** matches the chosen scope (§5.13). It is not a substitute for 6.1.1. | — | ❌ |
+
+The app-store age laws in 6.1.6:
+- **Texas SB 2420**: in force for new Texas Apple Accounts from **June 4, 2026**, per Apple's developer news.
+- **Utah SB 142** (Utah Code 13-76; developer duties from **May 6, 2026**).
+- **Louisiana HB 570** (Act 481 of 2025; effective date **unconfirmed**, reported as July 1, 2026).
+- These laws are new and some face litigation. Confirm the current status.
+
+### 6.2 Children under 13
+
+**Applies?** Yes, the moment any under-13 user is knowingly allowed or the service is directed to children. COPPA, 16 CFR Part 312: the amended rule took effect **June 23, 2025**, and most obligations had a compliance date of **April 22, 2026**.
+
+| # | Requirement | Notes | Code status |
+|---|---|---|---|
+| 6.2.1 | **Scope** | COPPA covers personal information *collected from* a child. Under the rule this includes: name, contact details, photos, video and audio with the child's image or voice, geolocation, persistent identifiers and (since 2025) biometric identifiers. Free-text health details count when combined with identifiers. **Information a parent enters about their child is generally not "collected from a child"**, but it is still consumer health data under state laws **[COUNSEL]**. | ❌ none |
+| 6.2.2 | **Direct notice to parents** before collection, and an online notice: what is collected, how it is used and disclosed, **the identities or categories of third parties**, the **written data-retention policy**, and parental rights | ‹TBD›; drafting is counsel's job | ❌ |
+| 6.2.3 | **Verifiable parental consent (VPC)** before collecting from the child, through an FTC-recognised method. Examples include a signed form, a payment transaction, a call or video call with trained staff, and a government ID check. The 2025 amendments added further methods (e.g. knowledge-based questions, a face match to a photo ID, and "text plus") — **verify the final list**. "Email plus" is limited to internal uses. | Needs identity, a consent ledger, revocation and audit. A paid verification vendor may be needed **[FACT?]**. | ❌ **Blocker** |
+| 6.2.4 | **Separate VPC for disclosures to third parties** that are not integral to the service (2025 amendment) | **Key question:** is the AI provider a third party whose disclosure needs separate consent, or a service provider whose processing is integral? Either way the notice must name the disclosure **[COUNSEL]**. | ❌ |
+| 6.2.5 | **Parent rights**: review the child's personal information, revoke consent, have it deleted, and refuse further collection while still allowing participation where possible | Needs a parent account linked to the child and verified as the parent | ❌ |
+| 6.2.6 | **Data minimisation**: no conditioning participation on more data than reasonably necessary | e.g. no exact DOB to the AI; no long-term memory by default; no photos of the child unless essential | ❌ |
+| 6.2.7 | **Written data-retention policy** (2025 amendment): keep data only as long as reasonably necessary for the documented purpose, publish the policy in the notice, **no indefinite retention** | Today health data is kept until the user deletes it (Audit §5), which is incompatible for under-13 data | ❌ **Blocker** |
+| 6.2.8 | **Written information security program** (amended §312.8), with reasonable steps to release data only to providers able to protect it | No written program (Audit §7) | ❌ |
+| 6.2.9 | **Voice**: the FTC has treated audio used only to replace typed words and promptly deleted as an exception (2017 enforcement policy statement, reflected in later rulemaking — **verify current status**). iOS speech may be processed by Apple's servers when on-device recognition is unavailable (Audit §3). | — | ❌ verify |
+| 6.2.10 | **Apple**: Guideline 5.1.4 (above). The Kids Category is incompatible with sending children's data to a third-party AI (Guideline 1.3), so don't list HealthMate in it. Non-Kids apps must not market themselves as "for kids" (Guideline 2.3.8). | — | n/a |
+| 6.2.11 | **States**: New York's Child Data Protection Act (effective **June 20, 2025**) requires **parental** informed consent for users under 13 when processing isn't strictly necessary. Maryland and California age-appropriate design codes cover under-18s generally (§6.3). | — | ❌ |
+
+### 6.3 Teenagers 13–17
+
+COPPA does not cover teens. Obligations come from a **patchwork of state laws** (most apply with *actual knowledge*, or *willful disregard*, that a user is a minor) plus app-store age laws.
+
+| # | Law / topic | What it requires (summary — confirm text) | Applies? | Status |
+|---|---|---|---|---|
+| 6.3.1 | **Connecticut CTDPA minors' provisions** (under 18; effective Oct 1, 2024; amended 2025 and later — verify, including Public Act 26-64) | Reasonable care to avoid a "heightened risk of harm to minors"; data-protection assessment; **no targeted advertising or sale**; consent for certain processing such as profiling; limits on precise geolocation | Likely, for known minors in Connecticut | ❌ |
+| 6.3.2 | **Colorado Privacy Act minors' amendments** (SB 24-041, effective **Oct 1, 2025**) | Similar duty of care and assessment; consent to process minors' data for targeted ads, for longer than necessary, or for undisclosed purposes | Depends on Colorado Privacy Act thresholds **[COUNSEL]** | ❌ |
+| 6.3.3 | **New York Child Data Protection Act** (effective June 20, 2025) | For 13–17-year-olds: process personal data only when **strictly necessary** for listed purposes or with the **teen's informed consent**. AG guidance exists. | Likely, with actual knowledge of a New York minor | ❌ |
+| 6.3.4 | **Maryland Age-Appropriate Design Code** (effective Oct 1, 2024) | Best-interests duty for products "reasonably likely to be accessed by children" (under 18); data-protection impact assessments; high-privacy defaults | Depends on thresholds and coverage **[COUNSEL]** | ❌ |
+| 6.3.5 | **California Age-Appropriate Design Code** (in litigation: on Mar 12, 2026 the 9th Circuit left some provisions enjoined, including data-use and dark-patterns restrictions, and lifted others, including coverage and age estimation) | DPIAs, age estimation, defaults. Depends on CCPA thresholds. | Depends **[COUNSEL]** | ❌ |
+| 6.3.6 | **CCPA** (if thresholds are met) | Opt-in before selling or sharing data of consumers under 16 | Depends | ✅ code (no sale or sharing for ads) |
+| 6.3.7 | **Texas SCOPE Act** (HB 18, effective Sept 1, 2024; parts were enjoined in 2024 — verify) | Duties for "digital service providers" toward known minors; limits on collecting and sharing their personal information. Coverage turns on social-interaction features, which HealthMate does not have. | Probably not; confirm | — |
+| 6.3.8 | **App-store age laws** (§6.1.6) | iOS teens in Texas, Utah and Louisiana need app-store parental consent for downloads and significant changes | Likely for iOS | ❌ |
+| 6.3.9 | **State consumer-health-data laws** (Washington, Nevada, Connecticut) | Apply to teens as consumers. Washington's MHMDA does not say whether a parent or the teen consents for a minor **[COUNSEL]**. | Likely | ❌ |
+| 6.3.10 | **AI and mental-health laws**: California SB 243 has extra duties toward known minors (AI disclosure, break reminders, content limits); NY GBL Art. 47; Utah HB 452 | Turns on the companion or mental-health chatbot definitions (§3.6) | Depends **[COUNSEL]** | ❌ |
+| 6.3.11 | **Other states** | Vermont and Nebraska enacted design-code or minors' laws in 2025, and more are pending. **Not verified in this review.** | Monitor | — |
+
+**Teen-specific design and confidentiality questions [COUNSEL + clinical]:**
+- **Confidentiality vs. parental access.** State minor-consent laws let teens consent to some care themselves (often sexual and reproductive health, mental health, substance use) and can protect that information from parents. HealthMate is not a care provider, but a future parent dashboard could expose exactly that information. Decide what a parent can see, per state and per topic, before building parent access for teens.
+- **Sensitive conversations.**
+  - Self-harm, eating disorders, pregnancy, contraception, sexual health, substance use, abuse or neglect, and gender-related care (where some states restrict care for minors).
+  - Today the self-harm rule escalates deterministically (`packages/safety/src/rules.ts` `self-harm-or-suicidal-intent`) and links to findahelpline.com.
+  - Questions: whether teen-specific crisis resources are needed, and **whether any reporting duty arises** if a minor discloses abuse (HealthMate is generally not a mandated reporter, but confirm).
+- **Age-appropriate design.** No engagement-maximising features or streak pressure for minors, high-privacy defaults, plain-language notices a teen can understand, and no profiling. Long-term memory is a form of profile.
+- **Turning 18.** Data collected as a minor should be reviewed when the user reaches majority (offer review and deletion; switch consent to the adult).
+
+### 6.4 Adults 18+
+
+| # | Item | Status |
+|---|---|---|
+| 6.4.1 | Everything else in this checklist (§1–5, §7–10) applies | See sections |
+| 6.4.2 | Age screen confirms 18+; adult consent flows (Audit §4.2 gaps G3, G4, G6 still open) | ❌ |
+| 6.4.3 | If adults later manage a child's or teen's data (caregiver or dependent profiles): parent-entered data about a child is generally outside COPPA but is still consumer health data. Needs proof of authority, then handling at 18 or when custody changes. | Not built; the data model is single-user |
+
+### 6.5 Can HealthMate safely process minors' data today? Feature-by-feature
+
+Assessment of **current code** (Audit §4, §8). "Today" means as the code stands. No child-specific safeguard exists in any feature.
+
+| Feature | What happens today | Minor-specific risk | Safe for minors now? | Needed before enabling |
+|---|---|---|---|---|
+| **Medical reports** | Whole file sent unredacted to the AI provider when one is configured; stored indefinitely | A child's identifiers and diagnoses go to a third party; COPPA third-party disclosure; retention limits | **No** | Parental consent covering *this* processing and disclosure; redaction or minimisation; retention limits; a provider whose terms allow minors' data **[FACT?]**; FDA view (§4) |
+| **Health images** | Photo sent to the AI provider. The prompt marks genitals and other areas unsupported, but **the image is still uploaded, stored and sent first** | Photos of a child's body; risk of intimate images of minors (federal reporting duties for child sexual abuse material **[COUNSEL]**); COPPA treats photos of a child as personal information | **No — highest risk** | Keep disabled for minors at first; if ever enabled: screening before upload/sending, parental consent, minimal retention |
+| **Symptom conversations** | LLM answers with adult-oriented prompts; deterministic triage rules are **pending clinical review** and **not pediatric** (`rules.ts` header) | Pediatric red flags (e.g. infant fever, dehydration, dosing by weight) aren't covered; sensitive teen topics; AI not tuned for age | **No** | Pediatric clinical review of the triage rules; age-aware prompts and content policy; crisis pathways for teens; parental consent for under-13 |
+| **Apple Health data** | Daily aggregates synced (with `health_data_sync` consent); summaries go to the AI in chat context | Data collected from a child's device is "collected from a child"; Apple 5.1.3 and HealthKit rules | **No** | Per-purpose consent (sync vs. AI); parental consent for under-13 |
+| **Long-term health memory** | Facts kept until deleted; embeddings; AI inferences stored as `ai_inferred` | Profiling of minors (Connecticut and Colorado limits); COPPA retention; data following the child into adulthood | **No** | Off by default for minors, or short retention; review and deletion at 18 |
+| **Disclosure to AI providers in general** | Profile summary includes the **exact date of birth**, so the provider can infer that the user is a child | Children's data reaches a third party; the provider's usage policy on minors is **not reviewed [FACT?]** | **No** | Review the provider's terms on minors; send an age band, not DOB; parental consent to that disclosure, separate if counsel says COPPA requires it |
+
+**Does parental consent need to cover each processing or disclosure purpose?**
+- For under-13 users, COPPA requires the notice to describe each collection, use and disclosure. Since 2025 it requires a **separate** consent for disclosure to third parties that is not integral to the service.
+- Recommendation for design, pending counsel: **granular parental consent for each purpose**: account and record keeping; AI chat; report analysis; photo analysis; Apple Health sync; Apple Health in AI; long-term memory; voice.
+- Each item should be revocable on its own, and revoking it should stop **queued** jobs too. Today queued jobs ignore withdrawal (Audit §4.2).
+
+### 6.6 Implementation needs by age group (none exist in code)
+
+| Capability | 18+ only launch | Adds 13–17 | Adds under 13 |
+|---|---|---|---|
+| Neutral age screen on all sign-up paths (web + iOS + OAuth) | Required | Required | Required |
+| Apple Declared Age Range + PermissionKit significant-change + server notifications | Required (to receive and act on signals) **[COUNSEL]** | Required | Required |
+| Age stored as a band, with re-check on DOB edits | Required | Required | Required |
+| Block/delete flow for out-of-scope ages | Required | Required | — |
+| Age-aware AI prompts, content policy, pediatric/teen clinical review of triage | — | Required | Required |
+| Teen consent and notices; high-privacy defaults; no profiling; memory limits | — | Required | Required |
+| Parent and guardian accounts linked to the child, with proof of authority | — | Decision (state-specific confidentiality) | Required |
+| Verifiable parental consent (FTC method), consent ledger, revocation | — | — | Required |
+| Parent review, export and deletion of the child's data | — | Optional / state-specific | Required |
+| Written retention policy with automatic deletion for children's data | Recommended | Required (CT, CO) | Required (COPPA) |
+| Written information-security program | Recommended | Required | Required (COPPA §312.8) |
+| Feature gating by age (photos, memory, Apple Health in AI) | — | Required | Required |
+| Provider review of minors' data (AI provider terms) | — | Required | Required |
+
+### 6.7 Staged launch strategy (decision required)
+
+| | **Option A — Adults-only first, then a minors-capable release** | **Option B — Teens + adults first; under-13 deferred** | **Option C — All ages at launch with parental consent** |
+|---|---|---|---|
+| Fit with the all-ages vision | Partial at launch; staged | Closer | Full |
+| New legal surface at launch | Smallest: COPPA actual-knowledge handling, app-store age laws, adult consent gaps | Adds the state minors' laws (CT, CO, NY, MD, CA design code), app-store parental consent, teen confidentiality questions | Adds all of COPPA (notice, VPC, separate third-party consent, parent rights, retention, security program) on top of B |
+| Engineering before launch | Age screen, signal handling, block/delete flow | A + age-aware AI and content, teen consents and defaults, feature gating, teen clinical review | B + parent accounts, VPC, parent dashboard, granular consents, retention automation, provider review |
+| Clinical work | Adult triage review (already pending) | + adolescent review | + pediatric review |
+| Risk of claiming safeguards that don't exist | Low | Medium | High unless every item in §6.8 is built and tested |
+| Main risk | All-ages marketing or the mascot could make the service mixed-audience (§6.1.5); minors who lie about age | Confidentiality and sensitive topics; state law changing fast | Cost and complexity of VPC for an individual developer; children's data sent to a third-party AI |
+| Reversibility | Easy to widen later | Moderate | Hard to roll back (children's data already collected) |
+
+**6.7.4 Recommendation (for operator and counsel to confirm): Option A, designed to grow into B and then C.**
+1. **Initial release: 18+ only, as a launch scope rather than a permanent policy.** Ship the neutral age screen on every path, act on Apple age signals, and block and delete out-of-scope sign-ups. Keep marketing and App Store metadata adult-directed until minors are supported.
+2. **Build the data model for the future now (design only).** Age band per account; optional parent link; per-purpose consent records tied to the shown text; retention policies per age group. Then minors can be enabled without migrating live data.
+3. **Release 2 — teens (Option B)** once §6.8 items M1–M12 and M14–M16 are done: state-law map, teen consents and defaults, age-aware AI and content policy, adolescent clinical review, app-store parental-consent flows, and photo and memory limits.
+4. **Release 3 — under 13 (Option C)** once COPPA VPC, parent rights, separate third-party consent, the written retention policy and the security program exist and have been reviewed by counsel (§6.8 M13 and later).
+
+Why: the vision is preserved, minors' data is not collected before child safeguards exist, and none of the current gaps (Audit §8) are hidden.
+
+### 6.8 Minors: Launch Blockers and Required Safeguards
+
+**None of these exist in the code today** (Audit §8). Existing findings stay open: no age checks on any path (Audit G1) and adult consent gaps (G3, G4, G6). A blocker marked for an age group must be resolved before that group is enabled. "All" means it blocks every launch option, including adults-only.
+
+| # | Blocker / safeguard | Blocks | Owner |
+|---|---|---|---|
+| M1 | Decide the initial launch scope (§6.7) and record it | All | Op + Lawyer |
+| M2 | Neutral age screen before health data collection, on every sign-up path and platform | All | Eng |
+| M3 | Act on app-store age signals and parental-consent status (Texas, Utah, Louisiana); handle consent-revocation notifications | All (iOS) | Eng + Lawyer |
+| M4 | Under-13 handling: refuse or route to a supported flow, delete data collected without VPC, record the decision without health content | All | Eng |
+| M5 | Re-check age on DOB edits and other signals; block/delete flow for out-of-scope ages | All | Eng |
+| M6 | Marketing, App Store metadata and mascot use consistent with the chosen scope (mixed-audience analysis) | All | Op + Lawyer |
+| M7 | State minors'-law map (CT, CO, NY, MD, CA, TX, UT, LA and others) with the obligations per enabled age group | 13–17, <13 | Lawyer |
+| M8 | Age-aware AI behaviour: prompts, content policy and refusal rules for minors; no adult-only content | 13–17, <13 | Eng + clinical |
+| M9 | Pediatric and adolescent clinical review of triage rules and crisis pathways (rules are pending clinical review even for adults) | 13–17, <13 | Clinical |
+| M10 | Feature gating by age: photo analysis off for minors at first; long-term memory off by default or time-limited; Apple Health-in-AI off unless consented | 13–17, <13 | Eng |
+| M11 | Data minimisation to AI: age band instead of DOB; document redaction; review of the AI provider's terms on minors' data | 13–17, <13 | Eng + Lawyer |
+| M12 | Teen consents in age-appropriate language; high-privacy defaults; no profiling or targeted ads; decision on parental visibility (confidentiality) | 13–17 | Lawyer + Eng |
+| M13 | COPPA: direct and online notice, **verifiable parental consent**, **separate consent for non-integral third-party disclosure** (incl. the AI provider if counsel so concludes), parent review, export, deletion and revocation | <13 | Eng + Lawyer |
+| M14 | Written data-retention policy with automatic deletion for minors' data (COPPA for <13; CT/CO "no longer than necessary") | 13–17, <13 | Op + Eng |
+| M15 | Written information-security program (COPPA §312.8; also good practice for all ages) | 13–17, <13 | Op |
+| M16 | Withdrawal of consent stops queued processing (today it doesn't — Audit G6) | All (worse for minors) | Eng |
+| M17 | Parent and guardian accounts with proof of authority, if caregiver use is in scope | Product-dependent | Eng + Lawyer |
+| M18 | Turning-18 transition: re-consent, review and deletion offer | 13–17 | Eng |
+| M19 | Incident plan covering minors (notices to parents for <13; state AG duties) | 13–17, <13 | Op + Lawyer |
+| M20 | Automated tests for every age rule and safeguard (CLAUDE.md requires tests for all safety behaviour) | All | Eng |
 
 ---
 
@@ -255,7 +416,10 @@ Also:
 | **Photo check (image analysis)**, especially "possible causes" and urgency estimates | FDA regulatory assessment (§4) | Highest device-classification risk |
 | **Report analysis** | FDA assessment (§4) and the data-minimisation decision (redaction) | Medium device risk; whole documents sent unredacted |
 | **HealthKit data in AI context** | HealthKit-specific disclosure and permission (§5.7) | Apple terms |
-| **Public sign-up** (web and iOS) | Age gate (§6), Terms + Privacy Policy published with acceptance recorded (§10.3), support/request channel (§7.5, §7.8), breach plan (§1.2) | Blockers |
+| **Public sign-up** (web and iOS) | Age screen and handling for the chosen launch scope (§6.1, §6.8 M1–M6), Terms + Privacy Policy published with acceptance recorded (§10.3), support/request channel (§7.5, §7.8), breach plan (§1.2) | Blockers |
+| **Any access by users under 18** (all features) | The §6.8 items for that age group are complete and reviewed by counsel. Today no child or teen safeguard exists. | Minors' laws; COPPA |
+| **Photo analysis for minors** | Kept off for minors even after teen launch until §6.5 conditions are met | Highest-risk minor flow |
+| **Long-term memory and Apple Health-in-AI for minors** | Age-specific retention and consent (§6.5, M10, M14) | Profiling and retention limits |
 | **Web preview/demo mode on any public deployment** | Explicit demo deployment with the notice, no real accounts, `/preview/inbox` not public | Audit G11 |
 | **Google sign-in on iOS** | Sign in with Apple available (Guideline 4.8) and the age gate covers OAuth sign-up | Apple + age |
 | **Push with "show details"** | Disclosure that notification text passes through Apple | Privacy notice |
@@ -298,6 +462,25 @@ Direct fetches of ftc.gov and leg.wa.gov were blocked from the audit environment
 | Apple: Texas SB 2420 update (posted 2026-06-03) | https://developer.apple.com/news/?id=sg176nne | 2026-10-01 (fetched) |
 | Apple: Age assurance Q&A | https://developer.apple.com/support/age-assurance/ | 2026-10-01 (search only) |
 | COPPA amended rule (FR 2025-04-22; effective 2025-06-23; compliance 2026-04-22) | https://www.federalregister.gov/documents/2025/04/22/2025-05904/childrens-online-privacy-protection-rule | 2026-10-01 (search only) |
+| FTC: COPPA amendments press release (Jan 2025) | https://www.ftc.gov/news-events/news/press-releases/2025/01/ftc-finalizes-changes-childrens-privacy-rule-limiting-companies-ability-monetize-kids-data | 2026-10-01 (search only) |
+| COPPA rule text (16 CFR Part 312) | https://www.ecfr.gov/current/title-16/chapter-I/subchapter-C/part-312 | Not fetched — verify |
+| FTC: Complying with COPPA — FAQ (actual knowledge, neutral age screens) | https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions | 2026-10-01 (search only) |
+| FTC: COPPA six-step compliance plan | https://www.ftc.gov/business-guidance/resources/childrens-online-privacy-protection-rule-six-step-compliance-plan-your-business | 2026-10-01 (search only) |
+| FTC: COPPA age-verification enforcement policy statement (Feb 25, 2026) | https://www.ftc.gov/legal-library/browse/enforcement-policy-statement-promoting-adoption-age-verification-technology | 2026-10-01 (search only) |
+| FTC: 6(b) inquiry into AI companion chatbots and children/teens (Sept 2025) | https://www.ftc.gov/news-events/news/press-releases/2025/09/ftc-launches-inquiry-ai-chatbots-acting-companions | 2026-10-01 (search only) |
+| Apple: Kids apps and parental gates | https://developer.apple.com/app-store/kids-apps/ | Linked from the guidelines; not fetched |
+| Apple: App Review Guidelines 1.3, 2.3.8, 5.1.4 | https://developer.apple.com/app-store/review/guidelines/ | 2026-10-01 (fetched) |
+| Apple: Updated age ratings (13+/16+/18+; answers required by Jan 31, 2026) | https://developer.apple.com/news/upcoming-requirements/?id=07242025a | 2026-10-01 (search only) |
+| Apple: Declared Age Range API | https://developer.apple.com/documentation/declaredagerange/ | Linked from the Apple Texas update (fetched) |
+| Utah SB 142 App Store Accountability Act (Utah Code 13-76; developer duties from May 6, 2026) | https://le.utah.gov/Session/2025/bills/enrolled/SB0142.pdf | 2026-10-01 (search only) |
+| Louisiana HB 570 (Act 481 of 2025) | https://www.legis.la.gov/legis/ViewDocument.aspx?d=1425304 | 2026-10-01 (search only; effective date unconfirmed) |
+| California AB 1043 Digital Age Assurance Act (operative Jan 1, 2027) | https://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=202520260AB1043 | 2026-10-01 (search only) |
+| NY Child Data Protection Act — AG guidance (effective June 20, 2025) | https://ag.ny.gov/child-data-protection-act-guidance | 2026-10-01 (search only) |
+| Connecticut CTDPA minors' provisions (AG overview) | https://portal.ct.gov/ag/sections/privacy/the-connecticut-data-privacy-act | 2026-10-01 (search only) |
+| Colorado SB 24-041 minors' protections (effective Oct 1, 2025) | https://leg.colorado.gov/bills/sb24-041 | 2026-10-01 (search only) |
+| Maryland Age-Appropriate Design Code (HB 603, 2024; effective Oct 1, 2024) | https://mgaleg.maryland.gov/mgawebsite/Legislation/Details/hb0603?ys=2024RS | 2026-10-01 (search only) |
+| California AADC litigation — NetChoice v. Bonta (9th Cir., Mar 12, 2026) | https://cdn.ca9.uscourts.gov/datastore/opinions/2026/03/12/25-2366.pdf | 2026-10-01 (search only) |
+| Texas SCOPE Act (HB 18; AG page) | https://www.texasattorneygeneral.gov/consumer-protection/file-consumer-complaint/consumer-privacy-rights/securing-children-online-through-parental-empowerment | 2026-10-01 (search only) |
 | FTC Negative Option Rule vacatur (8th Cir., 2025-07-08) / ROSCA | https://www.ftc.gov/news-events/news/press-releases/2024/10/federal-trade-commission-announces-final-click-cancel-rule-making-it-easier-consumers-end-recurring | 2026-10-01 (search only) |
 
 **Laws whose applicability depends on facts not yet established:**
@@ -308,4 +491,7 @@ Direct fetches of ftc.gov and leg.wa.gov were blocked from the audit environment
 - SB 243, NY Art. 47, Utah HB 452 and Illinois HB 1806 (feature definitions);
 - Colorado AI Act;
 - FDA device status (intended use and claims);
-- state app-store age laws (an 18+ app's obligations).
+- state app-store age laws (obligations depend on the chosen age scope);
+- state minors' privacy and design-code laws (thresholds, actual knowledge and litigation status);
+- whether the AI provider is a COPPA "third party" needing separate parental consent;
+- whether all-ages positioning makes HealthMate "directed to children" or mixed-audience.
