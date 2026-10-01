@@ -66,7 +66,11 @@ jobs:
           version: 2.119.0
       - run: supabase --version
       - name: Start local Supabase (applies supabase/migrations)
-        run: supabase start
+        # Its startup table prints the CLI's local default keys before they can be masked:
+        # keep the output out of the log unless startup fails. Migration progress is still shown.
+        run: |
+          supabase start > /tmp/supabase-start.log 2>&1 || { cat /tmp/supabase-start.log; exit 1; }
+          grep -E "Applying migration|Seeding|Started supabase" /tmp/supabase-start.log || true
       - name: Lint database functions
         run: supabase db lint --level error
       - name: Export local Supabase settings
