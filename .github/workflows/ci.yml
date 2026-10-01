@@ -57,9 +57,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Pinned: resolving "latest" calls the GitHub API, which rate-limits shared runners.
+      # 2.119.0 is the release the last green run used; bump deliberately.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.119.0
+      - run: supabase --version
       - name: Start local Supabase (applies supabase/migrations)
         run: supabase start
       - name: Lint database functions
