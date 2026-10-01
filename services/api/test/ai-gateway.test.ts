@@ -9,7 +9,7 @@ import { AiGateway, registryOf } from "../src/modules/ai/ai.gateway";
 import { billingPeriod, parsePrices, PriceBook } from "../src/modules/ai/ai.pricing";
 import { parseRoutes } from "../src/modules/ai/ai.routing";
 import { estimateInputTokens, SummarySchema, TaskGenerationSchema, validateTaskOutput } from "../src/modules/ai/ai.tasks";
-import { AI_TASKS, AiBudgetExceededError, AiDeclinedError, AiInvalidOutputError, AiUnavailableError, type AiProvider, type AiTask } from "../src/modules/ai/ai.types";
+import { AI_TASKS, AiBudgetExceededError, AiDeclinedError, AiInvalidOutputError, AiUnavailableError, AiUnpricedModelError, type AiProvider, type AiTask } from "../src/modules/ai/ai.types";
 import { DevelopmentAiProvider } from "../src/modules/ai/development.provider";
 import { FakeAiProvider } from "../src/modules/ai/fake.provider";
 import { ChatAnswerSchema } from "../src/modules/chat/chat.prompts";
@@ -20,7 +20,7 @@ const env = (values: Record<string, string>) => values as unknown as NodeJS.Proc
 const testConfig = (values: Record<string, string> = {}) => loadConfig(env({ NODE_ENV: "test", ...values }));
 
 /** A provider priced like Claude Opus 5.5 ($4 / $20 per million tokens). Nothing leaves the process. */
-const paidFake = (usage = { inputTokens: 1_000, outputTokens: 500 }) => new FakeAiProvider({ name: "anthropic", model: "claude-opus-5-5", usage });
+const paidFake = (usage = { inputTokens: 1_000, outputTokens: 500 }) => new FakeAiProvider({ name: "anthropic", model: "claude-opus-5-5", usage, metered: true });
 
 let db: Database;
 beforeAll(async () => {
@@ -90,22 +90,25 @@ describe("routing configuration", () => {
 describe("pricing", () => {
   it("prices token usage per model, including cache reads and writes", () => {
     const prices = new PriceBook();
-    expect(prices.cost("anthropic", "claude-opus-5-5", { inputTokens: 1_000, outputTokens: 500 })).toBe(0.014);
-    expect(prices.cost("anthropic", "claude-opus-5-5", { inputTokens: 0, outputTokens: 0, cacheReadTokens: 10_000, cacheWriteTokens: 2_000 })).toBe(0.012);
-    expect(prices.cost("anthropic", "claude-sonnet-5-5", { inputTokens: 1_000_000, outputTokens: 100_000 })).toBe(3);
-    expect(prices.cost("anthropic", "claude-haiku-4-5", { inputTokens: 1_000_000, outputTokens: 0 })).toBe(1);
+    expect(prices.cost(true, "claude-opus-5-5", { inputTokens: 1_000, outputTokens: 500 })).toBe(0.014);
+    expect(prices.cost(true, "claude-opus-5-5", { inputTokens: 0, outputTokens: 0, cacheReadTokens: 10_000, cacheWriteTokens: 2_000 })).toBe(0.012);
+    expect(prices.cost(true, "claude-sonnet-5-5", { inputTokens: 1_000_000, outputTokens: 100_000 })).toBe(3);
+    expect(prices.cost(true, "claude-haiku-4-5", { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 1_000_000 })).toBe(1.1);
   });
 
-  it("costs nothing for offline providers and errs high for unknown paid models", () => {
+  it("costs nothing for unmetered providers and fails closed for unknown paid models", () => {
     const prices = new PriceBook();
-    expect(prices.cost("development", "development-offline", { inputTokens: 1e6, outputTokens: 1e6 })).toBe(0);
-    expect(prices.cost("anthropic", "some-future-model", { inputTokens: 1e6, outputTokens: 0 })).toBe(4); // priced as the most expensive known model
+    expect(prices.cost(false, "development-offline", { inputTokens: 1e6, outputTokens: 1e6 })).toBe(0);
+    expect(() => prices.cost(true, "some-future-model", { inputTokens: 1, outputTokens: 0 })).toThrow(AiUnpricedModelError);
+    expect(() => prices.cost(true, "claude-opus-5-5-20260401", { inputTokens: 1, outputTokens: 0 })).toThrow(AiUnpricedModelError); // no guessing from look-alike ids
+    expect(prices.has(true, "some-future-model")).toBe(false);
+    expect(prices.has(false, "anything")).toBe(true);
   });
 
   it("accepts price overrides", () => {
     expect(parsePrices("my-model=3/15, other=1/2/0.5/2")).toEqual({ "my-model": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, other: { input: 1, output: 2, cacheRead: 0.5, cacheWrite: 2 } });
     expect(() => parsePrices("bad")).toThrow(/AI_PRICES/);
-    expect(new PriceBook(parsePrices("claude-opus-5-5=1/1")).cost("anthropic", "claude-opus-5-5", { inputTokens: 1e6, outputTokens: 1e6 })).toBe(2);
+    expect(new PriceBook(parsePrices("claude-opus-5-5=1/1")).cost(true, "claude-opus-5-5", { inputTokens: 1e6, outputTokens: 1e6 })).toBe(2);
     expect(testConfig({ AI_PRICES: "x=1/2" }).aiPrices).toMatchObject({ x: { input: 1, output: 2 } });
   });
 
@@ -176,7 +179,7 @@ describe("AI Gateway", () => {
 
   it("records provider failures honestly", async () => {
     const userId = await user();
-    const declining: AiProvider = { name: "anthropic", available: true, defaultModel: "claude-opus-5-5", generate: async () => Promise.reject(new AiDeclinedError()) };
+    const declining: AiProvider = { name: "anthropic", available: true, metered: true, defaultModel: "claude-opus-5-5", generate: async () => Promise.reject(new AiDeclinedError()) };
     await expect(new AiGateway(registryOf(declining), db, testConfig()).generate(chatRequest(userId))).rejects.toBeInstanceOf(AiDeclinedError);
     const down = paidFake();
     down.available = false;
@@ -186,13 +189,13 @@ describe("AI Gateway", () => {
   });
 
   describe("monthly cost protection", () => {
-    // Each call: 10,000 in / 5,000 out on Opus 5.5 = $0.14.
+    // Each call: 10,000 in / 5,000 out on Opus 5.5 = $0.14; each reserves its worst case (~$0.33) first.
     const heavy = () => paidFake({ inputTokens: 10_000, outputTokens: 5_000 }).on("chat", () => chatAnswer());
 
     it("stops routine requests once the month's limit would be passed, without calling the provider", async () => {
       const userId = await user();
       const provider = heavy();
-      const gateway = new AiGateway(registryOf(provider), db, testConfig({ AI_MONTHLY_USER_BUDGET_USD: "0.3" }));
+      const gateway = new AiGateway(registryOf(provider), db, testConfig({ AI_MONTHLY_USER_BUDGET_USD: "0.6" }));
       await gateway.generate(chatRequest(userId));
       await gateway.generate(chatRequest(userId));
       expect(await gateway.monthlySpend(userId)).toBeCloseTo(0.28);
@@ -260,7 +263,7 @@ describe("chat through the gateway (HTTP)", () => {
   let ctx: TestContext;
   const provider = paidFake({ inputTokens: 10_000, outputTokens: 5_000 });
   beforeAll(async () => {
-    ctx = await createTestContext({ ai: provider, env: { AI_MONTHLY_USER_BUDGET_USD: "0.15" } });
+    ctx = await createTestContext({ ai: provider, env: { AI_MONTHLY_USER_BUDGET_USD: "0.4" } });
   });
   afterAll(() => ctx.close());
   beforeEach(() => {

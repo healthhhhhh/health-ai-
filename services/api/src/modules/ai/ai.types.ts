@@ -74,9 +74,23 @@ export interface AiProviderResponse {
   data: unknown;
   /** The model that actually answered (may differ after a provider-side fallback). */
   model: string;
-  usage: AiUsage;
+  /** Total reported usage. Missing or malformed usage is charged at the reservation (worst case). */
+  usage?: AiUsage;
+  /**
+   * Per-model usage when more than one model took part (e.g. a refusal
+   * fallback). Priced model by model when present.
+   */
+  usageByModel?: { model: string; usage: AiUsage }[];
   /** Only when the provider reports a billed amount itself (USD). */
   actualCostUsd?: number;
+}
+
+/** What a failed call cost, when the provider knows (e.g. a refusal or a cut-off answer is still billed). */
+export interface AiFailureUsage {
+  model?: string;
+  usage?: AiUsage;
+  /** The request may have been processed but no usage came back (timeouts): charge the reservation. */
+  usageUnknown?: boolean;
 }
 
 /**
@@ -89,6 +103,8 @@ export interface AiProvider {
   readonly available: boolean;
   /** Scripted answers, not a real model. Clients must show a demo notice. */
   readonly demo?: boolean;
+  /** Bills per token. Metered providers must have a price for every model they use. */
+  readonly metered: boolean;
   /** Used when a route doesn't name a model. */
   readonly defaultModel: string;
   generate(request: AiProviderRequest): Promise<AiProviderResponse>;
@@ -96,25 +112,44 @@ export interface AiProvider {
 
 /** No provider configured, or the provider failed. The product must say so, never improvise. */
 export class AiUnavailableError extends Error {
-  constructor(message = "The AI service is unavailable.") {
+  constructor(
+    message = "The AI service is unavailable.",
+    readonly failure: AiFailureUsage = {},
+  ) {
     super(message);
     this.name = "AiUnavailableError";
   }
 }
 
-/** The model declined the request (safety refusal after fallbacks). */
+/** The model declined the request (safety refusal after fallbacks). Refusals are still billed. */
 export class AiDeclinedError extends Error {
-  constructor() {
+  constructor(readonly failure: AiFailureUsage = {}) {
     super("The AI declined this request.");
     this.name = "AiDeclinedError";
   }
 }
 
-/** The model's output did not match the required schema. */
+/** The model's output did not match the required schema (or was cut off). Still billed. */
 export class AiInvalidOutputError extends Error {
-  constructor() {
+  constructor(readonly failure: AiFailureUsage = {}) {
     super("The AI returned an unusable response.");
     this.name = "AiInvalidOutputError";
+  }
+}
+
+/** The provider didn't answer within AI_REQUEST_TIMEOUT_MS. It may still have processed (and billed) it. */
+export class AiTimeoutError extends AiUnavailableError {
+  constructor() {
+    super("The AI service didn't answer in time.", { usageUnknown: true });
+    this.name = "AiTimeoutError";
+  }
+}
+
+/** A paid model has no configured price: refused rather than guessed. */
+export class AiUnpricedModelError extends Error {
+  constructor(readonly model: string) {
+    super(`No price is configured for model "${model}".`);
+    this.name = "AiUnpricedModelError";
   }
 }
 

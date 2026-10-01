@@ -11,6 +11,7 @@ export class DemoAiProvider implements AiProvider {
   readonly name: string = "demo";
   readonly available = true;
   readonly demo = true;
+  readonly metered = false;
   readonly defaultModel: string = "demo-script";
 
   async generate(request: AiProviderRequest): Promise<AiProviderResponse> {

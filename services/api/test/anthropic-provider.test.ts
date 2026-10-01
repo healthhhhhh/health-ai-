@@ -95,6 +95,34 @@ describe("Anthropic provider (real SDK, stubbed HTTP)", () => {
     await expect(down.generate(request)).rejects.toBeInstanceOf(AiUnavailableError);
   });
 
+  it("reports what failed calls were billed, and whether usage is unknown", async () => {
+    const declined = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ body: message("", { content: [], stop_reason: "refusal", usage: { input_tokens: 900, output_tokens: 40 } }) })).fetchImpl, maxRetries: 0 });
+    const refusal = await declined.generate(request).catch((e: AiDeclinedError) => e);
+    expect(refusal).toBeInstanceOf(AiDeclinedError);
+    expect((refusal as AiDeclinedError).failure.usage).toMatchObject({ inputTokens: 900, outputTokens: 40 });
+    const overloaded = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ status: 529, body: { type: "error", error: { type: "overloaded_error", message: "x" } } })).fetchImpl, maxRetries: 0 });
+    expect(((await overloaded.generate(request).catch((e) => e)) as AiUnavailableError).failure.usageUnknown).toBe(false); // an HTTP error isn't billed
+    const dropped = new AnthropicProvider("k", "claude-opus-5-5", { fetch: (async () => { throw new TypeError("socket hang up"); }) as unknown as typeof fetch, maxRetries: 0 });
+    expect(((await dropped.generate(request).catch((e) => e)) as AiUnavailableError).failure.usageUnknown).toBe(true); // may have been processed
+  });
+
+  it("breaks usage down by model when a refusal fallback answered", async () => {
+    const iterations = [
+      { type: "message", model: "claude-opus-5-5", input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_creation: null },
+      { type: "fallback_message", model: "claude-opus-4-8", input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_creation: null },
+    ];
+    const provider = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ body: message(JSON.stringify(chatAnswer()), { model: "claude-opus-4-8", usage: { input_tokens: 2000, output_tokens: 600, iterations } }) })).fetchImpl, maxRetries: 0 });
+    const result = await provider.generate(request);
+    expect(result.model).toBe("claude-opus-4-8");
+    expect(result.usageByModel).toEqual([
+      { model: "claude-opus-5-5", usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+      { model: "claude-opus-4-8", usage: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    ]);
+    // A single-model answer has no breakdown.
+    const plain = new AnthropicProvider("k", "claude-opus-5-5", { fetch: stub(() => ({ body: message(JSON.stringify(chatAnswer())) })).fetchImpl, maxRetries: 0 });
+    expect((await plain.generate(request)).usageByModel).toBeUndefined();
+  });
+
   it("sends reports and photos as document and image blocks", async () => {
     const { fetchImpl, calls } = stub(() => ({ body: message(JSON.stringify(chatAnswer())) }));
     const provider = new AnthropicProvider("k", "claude-opus-5-5", { fetch: fetchImpl, maxRetries: 0 });

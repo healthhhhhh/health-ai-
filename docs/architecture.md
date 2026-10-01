@@ -77,14 +77,34 @@ feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► 
   `ai.routing.ts`, and prices in `ai.pricing.ts` / `AI_PRICES`. Nothing else changes.
 - **Routing**: `AI_PROVIDER` serves every task; `AI_ROUTES` overrides per task
   (`complex_health=anthropic:claude-opus-5-5@high`).
-- **Cost protection**: before a paid call, the gateway estimates its cost and refuses it if the
-  person's spend this month (UTC) would pass `AI_MONTHLY_USER_BUDGET_USD` (default $5). People see
-  only "AI unavailable" — never balances or credits. Safety-critical requests (urgent symptoms) are
-  never refused; emergencies never reach a model at all.
+- **Pricing** (`ai.pricing.ts`): Anthropic list prices per model (input, output, cache read, 5-minute
+  cache write), with their source and effective date (`PRICES_EFFECTIVE_DATE`); override with
+  `AI_PRICES`. Images, PDFs and thinking are billed as input/output tokens, so they have no separate
+  price. **Fail closed**: a paid model without a price stops the server at startup (for routed
+  models) or refuses the request; an unpriced model that answers anyway (a refusal fallback) is charged
+  the reserved worst case. A fallback that runs several models is priced model by model from
+  `usage.iterations`.
+- **Cost protection — atomic reservations** (`ai.budget.ts`, migration `0013`): before a paid
+  call the gateway reserves the request's worst case (estimated input × 1.5 at the higher of the input
+  and cache-write prices, plus the full output allowance) in `ai_budget_periods` with one conditional
+  `UPDATE` (`spent + reserved + amount ≤ limit`). Postgres row-locks the ledger row, so concurrent
+  requests serialize and can't jointly pass `AI_MONTHLY_USER_BUDGET_USD` (default $5, UTC month).
+  After the call the reservation is **settled** at the priced reported usage (or the provider's
+  billed amount) in the same transaction as its `ai_usage` row; **released** when the provider
+  didn't process the request (HTTP error status); kept at the **worst case** when usage is unknown
+  (timeout after `AI_REQUEST_TIMEOUT_MS`, dropped connection, missing usage metadata). Settling acts
+  only on a held reservation, so retries and late duplicates can't charge twice. Reservations
+  abandoned by a crashed process expire and are charged in full (checked before every reservation
+  and by the maintenance loop). People see only "AI unavailable" — never balances or credits.
+  Safety-critical requests (urgent symptoms) are reserved without a limit (accounted, never refused);
+  emergencies never reach a model at all. Medication questions use `complex_health` and the normal
+  safety checks; they are not emergencies and the limit applies to them.
 - **Accounting**: `ai_usage` (server-only, no health content) keeps user, billing period, task,
-  provider, model, input/output/cache tokens, estimated and priced cost, status (`ok`, `flagged`,
-  `invalid_output`, `declined`, `unavailable`, `budget_exceeded`, `error`) and whether the request
-  was safety-critical. Pruned after `AI_USAGE_RETENTION_DAYS`.
+  provider, requested and serving model, input/output/cache tokens, estimated and charged cost, the
+  cost basis (`usage`, `reservation` or `none`), price version, status (`ok`, `flagged`,
+  `invalid_output`, `declined`, `unavailable`, `budget_exceeded`, `timeout`, `expired`, `unpriced`,
+  `error`), the reservation it settled (unique) and whether it was safety-critical. User id, task,
+  model, period and cost are always set by the server, never from a request body.
 
 ## API (services/api)
 

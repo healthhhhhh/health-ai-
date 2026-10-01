@@ -9,6 +9,7 @@ import type { Database } from "./db/database";
 export const RETENTION = [
   { table: "audit_logs", setting: "AUDIT_LOG_RETENTION_DAYS" },
   { table: "ai_usage", setting: "AI_USAGE_RETENTION_DAYS" },
+  { table: "ai_budget_reservations", setting: "AI_USAGE_RETENTION_DAYS" },
   { table: "safety_events", setting: "SAFETY_EVENT_RETENTION_DAYS" },
 ] as const;
 

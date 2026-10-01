@@ -2,15 +2,19 @@ import { HttpStatus, Inject, Injectable, Logger } from "@nestjs/common";
 import { ApiError } from "../../common/errors";
 import { CONFIG, type AppConfig } from "../../config";
 import { DATABASE, type Database } from "../../db/database";
-import { billingPeriod, PriceBook } from "./ai.pricing";
+import { AiBudgetLedger, type UsageRow } from "./ai.budget";
+import { billingPeriod, isValidUsage, PRICES_EFFECTIVE_DATE, PriceBook } from "./ai.pricing";
 import { estimateInputTokens, TASK_PROFILES, validateTaskOutput } from "./ai.tasks";
 import {
   AI_PROVIDERS,
   AiBudgetExceededError,
   AiDeclinedError,
   AiInvalidOutputError,
+  AiTimeoutError,
   AiUnavailableError,
+  AiUnpricedModelError,
   type AiEffort,
+  type AiFailureUsage,
   type AiProvider,
   type AiProviderResponse,
   type AiTask,
@@ -30,7 +34,7 @@ export const registryOf = (defaultProvider: AiProvider, others: AiProvider[] = [
   byName: new Map([defaultProvider, ...others].map((p) => [p.name, p])),
 });
 
-export type AiRequestStatus = "ok" | "flagged" | "invalid_output" | "declined" | "unavailable" | "budget_exceeded" | "error";
+export type AiRequestStatus = "ok" | "flagged" | "invalid_output" | "declined" | "unavailable" | "budget_exceeded" | "timeout" | "unpriced" | "error";
 
 export interface ResolvedRoute {
   provider: AiProvider;
@@ -38,32 +42,48 @@ export interface ResolvedRoute {
   effort: AiEffort;
 }
 
+const NO_USAGE: AiUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
 /**
  * The single entry point for every AI operation. Features describe a task;
  * the gateway:
  *
  * 1. routes it to a provider and model (`AI_ROUTES`, else the default provider);
- * 2. enforces the internal monthly cost limit per person
- *    (`AI_MONTHLY_USER_BUDGET_USD`) — except for safety-critical requests;
- * 3. calls the provider (the only place providers are called);
- * 4. validates the answer against the task's schema, then checks its content
- *    (diagnoses, doses, injected instructions, medication changes);
- * 5. records usage and cost in `ai_usage` (token counts and ids only — never
- *    prompts or answers). Usage and limits are never shown to people.
+ * 2. prices it — a paid model without a price is refused (fail closed);
+ * 3. reserves the request's worst-case cost against the person's monthly
+ *    limit (`AI_MONTHLY_USER_BUDGET_USD`) atomically in the database, so
+ *    concurrent requests can't overrun it — safety-critical requests are
+ *    accounted but never refused;
+ * 4. calls the provider (the only place providers are called), with a timeout;
+ * 5. settles the reservation at the cost of the reported usage — or keeps the
+ *    worst case when the provider may have billed without reporting usage —
+ *    and writes the `ai_usage` row in the same transaction (idempotent);
+ * 6. validates the answer against the task's schema, then checks its content.
+ *
+ * The user id, task, model, billing period and cost all come from the server
+ * (session, code, configuration, clock, price list) — never from a request
+ * body. Usage and limits are never shown to people.
  */
 @Injectable()
 export class AiGateway {
   private readonly logger = new Logger("AiGateway");
   private readonly prices: PriceBook;
+  private readonly ledger: AiBudgetLedger;
 
   constructor(
     @Inject(AI_PROVIDERS) private readonly providers: AiProviderRegistry,
-    @Inject(DATABASE) private readonly db: Database,
+    @Inject(DATABASE) db: Database,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {
     this.prices = new PriceBook(config.aiPrices);
+    this.ledger = new AiBudgetLedger(db);
     for (const [task, route] of Object.entries(config.aiRoutes)) {
       if (!providers.byName.has(route.provider)) throw new Error(`AI route for ${task} names provider "${route.provider}", which isn't configured`);
+    }
+    // Fail closed at startup: every model a paid provider can be routed to must have a price.
+    for (const task of Object.keys(TASK_PROFILES) as AiTask[]) {
+      const { provider, model } = this.route(task);
+      if (!this.prices.has(provider.metered, model)) throw new AiUnpricedModelError(model);
     }
   }
 
@@ -87,54 +107,131 @@ export class AiGateway {
     const { provider, model, effort: routeEffort } = this.route(request.task);
     const profile = TASK_PROFILES[request.task];
     const period = billingPeriod(new Date());
-    const estimatedCostUsd = this.prices.cost(provider.name, model, { inputTokens: estimateInputTokens(request.system, request.messages), outputTokens: profile.expectedOutputTokens });
-    const entry = { request, period, provider: provider.name, model, estimatedCostUsd };
+    const base = {
+      userId: request.userId,
+      task: request.task,
+      provider: provider.name,
+      model,
+      requestedModel: model,
+      billingPeriod: period,
+      safetyCritical: request.safetyCritical === true,
+      priceVersion: PRICES_EFFECTIVE_DATE,
+    };
+    const row = (fields: Partial<UsageRow> & Pick<UsageRow, "status">): UsageRow => ({
+      ...base,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      estimatedCostUsd: 0,
+      costUsd: 0,
+      costBasis: "none",
+      validationIssueCount: 0,
+      ...fields,
+    });
 
     if (!provider.available) {
-      await this.record({ ...entry, status: "unavailable" });
+      await this.record(row({ status: "unavailable" }));
       throw new AiUnavailableError("No AI provider is configured on this server.");
     }
-    if (request.userId && !request.safetyCritical && estimatedCostUsd > 0 && this.config.AI_MONTHLY_USER_BUDGET_USD > 0) {
-      const spent = await this.monthlySpend(request.userId, period);
-      if (spent + estimatedCostUsd > this.config.AI_MONTHLY_USER_BUDGET_USD) {
-        await this.record({ ...entry, status: "budget_exceeded" });
+
+    let estimatedCostUsd: number;
+    let worstCaseUsd: number;
+    try {
+      const inputTokens = estimateInputTokens(request.system, request.messages);
+      estimatedCostUsd = this.prices.cost(provider.metered, model, { inputTokens, outputTokens: profile.expectedOutputTokens });
+      worstCaseUsd = this.prices.worstCase(provider.metered, model, inputTokens, profile.maxOutputTokens);
+    } catch (error) {
+      if (!(error instanceof AiUnpricedModelError)) throw error;
+      this.logger.error(`refused ${request.task}: no price for model ${model}`);
+      await this.record(row({ status: "unpriced" }));
+      throw new AiUnavailableError("This AI model has no configured price.");
+    }
+
+    // Reserve the worst case before calling. People without an id (system work) and free providers aren't limited.
+    let reservationId: string | null = null;
+    if (request.userId && worstCaseUsd > 0) {
+      const limit = this.config.AI_MONTHLY_USER_BUDGET_USD;
+      reservationId = await this.ledger.reserve({
+        userId: request.userId,
+        billingPeriod: period,
+        task: request.task,
+        provider: provider.name,
+        model,
+        amountUsd: worstCaseUsd,
+        limitUsd: request.safetyCritical || limit === 0 ? null : limit,
+        safetyCritical: request.safetyCritical === true,
+        ttlMs: this.config.AI_REQUEST_TIMEOUT_MS + 60_000,
+      });
+      if (!reservationId) {
+        await this.record(row({ status: "budget_exceeded", estimatedCostUsd }));
         this.logger.warn(`monthly AI cost limit reached for a user (${request.task})`);
         throw new AiBudgetExceededError();
       }
     }
 
+    /** Settles the reservation (or records usage) for how the call ended. */
+    const finish = async (status: AiRequestStatus, outcome: AiFailureUsage & { usageByModel?: AiProviderResponse["usageByModel"]; actualCostUsd?: number; issueCount?: number }) => {
+      const charged = this.charge(provider, model, worstCaseUsd, outcome);
+      const usage = isValidUsage(outcome.usage) ? outcome.usage : NO_USAGE;
+      const final = row({
+        status,
+        model: outcome.model ?? model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens ?? 0,
+        cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+        estimatedCostUsd,
+        costUsd: charged.costUsd,
+        costBasis: charged.costBasis,
+        validationIssueCount: outcome.issueCount ?? 0,
+      });
+      if (reservationId) await this.ledger.settle(reservationId, final, charged.costUsd === 0 ? "released" : "settled");
+      else await this.record(final);
+      return charged.costUsd;
+    };
+
     let response: AiProviderResponse;
     try {
-      response = await provider.generate({
-        task: request.task,
-        model,
-        system: request.system,
-        messages: request.messages,
-        schema: request.schema,
-        effort: request.effort ?? routeEffort,
-        maxOutputTokens: profile.maxOutputTokens,
-      });
+      response = await this.withTimeout(
+        provider.generate({
+          task: request.task,
+          model,
+          system: request.system,
+          messages: request.messages,
+          schema: request.schema,
+          effort: request.effort ?? routeEffort,
+          maxOutputTokens: profile.maxOutputTokens,
+        }),
+      );
     } catch (error) {
-      await this.record({ ...entry, status: statusOf(error) });
+      // Unexpected errors may have happened after the provider processed the request: charge the worst case.
+      const failure: AiFailureUsage = error instanceof AiUnavailableError || error instanceof AiDeclinedError || error instanceof AiInvalidOutputError ? error.failure : { usageUnknown: true };
+      await finish(statusOf(error), failure).catch((e) => this.logger.error(`couldn't settle AI usage (${e instanceof Error ? e.name : "error"})`));
       throw error;
     }
 
-    const answered = { ...entry, model: response.model, usage: response.usage, costUsd: response.actualCostUsd ?? this.prices.cost(provider.name, response.model, response.usage) };
+    // An answer without usage metadata was still billed by the provider.
+    const usageUnknown = !isValidUsage(response.usage) && !response.usageByModel?.length && response.actualCostUsd === undefined;
     const parsed = request.schema.safeParse(response.data);
     if (!parsed.success) {
       // Tokens were spent even though the answer can't be used.
-      await this.record({ ...answered, status: "invalid_output" });
+      await finish("invalid_output", { ...response, usageUnknown });
       throw new AiInvalidOutputError();
     }
     const issues = validateTaskOutput(request.task, parsed.data);
-    await this.record({ ...answered, status: issues.length ? "flagged" : "ok", issueCount: issues.length });
-    return { data: parsed.data, issues, provider: provider.name, model: response.model, usage: response.usage, costUsd: answered.costUsd };
+    const costUsd = await finish(issues.length ? "flagged" : "ok", { ...response, usageUnknown, issueCount: issues.length });
+    return { data: parsed.data, issues, provider: provider.name, model: response.model, usage: isValidUsage(response.usage) ? response.usage : NO_USAGE, costUsd };
   }
 
-  /** What a person's AI use has cost this month (USD). Internal only — never returned to clients. */
+  /** Settled AI cost for a person this month (USD). Internal only — never returned to clients. */
   async monthlySpend(userId: string, period = billingPeriod(new Date())): Promise<number> {
-    const { rows } = await this.db.query<{ total: string | number | null }>(`SELECT COALESCE(SUM(cost_usd), 0) AS total FROM ai_usage WHERE user_id = $1 AND billing_period = $2`, [userId, period]);
-    return Number(rows[0]?.total ?? 0);
+    return (await this.ledger.balance(userId, period)).spent;
+  }
+
+  /** Charges reservations left held by crashed processes (maintenance). */
+  expireStaleReservations() {
+    return this.ledger.expireStale(null);
   }
 
   /** Converts AI failures into API errors that say plainly no answer was produced. */
@@ -152,45 +249,45 @@ export class AiGateway {
     return error;
   }
 
-  private async record(entry: {
-    request: AiTaskRequest<unknown>;
-    period: string;
-    provider: string;
-    model: string;
-    estimatedCostUsd: number;
-    status: AiRequestStatus;
-    usage?: AiUsage;
-    costUsd?: number;
-    issueCount?: number;
-  }) {
-    const usage = entry.usage ?? { inputTokens: 0, outputTokens: 0 };
-    await this.db
-      .query(
-        `INSERT INTO ai_usage (user_id, feature, task, provider, model, billing_period, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-                               estimated_cost_usd, cost_usd, outcome, status, safety_critical, validation_issue_count)
-         VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $14)`,
-        [
-          entry.request.userId,
-          entry.request.task,
-          entry.provider,
-          entry.model,
-          entry.period,
-          usage.inputTokens,
-          usage.outputTokens,
-          usage.cacheReadTokens ?? 0,
-          usage.cacheWriteTokens ?? 0,
-          entry.estimatedCostUsd,
-          entry.costUsd ?? 0,
-          entry.status,
-          entry.request.safetyCritical === true,
-          entry.issueCount ?? 0,
-        ],
-      )
-      .catch((error) => this.logger.warn(`couldn't record AI usage (${error instanceof Error ? error.name : "error"})`));
+  /**
+   * What a finished call costs: the provider's own billed amount; else the
+   * reported usage priced per model; else (usage unknown, or a model without a
+   * price) the reserved worst case — never less than could have been billed.
+   */
+  private charge(provider: AiProvider, model: string, worstCaseUsd: number, outcome: AiFailureUsage & { usageByModel?: AiProviderResponse["usageByModel"]; actualCostUsd?: number }): { costUsd: number; costBasis: UsageRow["costBasis"] } {
+    if (!provider.metered) return { costUsd: 0, costBasis: "none" };
+    if (outcome.actualCostUsd !== undefined && Number.isFinite(outcome.actualCostUsd) && outcome.actualCostUsd >= 0) return { costUsd: outcome.actualCostUsd, costBasis: "usage" };
+    try {
+      if (outcome.usageByModel?.length && outcome.usageByModel.every((e) => isValidUsage(e.usage))) return { costUsd: this.prices.costByModel(true, outcome.usageByModel), costBasis: "usage" };
+      if (isValidUsage(outcome.usage)) return { costUsd: this.prices.cost(true, outcome.model ?? model, outcome.usage), costBasis: "usage" };
+    } catch (error) {
+      if (!(error instanceof AiUnpricedModelError)) throw error;
+      // A fallback model we have no price for answered: charge the worst case, loudly.
+      this.logger.error(`no price for model ${error.model}; charged the reservation`);
+      return { costUsd: worstCaseUsd, costBasis: "reservation" };
+    }
+    return outcome.usageUnknown ? { costUsd: worstCaseUsd, costBasis: "reservation" } : { costUsd: 0, costBasis: "none" };
+  }
+
+  private async withTimeout<R>(promise: Promise<R>): Promise<R> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new AiTimeoutError()), this.config.AI_REQUEST_TIMEOUT_MS);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async record(row: UsageRow) {
+    await this.ledger.record(row).catch((error) => this.logger.warn(`couldn't record AI usage (${error instanceof Error ? error.name : "error"})`));
   }
 }
 
 function statusOf(error: unknown): AiRequestStatus {
+  if (error instanceof AiTimeoutError) return "timeout";
   if (error instanceof AiDeclinedError) return "declined";
   if (error instanceof AiInvalidOutputError) return "invalid_output";
   if (error instanceof AiUnavailableError) return "unavailable";

@@ -99,7 +99,7 @@ describe("row level security", () => {
     // Only the server-only tables have RLS without policies (i.e. deny everyone but the API).
     expect((await q(`SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = c.oid)`)).sort()).toEqual(
-      ["ai_usage", "audit_logs", "documents_legacy", "push_devices", "refresh_tokens", "safety_events", "schema_migrations"],
+      ["ai_budget_periods", "ai_budget_reservations", "ai_usage", "audit_logs", "documents_legacy", "push_devices", "refresh_tokens", "safety_events", "schema_migrations"],
     );
   });
 
@@ -152,6 +152,9 @@ describe("row level security", () => {
       expect(await count(q, `SELECT 1 FROM audit_logs`)).toBe(0);
       expect(await count(q, `SELECT 1 FROM refresh_tokens`)).toBe(0);
     });
+    // AI cost ledgers are server-only, even for their owner.
+    await expect(as(alice, (q) => q.query(`SELECT 1 FROM ai_budget_periods`))).rejects.toThrow(/permission denied/);
+    await expect(as(alice, (q) => q.query(`SELECT 1 FROM ai_budget_reservations`))).rejects.toThrow(/permission denied/);
     // Device tokens are server-only, even for their owner.
     await expect(as(alice, (q) => q.query(`SELECT 1 FROM push_devices`))).rejects.toThrow(/permission denied/);
     await expect(as(null, (q) => q.query(`SELECT 1 FROM health_conditions`))).rejects.toThrow(/permission denied/);
