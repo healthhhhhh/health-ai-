@@ -57,9 +57,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Pinned: resolving "latest" calls the GitHub API, which rate-limits shared runners.
-      # 2.119.0 is the release the last green run used; bump deliberately.
-      - uses: supabase/setup-cli@v1
+      # Pinned for reproducibility: resolving "latest" calls the GitHub API, which
+      # rate-limits shared runners. The action is pinned to the commit of its v1 tag
+      # that the green runs used, and the CLI to 2.119.0 (which also fixes the
+      # Supabase container images `supabase start` pulls). Bump both deliberately.
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.119.0
       - run: supabase --version
@@ -70,6 +72,11 @@ jobs:
       - name: Export local Supabase settings
         run: |
           supabase status -o json > /tmp/sb.json
+          # Local, throwaway keys — masked anyway so no key ever appears in CI logs.
+          for key in '.PUBLISHABLE_KEY // .ANON_KEY' '.SECRET_KEY // .SERVICE_ROLE_KEY' '.JWT_SECRET // empty' '.DB_URL'; do
+            value=$(jq -r "$key" /tmp/sb.json)
+            [ -n "$value" ] && [ "$value" != null ] && echo "::add-mask::$value"
+          done
           {
             echo "SUPABASE_URL=$(jq -r .API_URL /tmp/sb.json)"
             echo "SUPABASE_PUBLISHABLE_KEY=$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY' /tmp/sb.json)"

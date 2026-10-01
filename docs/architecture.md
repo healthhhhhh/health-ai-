@@ -96,9 +96,27 @@ feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► 
   only on a held reservation, so retries and late duplicates can't charge twice. Reservations
   abandoned by a crashed process expire and are charged in full (checked before every reservation
   and by the maintenance loop). People see only "AI unavailable" — never balances or credits.
-  Safety-critical requests (urgent symptoms) are reserved without a limit (accounted, never refused);
-  emergencies never reach a model at all. Medication questions use `complex_health` and the normal
-  safety checks; they are not emergencies and the limit applies to them.
+  - **Real usage always counts.** Settling adds the full reported cost to the month's spend, even when
+    it exceeds the reservation (e.g. a refusal fallback answered with a pricier model, priced model by
+    model). Spend above the limit then refuses further routine requests.
+  - **Late answers.** A request charged at its reservation because its usage was unknown (timeout,
+    expiry) is reconciled once when its real usage arrives: the charge can only go up, never down, and
+    a second reconciliation is a no-op. Requests settled from reported usage are never reopened.
+  - **Malformed usage** (missing, negative, non-finite counts, a broken per-model breakdown, an
+    invalid billed amount) is charged at least the reserved worst case.
+  - **Safety-critical requests** (urgent symptoms) may use `AI_SAFETY_CRITICAL_ALLOWANCE_USD`
+    (default $5) on top of the limit — accounted like everything else, but capped, so urgent-sounding
+    messages can't be used for unlimited model use. Past that allowance, or whenever the model can't
+    answer an urgent message (AI down, declined, unusable output), chat returns the deterministic urgent
+    escalation from `packages/safety` instead of an error. Emergencies never reach a model at all.
+    Medication questions use `complex_health` and the normal safety checks; they are not emergencies
+    and the limit applies to them.
+  - **Near the limit (deliberate trade-off).** A request is refused when its *worst-case* reservation
+    doesn't fit in the remaining budget, even if its real cost would have. At Opus 5.5 prices a routine
+    chat reserves about $0.33 (full output allowance, which also caps thinking), so roughly the last
+    $0.33 of the $5 month is unusable for routine chat. This is kept on purpose: reserving less would
+    let concurrent requests overrun the limit. Lowering a task's `maxOutputTokens` or routing it to a
+    cheaper model is the safe way to shrink this margin.
 - **Accounting**: `ai_usage` (server-only, no health content) keeps user, billing period, task,
   provider, requested and serving model, input/output/cache tokens, estimated and charged cost, the
   cost basis (`usage`, `reservation` or `none`), price version, status (`ok`, `flagged`,

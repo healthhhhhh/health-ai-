@@ -76,6 +76,12 @@ const schema = z.object({
   AI_PRICES: z.string().optional(),
   /** Internal monthly AI cost limit per person (USD). 0 turns it off. Never shown to people. */
   AI_MONTHLY_USER_BUDGET_USD: z.coerce.number().min(0).default(5),
+  /**
+   * Extra monthly headroom (USD) for safety-critical (urgent-symptom) AI answers above the
+   * limit. Past it, urgent messages get the deterministic urgent guidance without a model
+   * call. Emergencies never use a model at all.
+   */
+  AI_SAFETY_CRITICAL_ALLOWANCE_USD: z.coerce.number().min(0).default(5),
   /** Longest wait for one AI provider call (ms). A timed-out call is charged its reserved worst case. */
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(900_000).default(240_000),
   /** Error reporting. Events are scrubbed of health content before sending. */

@@ -159,7 +159,9 @@ export class AiGateway {
         provider: provider.name,
         model,
         amountUsd: worstCaseUsd,
-        limitUsd: request.safetyCritical || limit === 0 ? null : limit,
+        // Safety-critical requests get extra headroom above the normal limit, but not unlimited
+        // spend: past it, callers fall back to deterministic safety guidance (ChatService).
+        limitUsd: limit === 0 ? null : request.safetyCritical ? limit + this.config.AI_SAFETY_CRITICAL_ALLOWANCE_USD : limit,
         safetyCritical: request.safetyCritical === true,
         ttlMs: this.config.AI_REQUEST_TIMEOUT_MS + 60_000,
       });
@@ -192,9 +194,7 @@ export class AiGateway {
     };
 
     let response: AiProviderResponse;
-    try {
-      response = await this.withTimeout(
-        provider.generate({
+    const call = provider.generate({
           task: request.task,
           model,
           system: request.system,
@@ -202,9 +202,17 @@ export class AiGateway {
           schema: request.schema,
           effort: request.effort ?? routeEffort,
           maxOutputTokens: profile.maxOutputTokens,
-        }),
-      );
+        });
+    try {
+      response = await this.withTimeout(call);
     } catch (error) {
+      if (error instanceof AiTimeoutError && reservationId) {
+        // The call may still finish. If it reports more than the worst case it was charged,
+        // the difference is added once (the ledger never lowers a charge).
+        void call
+          .then((late) => (isValidUsage(late.usage) || late.usageByModel?.length || late.actualCostUsd !== undefined ? finish("timeout", late) : undefined))
+          .catch(() => undefined);
+      }
       // Unexpected errors may have happened after the provider processed the request: charge the worst case.
       const failure: AiFailureUsage = error instanceof AiUnavailableError || error instanceof AiDeclinedError || error instanceof AiInvalidOutputError ? error.failure : { usageUnknown: true };
       await finish(statusOf(error), failure).catch((e) => this.logger.error(`couldn't settle AI usage (${e instanceof Error ? e.name : "error"})`));
@@ -258,7 +266,12 @@ export class AiGateway {
     if (!provider.metered) return { costUsd: 0, costBasis: "none" };
     if (outcome.actualCostUsd !== undefined && Number.isFinite(outcome.actualCostUsd) && outcome.actualCostUsd >= 0) return { costUsd: outcome.actualCostUsd, costBasis: "usage" };
     try {
-      if (outcome.usageByModel?.length && outcome.usageByModel.every((e) => isValidUsage(e.usage))) return { costUsd: this.prices.costByModel(true, outcome.usageByModel), costBasis: "usage" };
+      if (outcome.usageByModel?.length) {
+        if (outcome.usageByModel.every((e) => isValidUsage(e.usage))) return { costUsd: this.prices.costByModel(true, outcome.usageByModel), costBasis: "usage" };
+        // A malformed per-model breakdown can't be trusted: charge at least the worst case.
+        const total = isValidUsage(outcome.usage) ? this.prices.cost(true, outcome.model ?? model, outcome.usage) : 0;
+        return { costUsd: Math.max(worstCaseUsd, total), costBasis: "reservation" };
+      }
       if (isValidUsage(outcome.usage)) return { costUsd: this.prices.cost(true, outcome.model ?? model, outcome.usage), costBasis: "usage" };
     } catch (error) {
       if (!(error instanceof AiUnpricedModelError)) throw error;

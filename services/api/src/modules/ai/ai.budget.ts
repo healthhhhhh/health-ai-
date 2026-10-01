@@ -104,23 +104,52 @@ export class AiBudgetLedger {
 
   /**
    * Finalises a reservation at `row.costUsd` and records its usage row, in one
-   * transaction. Returns false (and changes nothing) when it was already
-   * settled, released or expired — retries can't double-charge.
+   * transaction, with the reservation row locked.
+   *
+   * - held: settled (or released) at the real cost; returns "settled".
+   * - charged at the reservation because usage was unknown (it expired, or
+   *   its call timed out) and not yet reconciled: when the real usage arrives
+   *   late, the charge is raised to the real cost if that is higher — never
+   *   lowered — and the reservation is marked reconciled; returns "reconciled".
+   * - anything else (already settled, released or reconciled): nothing changes;
+   *   returns null. Retries and late duplicates can't charge twice.
    */
-  async settle(reservationId: string, row: UsageRow, status: "settled" | "released" = "settled"): Promise<boolean> {
+  async settle(reservationId: string, row: UsageRow, status: "settled" | "released" = "settled"): Promise<"settled" | "reconciled" | null> {
     return this.db.transaction(async (tx) => {
-      const { rows } = await tx.query<{ user_id: string; billing_period: string; amount_usd: string }>(
-        `UPDATE ai_budget_reservations SET status = $2, charged_usd = $3::numeric, settled_at = now() WHERE id = $1 AND status = 'held' RETURNING user_id, billing_period, amount_usd`,
-        [reservationId, status, usd(row.costUsd)],
+      const { rows } = await tx.query<{ user_id: string; billing_period: string; amount_usd: string; charged_usd: string | null; status: string; reconciled_at: Date | null; basis: string | null }>(
+        `SELECT r.user_id, r.billing_period, r.amount_usd, r.charged_usd, r.status, r.reconciled_at,
+                (SELECT u.cost_basis FROM ai_usage u WHERE u.reservation_id = r.id) AS basis
+           FROM ai_budget_reservations r WHERE r.id = $1 FOR UPDATE OF r`,
+        [reservationId],
       );
-      const held = rows[0];
-      if (!held) return false;
-      await tx.query(
-        `UPDATE ai_budget_periods SET reserved_usd = GREATEST(reserved_usd - $3::numeric, 0), spent_usd = spent_usd + $4::numeric, updated_at = now() WHERE user_id = $1 AND billing_period = $2`,
-        [held.user_id, held.billing_period, held.amount_usd, usd(row.costUsd)],
-      );
-      await tx.query(INSERT_USAGE, usageParams({ ...row, billingPeriod: held.billing_period }, reservationId));
-      return true;
+      const reservation = rows[0];
+      if (!reservation) return null;
+      if (reservation.status === "held") {
+        await tx.query(`UPDATE ai_budget_reservations SET status = $2, charged_usd = $3::numeric, settled_at = now() WHERE id = $1`, [reservationId, status, usd(row.costUsd)]);
+        await tx.query(
+          `UPDATE ai_budget_periods SET reserved_usd = GREATEST(reserved_usd - $3::numeric, 0), spent_usd = spent_usd + $4::numeric, updated_at = now() WHERE user_id = $1 AND billing_period = $2`,
+          [reservation.user_id, reservation.billing_period, reservation.amount_usd, usd(row.costUsd)],
+        );
+        await tx.query(INSERT_USAGE, usageParams({ ...row, billingPeriod: reservation.billing_period }, reservationId));
+        return "settled";
+      }
+      if ((reservation.status === "expired" || reservation.status === "settled") && reservation.basis === "reservation" && !reservation.reconciled_at) {
+        const charged = Number(reservation.charged_usd ?? reservation.amount_usd);
+        const extra = Math.max(0, Math.round((row.costUsd - charged) * 1_000_000) / 1_000_000);
+        await tx.query(`UPDATE ai_budget_reservations SET reconciled_at = now(), charged_usd = charged_usd + $2::numeric WHERE id = $1`, [reservationId, usd(extra)]);
+        if (extra > 0) {
+          await tx.query(`UPDATE ai_budget_periods SET spent_usd = spent_usd + $3::numeric, updated_at = now() WHERE user_id = $1 AND billing_period = $2`, [reservation.user_id, reservation.billing_period, usd(extra)]);
+        }
+        // The usage row now carries the request's real usage; its cost never goes down.
+        await tx.query(
+          `UPDATE ai_usage SET model = $2, input_tokens = $3, output_tokens = $4, cache_read_tokens = $5, cache_write_tokens = $6, cost_usd = cost_usd + $7::numeric,
+                  cost_basis = CASE WHEN $7::numeric > 0 THEN $8 ELSE cost_basis END
+            WHERE reservation_id = $1`,
+          [reservationId, row.model, row.inputTokens, row.outputTokens, row.cacheReadTokens, row.cacheWriteTokens, usd(extra), row.costBasis],
+        );
+        return "reconciled";
+      }
+      return null;
     });
   }
 

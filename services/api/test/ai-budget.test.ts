@@ -79,15 +79,16 @@ describe("budget ledger", () => {
   it("settles once: retries and late duplicates can't charge twice", async () => {
     const userId = await newUser();
     const id = (await reserve(userId, 0.33, 5))!;
-    expect(await ledger.settle(id, row(userId, 0.14))).toBe(true);
-    expect(await ledger.settle(id, row(userId, 0.14))).toBe(false); // retry
-    expect(await ledger.settle(id, row(userId, 0), "released")).toBe(false); // late release
+    expect(await ledger.settle(id, row(userId, 0.14))).toBe("settled");
+    expect(await ledger.settle(id, row(userId, 0.14))).toBeNull(); // retry
+    expect(await ledger.settle(id, row(userId, 0), "released")).toBeNull(); // late release
     expect(await ledger.balance(userId, billingPeriod())).toEqual({ spent: 0.14, reserved: 0 });
     expect(await usageRows(userId)).toHaveLength(1);
     // Concurrent duplicate settles: still exactly one charge.
     const id2 = (await reserve(userId, 0.33, 5))!;
     const settled = await Promise.all(Array.from({ length: 5 }, () => ledger.settle(id2, row(userId, 0.1))));
-    expect(settled.filter(Boolean)).toHaveLength(1);
+    expect(settled.filter((r) => r === "settled")).toHaveLength(1);
+    expect(settled.filter((r) => r !== "settled").every((r) => r === null)).toBe(true);
     expect((await ledger.balance(userId, billingPeriod())).spent).toBeCloseTo(0.24);
     expect(await usageRows(userId)).toHaveLength(2);
   });
@@ -101,8 +102,9 @@ describe("budget ledger", () => {
     expect(await ledger.balance(userId, billingPeriod())).toEqual({ spent: 0.33, reserved: 0 });
     expect(await reservations(userId)).toEqual([{ status: "expired", amount: 0.33, charged: 0.33 }]);
     expect(await usageRows(userId)).toEqual([expect.objectContaining({ status: "expired", cost: 0.33, cost_basis: "reservation", reservation_id: id })]);
-    // The request finishing late can't charge again.
-    expect(await ledger.settle(id, row(userId, 0.14))).toBe(false);
+    // The request finishing late for less than the expiry charged: no refund, and only once.
+    expect(await ledger.settle(id, row(userId, 0.14))).toBe("reconciled");
+    expect(await ledger.settle(id, row(userId, 0.14))).toBeNull();
     expect((await ledger.balance(userId, billingPeriod())).spent).toBe(0.33);
   });
 

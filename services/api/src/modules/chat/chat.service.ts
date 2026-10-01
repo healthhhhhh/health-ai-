@@ -3,6 +3,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
 import { AiGateway } from "../ai/ai.gateway";
+import { AiBudgetExceededError, AiDeclinedError, AiInvalidOutputError, AiUnavailableError } from "../ai/ai.types";
 import type { AiMessage } from "../ai/ai.types";
 import { dailyHealthContext, relevantMetrics } from "../health-data/daily-health-context";
 import { HealthDataService } from "../health-data/health-data.service";
@@ -193,6 +194,13 @@ export class ChatService {
         answer = { answer: SAFE_FALLBACK_ANSWER, followUp: null, warningSigns: answer.warningSigns.filter((w) => !reviewAssistantText(w).length), careRecommendation: null, memorySuggestions: [] };
       }
     } catch (error) {
+      // Urgent symptoms always get guidance. If the model can't answer (AI down, the
+      // safety-critical allowance used up, declined or unusable), the deterministic
+      // urgent escalation from the safety rules is returned instead of an error.
+      if (urgent && isAiFailure(error)) {
+        const escalation = escalationMessage(result)!;
+        return { triage: result, payload: { kind: "escalation", escalation }, content: `${escalation.title}. ${escalation.body}` };
+      }
       throw AiGateway.toApiError(error);
     }
     await this.memories.markUsed(userId, memories.map((m) => m.id));
@@ -255,3 +263,6 @@ export class ChatService {
       .catch(() => undefined);
   }
 }
+
+const isAiFailure = (error: unknown) =>
+  error instanceof AiUnavailableError || error instanceof AiBudgetExceededError || error instanceof AiDeclinedError || error instanceof AiInvalidOutputError;
