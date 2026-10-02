@@ -246,6 +246,32 @@ test.describe("signed out", () => {
     await expect(page).toHaveURL(/\/\?deleted=1$/);
   });
 
+  test("without AI consent, emergency guidance still appears and nothing is sent to the AI", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with Google" }).click();
+    await page.getByRole("button", { name: "Get started" }).click();
+    await page.getByLabel("First name").fill("Noor");
+    await page.getByLabel("Date of birth").fill("1984-04-04");
+    // Privacy choices left off (AI Health Assistant not allowed).
+    for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Go to Home" }).click();
+    await expect(page).toHaveURL(/\/home/);
+
+    const aiRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().includes("/chat")) aiRequests.push(request.url());
+    });
+    await page.goto("/chat", { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { name: "Before we start" })).toBeVisible();
+    await page.getByLabel("Message").fill("I have crushing chest pain and can't breathe");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByRole("region", { name: "Emergency guidance" }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Call emergency services/ }).first()).toHaveAttribute("href", /^tel:/);
+    // Still asking for permission: the message wasn't sent anywhere.
+    await expect(page.getByRole("heading", { name: "Before we start" })).toBeVisible();
+    expect(aiRequests).toEqual([]);
+  });
+
   test("a new browser without a restriction still takes a date of birth normally", async ({ page }) => {
     await page.goto("/sign-in");
     await page.getByRole("button", { name: "Continue with Google" }).click();

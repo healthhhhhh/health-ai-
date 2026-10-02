@@ -238,6 +238,13 @@ final class SessionStore {
     /// Called when any request reports the session has ended.
     func handle(_ error: Error) {
         if (error as? APIError) == .unauthorized { state = .signedOut }
+        // The server refused because of the account's age (e.g. restricted from another device):
+        // show setup, which asks for the date of birth or explains the restriction.
+        if let restriction = AgeEligibility(gateError: error) {
+            ageEligibility = restriction
+            ageGuard.record(restriction)
+            needsAccountSetup = true
+        }
     }
 
     /// Consents plus whether first-run setup is still to do (an older server without the endpoint counts as done).

@@ -34,3 +34,13 @@ public struct AgeRetryGuard {
         defaults.set(now, forKey: Self.defaultsKey)
     }
 }
+
+extension AgeEligibility {
+    /// The age-gate refusal in an API error (403 `age_required`, `age_review` or `age_not_eligible`),
+    /// or nil for any other error. Lets the app send a restricted account back to setup, like the web.
+    public init?(gateError error: Error) {
+        guard case APIError.server(let status, let code, _)? = error as? APIError, status == 403,
+              let eligibility = AgeEligibility(rawValue: code), eligibility != .eligible, eligibility != .unknown else { return nil }
+        self = eligibility
+    }
+}

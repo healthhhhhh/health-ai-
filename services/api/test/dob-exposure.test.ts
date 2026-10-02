@@ -23,8 +23,14 @@ import { chatAnswer, createTestContext, signUp, testDatabase, type TestContext }
 const DOB = "1987-11-23";
 const DOB_FORMS = [DOB, "1987", "11/23/1987", "23/11/1987", "1987-11", "11-23"];
 
+// Random ids and timestamps can contain short forms like "1987" or "11-23" by chance,
+// so those are removed before checking the short forms. The full date is checked as sent.
+const RANDOM_VALUES = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?/gi;
+
 const expectNoDob = (text: string, where: string) => {
-  for (const form of DOB_FORMS) expect(text, `${where} contains "${form}"`).not.toContain(form);
+  expect(text, `${where} contains "${DOB}"`).not.toContain(DOB);
+  const content = text.replace(RANDOM_VALUES, "<random>");
+  for (const form of DOB_FORMS) expect(content, `${where} contains "${form}"`).not.toContain(form);
   expect(text, where).not.toMatch(/date of birth|dateOfBirth|date_of_birth|birth ?date/i);
 };
 

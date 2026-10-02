@@ -49,4 +49,14 @@ final class AgeRetryGuardTests: XCTestCase {
         XCTAssertEqual(Array(defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("hm") }), [AgeRetryGuard.defaultsKey])
         XCTAssertTrue(defaults.object(forKey: AgeRetryGuard.defaultsKey) is Date)
     }
+
+    func testAgeGateErrorsAreRecognised() {
+        XCTAssertEqual(AgeEligibility(gateError: APIError.server(status: 403, code: "age_required", message: "")), .ageRequired)
+        XCTAssertEqual(AgeEligibility(gateError: APIError.server(status: 403, code: "age_review", message: "")), .ageReview)
+        XCTAssertEqual(AgeEligibility(gateError: APIError.server(status: 403, code: "age_not_eligible", message: "")), .ageNotEligible)
+        XCTAssertNil(AgeEligibility(gateError: APIError.server(status: 403, code: "forbidden", message: "")))
+        XCTAssertNil(AgeEligibility(gateError: APIError.server(status: 400, code: "age_required", message: "")))
+        XCTAssertNil(AgeEligibility(gateError: APIError.unauthorized))
+        XCTAssertNil(AgeEligibility(gateError: URLError(.notConnectedToInternet)))
+    }
 }
