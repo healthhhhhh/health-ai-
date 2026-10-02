@@ -13,11 +13,14 @@ export interface DeleteState {
 }
 
 export async function deleteAccount(_prev: DeleteState, form: FormData): Promise<DeleteState> {
-  const password = String(form.get("password") ?? "");
   if (form.get("confirm") !== "on") return { error: "Tick the box to confirm you understand this can't be undone." };
-  if (!password) return { error: "Enter your password." };
+  // Accounts without a password (Google / Apple only) confirm by typing DELETE; the API refuses this for password accounts.
+  const withoutPassword = form.get("method") === "confirmation";
+  const password = String(form.get("password") ?? "");
+  if (withoutPassword && String(form.get("confirmText") ?? "").trim() !== "DELETE") return { error: "Type DELETE to confirm." };
+  if (!withoutPassword && !password) return { error: "Enter your password." };
   try {
-    await api("me/delete", { method: "POST", json: { password } });
+    await api("me/delete", { method: "POST", json: withoutPassword ? { confirm: "DELETE" } : { password } });
   } catch (error) {
     unstable_rethrow(error);
     return { error: error instanceof ApiError && error.status === 401 ? "That password isn't right." : errorMessage(error) };

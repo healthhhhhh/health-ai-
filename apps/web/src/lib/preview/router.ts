@@ -386,6 +386,12 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
       return json({ exportedAt: nowIso(), format: "healthmate-export-v2", preview: true, ...data });
     }
     if (b === "delete" && method === "POST") {
+      // Like the API: accounts without a password (Google / Apple only) may type DELETE instead.
+      if (input.confirm === "DELETE") {
+        if (account.account.signInMethods.includes("password")) return fail(403, "forbidden", "Confirm with your password instead.");
+        endSession(session.id);
+        return noContent();
+      }
       if (input.password === "wrong-password" || text(input.password).length < 8) return fail(403, "forbidden", "Password is incorrect.");
       endSession(session.id);
       return noContent();

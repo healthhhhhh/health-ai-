@@ -126,6 +126,14 @@ extension APIClient {
         await clearSession()
     }
 
+    /// Accounts without a password (Google / Apple only) confirm deletion by typing DELETE.
+    /// The server refuses this for accounts that have a password.
+    public func deleteAccountWithoutPassword() async throws {
+        struct Body: Encodable { let confirm: String }
+        try await sendNoContent(.json("POST", "me/delete", Body(confirm: "DELETE")))
+        await clearSession()
+    }
+
     /// Changes the password for an email-and-password account.
     public func changePassword(current: String, new: String) async throws {
         struct Body: Encodable { let currentPassword, newPassword: String }

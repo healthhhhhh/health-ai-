@@ -24,7 +24,13 @@ struct AccountSetupView: View {
     @State private var healthConnected = false
     /// The server can't let this account use HealthMate (yet).
     @State private var restriction: AgeEligibility?
+    /// The server recently restricted an account on this device, so this unconfirmed account
+    /// can't answer the age question here (`AgeRetryGuard`).
+    @State private var blockedOnDevice = false
+    /// Accounts that sign in with Google / Apple only confirm deletion by typing DELETE.
+    @State private var hasPassword = true
     @State private var deletePassword = ""
+    @State private var deleteConfirmation = ""
     @AccessibilityFocusState private var headingFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -33,6 +39,8 @@ struct AccountSetupView: View {
             Group {
                 if let restriction {
                     restrictedPanel(restriction)
+                } else if blockedOnDevice {
+                    restrictedPanel(nil)
                 } else {
                     setup
                 }
@@ -46,6 +54,8 @@ struct AccountSetupView: View {
             if let eligibility = account?.ageEligibility, eligibility == .ageReview || eligibility == .ageNotEligible {
                 restriction = eligibility
             }
+            hasPassword = account?.signInMethods.contains("password") ?? true
+            blockedOnDevice = session.ageQuestionBlockedOnDevice
             // The health profile is readable only once the age check has passed.
             var profile: HealthProfile?
             if (account?.ageEligibility ?? .eligible) == .eligible {
@@ -362,17 +372,16 @@ struct AccountSetupView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// What a person sees when the server can't let them use HealthMate (yet). Nothing is collected here.
-    private func restrictedPanel(_ reason: AgeEligibility) -> some View {
+    /// What a person sees when the server can't let them use HealthMate (yet), or (`nil`) when
+    /// this device recently had a restricted account. Nothing is collected here.
+    private func restrictedPanel(_ reason: AgeEligibility?) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(reason == .ageReview ? "We need to check your age" : "HealthMate isn't available for you")
+                Text(Self.restrictionTitle(reason))
                     .font(.hmPageHeading)
                     .foregroundStyle(HM.Colors.textPrimary)
                     .accessibilityAddTraits(.isHeader)
-                Text(reason == .ageReview
-                     ? "The date of birth you entered doesn't match what we have on record, so someone needs to check it before you can continue."
-                     : "HealthMate is for people 13 and older, so we can't set up this account. Nothing you add is used, and this account will be deleted soon.")
+                Text(Self.restrictionMessage(reason))
                     .font(.hmBody)
                     .foregroundStyle(HM.Colors.textSecondary)
                 Text("If a date was entered by mistake, contact us from Help on the HealthMate website.")
@@ -388,12 +397,23 @@ struct AccountSetupView: View {
                         Text("This permanently deletes your account and everything in it. It can't be undone.")
                             .font(.hmCaption)
                             .foregroundStyle(HM.Colors.textSecondary)
-                        SetupField(label: "Password") {
-                            SecureField("Password", text: $deletePassword).textContentType(.password)
+                        if hasPassword {
+                            SetupField(label: "Password") {
+                                SecureField("Password", text: $deletePassword).textContentType(.password)
+                            }
+                            Button("Delete everything") { Task { _ = await session.deleteAccount(password: deletePassword) } }
+                                .buttonStyle(.hmSecondary)
+                                .disabled(deletePassword.isEmpty || session.busy)
+                        } else {
+                            SetupField(label: "Type DELETE to confirm") {
+                                TextField("DELETE", text: $deleteConfirmation)
+                                    .textInputAutocapitalization(.characters)
+                                    .autocorrectionDisabled()
+                            }
+                            Button("Delete everything") { Task { _ = await session.deleteAccountWithoutPassword() } }
+                                .buttonStyle(.hmSecondary)
+                                .disabled(deleteConfirmation.trimmingCharacters(in: .whitespaces) != "DELETE" || session.busy)
                         }
-                        Button("Delete everything") { Task { _ = await session.deleteAccount(password: deletePassword) } }
-                            .buttonStyle(.hmSecondary)
-                            .disabled(deletePassword.isEmpty || session.busy)
                         if let message = session.errorMessage {
                             Text(message).font(.hmCaption).foregroundStyle(HM.Colors.error)
                         }
@@ -403,6 +423,25 @@ struct AccountSetupView: View {
                 .font(.hmBody)
             }
             .padding(24)
+        }
+    }
+
+    private static func restrictionTitle(_ reason: AgeEligibility?) -> String {
+        switch reason {
+        case .ageReview?: return "We need to check your age"
+        case nil: return "We can't set up HealthMate here right now"
+        default: return "HealthMate isn't available for you"
+        }
+    }
+
+    private static func restrictionMessage(_ reason: AgeEligibility?) -> String {
+        switch reason {
+        case .ageReview?:
+            return "The date of birth you entered doesn't match what we have on record, so someone needs to check it before you can continue."
+        case nil:
+            return "An age check on this device recently didn't allow setup, so we can't take another date of birth here for now."
+        default:
+            return "HealthMate is for people 13 and older, so we can't set up this account. Nothing you add is used, and this account will be deleted soon."
         }
     }
 
@@ -445,6 +484,10 @@ struct AccountSetupView: View {
                 return
             }
             // The server decides who can use HealthMate; nothing else is saved before it has.
+            if session.ageQuestionBlockedOnDevice {
+                blockedOnDevice = true
+                return
+            }
             Task {
                 guard let eligibility = await session.confirmAge(draft) else { return }
                 switch eligibility {

@@ -214,6 +214,19 @@ describe("with AGE_ENFORCEMENT=enforce", () => {
       expect(await stored(user.userId)).toBeUndefined();
     });
 
+    it("lets a restricted Google-only account delete itself with the typed confirmation", async () => {
+      const signedIn = await ctx.http
+        .post("/v1/auth/oauth")
+        .send({ provider: "google", idToken: `synthetic-google:restricted-${randomUUID()}`, ageScreen: { dateOfBirth: born(30) } })
+        .expect(200);
+      const auth = { Authorization: `Bearer ${signedIn.body.accessToken as string}` };
+      await ctx.http.post("/v1/me/age").set(auth).send({ dateOfBirth: born(10) }).expect(200);
+      expect((await ctx.http.get("/v1/me").set(auth).expect(403)).body.error.code).toBe("age_not_eligible");
+      expect((await account(auth)).signInMethods).toEqual(["google"]);
+      await ctx.http.post("/v1/me/delete").set(auth).send({ confirm: "DELETE" }).expect(204);
+      expect(await stored(signedIn.body.userId)).toBeUndefined();
+    });
+
     it("refuses queued work at execution time when the account isn't eligible (ProcessingPolicy)", async () => {
       const user = await register(born(30));
       const policy = ctx.app.get(ProcessingPolicy);

@@ -125,16 +125,24 @@ final class SessionStore {
         }
     }
 
-    /// Saves first-run setup; on success the app continues to Home.
+    /// Stops new date-of-birth attempts on this device after a restriction (only the time is kept).
+    private let ageGuard = AgeRetryGuard()
+
+    /// This account's age isn't confirmed and the server recently restricted an account on this
+    /// device, so setup won't take another date of birth here (sign-out doesn't reset this).
+    var ageQuestionBlockedOnDevice: Bool { !ageGuard.allowsAgeQuestion(for: ageEligibility) }
+
     /// Sends the confirmed date of birth; the server decides whether the person can use HealthMate.
     /// nil when it couldn't be checked (the error message says why).
     func confirmAge(_ draft: AccountSetupDraft) async -> AgeEligibility? {
+        if ageQuestionBlockedOnDevice { return nil }
         busy = true
         errorMessage = nil
         defer { busy = false }
         do {
             let eligibility = try await draft.confirmAge(using: api)
             ageEligibility = eligibility
+            ageGuard.record(eligibility)
             return eligibility
         } catch {
             handle(error)
@@ -187,6 +195,21 @@ final class SessionStore {
         state = .signedOut
     }
 
+    /// For accounts without a password (Google / Apple only): confirmed by typing DELETE.
+    func deleteAccountWithoutPassword() async -> Bool {
+        busy = true
+        defer { busy = false }
+        do {
+            try await api.deleteAccountWithoutPassword()
+            consents = [:]
+            state = .signedOut
+            return true
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Couldn't delete your account. Please try again."
+            return false
+        }
+    }
+
     func deleteAccount(password: String) async -> Bool {
         busy = true
         defer { busy = false }
@@ -222,6 +245,8 @@ final class SessionStore {
         await loadConsents()
         let summary = try? await api.accountSummary()
         ageEligibility = summary?.ageEligibility ?? .eligible
+        // Signing in to an account the server restricted also arms the device guard.
+        ageGuard.record(ageEligibility)
         // Accounts whose age isn't confirmed (or can't be served) go through setup, which asks for it
         // or explains the restriction; the server refuses their health features either way.
         needsAccountSetup = summary?.onboardingCompleted == false || ageEligibility != .eligible

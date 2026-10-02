@@ -75,6 +75,17 @@ describe("preview API", () => {
     expect((await call("me", "GET", undefined, child)).status).toBe(403);
   });
 
+  it("deletes a Google-only account with the typed confirmation; a password account must use its password", async () => {
+    const google = (await call<{ accessToken: string }>("auth/oauth", "POST", { provider: "google", timeZone: "UTC" })).body.accessToken;
+    expect((await call("me/delete", "POST", { confirm: "DELETE" }, google)).status).toBe(204);
+
+    const password = await signIn();
+    const refused = await call<{ error: { message: string } }>("me/delete", "POST", { confirm: "DELETE" }, password);
+    expect(refused.status).toBe(403);
+    expect(refused.body.error.message).toBe("Confirm with your password instead.");
+    expect((await call("me/account", "GET", undefined, password)).status).toBe(200);
+  });
+
   it("returns the sign-up name with the account summary", async () => {
     const token = await signIn();
     const account = await call<{ firstName?: string }>("me/account", "GET", undefined, token);

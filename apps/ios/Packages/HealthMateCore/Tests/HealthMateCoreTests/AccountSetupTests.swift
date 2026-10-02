@@ -144,6 +144,29 @@ final class AccountSetupTests: XCTestCase {
         XCTAssertEqual(retry, .ageReview)
     }
 
+    func testAGoogleOnlyAccountDeletesWithTheTypedConfirmation() async throws {
+        let api = client()
+        _ = try await api.signIn(with: "google")
+        let account = try await api.accountSummary()
+        XCTAssertFalse(account.signInMethods.contains("password"))
+        try await api.deleteAccountWithoutPassword()
+        let signedIn = await api.isSignedIn
+        XCTAssertFalse(signedIn)
+    }
+
+    func testAPasswordAccountCantSkipItsPassword() async throws {
+        let api = client()
+        _ = try await api.login(email: "alex.morgan@example.com", password: "preview-password")
+        do {
+            try await api.deleteAccountWithoutPassword()
+            XCTFail("a password account must confirm with its password")
+        } catch APIError.server(let status, _, let message) {
+            XCTAssertEqual(status, 403)
+            XCTAssertEqual(message, "Confirm with your password instead.")
+        }
+        try await api.deleteAccount(password: "preview-password")
+    }
+
     func testTheSampleAccountHasAlreadyFinishedSetup() async throws {
         let api = client()
         _ = try await api.login(email: "alex.morgan@example.com", password: "preview-password")

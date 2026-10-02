@@ -1,4 +1,4 @@
-import { findLinkedUser } from "../auth/identity-links";
+import { accountHasPassword, findLinkedUser } from "../auth/identity-links";
 import type { VerifiedIdentity } from "../auth/oauth";
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { AuditService } from "../../common/audit";
@@ -125,15 +125,28 @@ export class AccountService {
    * account is marked first, and `finishPendingDeletions` completes any
    * deletion interrupted part-way (e.g. Storage unavailable).
    */
-  /** Needs the password, or a fresh sign-in with an identity linked to this account. */
-  async delete(userId: string, proof: { password: string } | { identity: VerifiedIdentity }) {
+  /**
+   * Needs the password, or a fresh sign-in with an identity linked to this account. An
+   * account without a password (e.g. created with Google) may instead confirm with its
+   * signed-in session plus an explicit typed confirmation (`DELETE`), since the apps
+   * can't always get a fresh provider token; password accounts must still use the password.
+   */
+  async delete(userId: string, proof: { password: string } | { identity: VerifiedIdentity } | { confirmation: "DELETE" }) {
+    let method: "password" | "identity" | "confirmation";
     if ("password" in proof) {
+      method = "password";
       if (!(await this.identity.verifyPassword(userId, proof.password))) throw new ApiError("forbidden", "Password is incorrect.", HttpStatus.FORBIDDEN);
-    } else if ((await findLinkedUser(this.db, proof.identity.provider, proof.identity.subject)) !== userId) {
-      throw new ApiError("forbidden", "That sign-in doesn't belong to this account.", HttpStatus.FORBIDDEN);
+    } else if ("identity" in proof) {
+      method = "identity";
+      if ((await findLinkedUser(this.db, proof.identity.provider, proof.identity.subject)) !== userId) {
+        throw new ApiError("forbidden", "That sign-in doesn't belong to this account.", HttpStatus.FORBIDDEN);
+      }
+    } else {
+      method = "confirmation";
+      if (await accountHasPassword(this.db, userId)) throw new ApiError("forbidden", "Confirm with your password instead.", HttpStatus.FORBIDDEN);
     }
     await this.db.query(`UPDATE users SET deletion_requested_at = COALESCE(deletion_requested_at, now()) WHERE id = $1`, [userId]);
-    await this.audit.log("account.delete_requested", userId);
+    await this.audit.log("account.delete_requested", userId, { method });
     await this.purge(userId);
   }
 

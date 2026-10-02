@@ -10,6 +10,30 @@ import type { OAuthProvider, VerifiedIdentity } from "./oauth";
  */
 export const providerName = (provider: OAuthProvider) => (provider === "google" ? "Google" : "Apple");
 
+/**
+ * Whether the account can sign in with a password. Local accounts know (a stored hash);
+ * Supabase keeps passwords itself, so an account whose first identity arrived with it
+ * (within a minute) was created by that sign-in and has no password, and every other
+ * Supabase account signed up with one.
+ */
+export function hasPasswordSignIn(account: { authProvider: "local" | "supabase"; passwordHashStored: boolean; createdAt: Date; identityCreatedAts: (string | Date)[] }): boolean {
+  if (account.authProvider === "local") return account.passwordHashStored;
+  return !account.identityCreatedAts.some((at) => Math.abs(new Date(at).getTime() - account.createdAt.getTime()) < 60_000);
+}
+
+/** `hasPasswordSignIn` for a stored account (false when it doesn't exist). */
+export async function accountHasPassword(db: Queryable, userId: string): Promise<boolean> {
+  const { rows } = await db.query<{ auth_provider: "local" | "supabase"; has_password: boolean; created_at: Date; identities: string[] }>(
+    `SELECT u.auth_provider, u.password_hash IS NOT NULL AS has_password, u.created_at,
+            COALESCE((SELECT json_agg(i.created_at) FROM auth_identities i WHERE i.user_id = u.id), '[]') AS identities
+       FROM users u WHERE u.id = $1`,
+    [userId],
+  );
+  const row = rows[0];
+  if (!row) return false;
+  return hasPasswordSignIn({ authProvider: row.auth_provider, passwordHashStored: row.has_password, createdAt: row.created_at, identityCreatedAts: row.identities });
+}
+
 export async function findLinkedUser(db: Queryable, provider: OAuthProvider, subject: string): Promise<string | null> {
   const { rows } = await db.query<{ user_id: string }>(`SELECT user_id FROM auth_identities WHERE provider = $1 AND subject = $2`, [provider, subject]);
   return rows[0]?.user_id ?? null;

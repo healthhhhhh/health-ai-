@@ -201,6 +201,33 @@ test.describe("signed out", () => {
     await page.goto("/health");
     await expect(page).toHaveURL(/\/onboarding$/);
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+
+    // A Google-only account has no password: it deletes itself by typing DELETE.
+    await page.getByText("Delete my account now").click();
+    await expect(page.getByLabel("Password")).toHaveCount(0);
+    await page.getByLabel("Type DELETE to confirm").fill("DELETE");
+    await page.getByLabel("I understand this can't be undone").check();
+    await page.getByRole("button", { name: "Delete everything" }).click();
+    await expect(page).toHaveURL(/\/\?deleted=1$/);
+
+    // The same browser won't take another date of birth for a new, unconfirmed account.
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with Google" }).click();
+    await page.getByRole("button", { name: "Get started" }).click();
+    await page.getByLabel("First name").fill("Kit");
+    await page.getByLabel("Date of birth").fill("1990-06-15");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "We can't set up HealthMate here right now" })).toBeVisible();
+  });
+
+  test("a new browser without a restriction still takes a date of birth normally", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with Google" }).click();
+    await page.getByRole("button", { name: "Get started" }).click();
+    await page.getByLabel("First name").fill("Ari");
+    await page.getByLabel("Date of birth").fill("1995-03-20");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Your privacy choices" })).toBeVisible();
   });
 
   test("a used or expired confirmation link explains what to do", async ({ page }) => {

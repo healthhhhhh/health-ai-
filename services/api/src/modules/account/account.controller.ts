@@ -7,10 +7,14 @@ import { ID_TOKEN_VERIFIERS, type IdTokenVerifiers } from "../auth/oauth";
 import { AccountService } from "./account.service";
 import { AgeService } from "./age.service";
 
-/** Confirm with the password, or — for accounts that sign in with Google only — a fresh Google ID token. */
+/**
+ * Confirm with the password; or, for accounts that sign in with Google only, a fresh
+ * Google ID token or the typed confirmation `DELETE` (refused for password accounts).
+ */
 const DeleteBody = z.union([
   z.object({ password: z.string().min(1).max(256) }),
   z.object({ provider: z.enum(["google", "apple"]), idToken: z.string().min(20).max(4096), nonce: z.string().min(8).max(256).optional() }),
+  z.strictObject({ confirm: z.literal("DELETE") }),
 ]);
 /**
  * Strict: only a date of birth. A band, status or unverified app-store signal in the
@@ -50,6 +54,7 @@ export class AccountController {
   async delete(@UserId() userId: string, @Body() body: unknown) {
     const input = parseBody(DeleteBody, body);
     if ("password" in input) return this.account.delete(userId, { password: input.password });
+    if ("confirm" in input) return this.account.delete(userId, { confirmation: input.confirm });
     const verifier = this.verifiers[input.provider];
     if (!verifier) throw new ApiError("not_available", "Confirm with your password instead.", HttpStatus.NOT_IMPLEMENTED);
     await this.account.delete(userId, { identity: await verifier.verify(input.idToken, input.nonce) });

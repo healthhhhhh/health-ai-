@@ -187,6 +187,26 @@ describe("Continue with Google", () => {
     expect((await ctx.db.query(`SELECT 1 FROM auth_identities WHERE user_id = $1`, [created.body.userId])).rows).toHaveLength(0);
     expect((await ctx.db.query(`SELECT 1 FROM users WHERE id = $1`, [created.body.userId])).rows).toHaveLength(0);
   });
+  it("lets a Google-only account delete with its session and the typed confirmation; password accounts can't", async () => {
+    const created = await oauth({ idToken: await googleToken({ subject: `sub-confirm-${Date.now()}` }) }).expect(200);
+    const auth = { Authorization: `Bearer ${created.body.accessToken}` };
+    expect((await ctx.http.get("/v1/me/account").set(auth).expect(200)).body.signInMethods).toEqual(["google"]);
+    // Only the exact confirmation is accepted, and nothing else in the body.
+    for (const body of [{}, { confirm: "delete" }, { confirm: "yes" }, { confirm: "DELETE", extra: 1 }]) await ctx.http.post("/v1/me/delete").set(auth).send(body).expect(400);
+    await ctx.http.post("/v1/me/delete").send({ confirm: "DELETE" }).expect(401);
+    await ctx.http.post("/v1/me/delete").set(auth).send({ confirm: "DELETE" }).expect(204);
+    expect((await ctx.db.query(`SELECT 1 FROM users WHERE id = $1`, [created.body.userId])).rows).toHaveLength(0);
+    const audit = (await ctx.db.query<{ metadata: Record<string, unknown> }>(`SELECT metadata FROM audit_logs WHERE user_id = $1 AND action = 'account.delete_requested'`, [created.body.userId])).rows;
+    expect(audit).toEqual([{ metadata: { method: "confirmation" } }]);
+
+    // A password account must still use its password.
+    const password = await signUp(ctx);
+    const refused = await ctx.http.post("/v1/me/delete").set(password.auth).send({ confirm: "DELETE" }).expect(403);
+    expect(refused.body.error.message).toBe("Confirm with your password instead.");
+    expect((await ctx.db.query(`SELECT 1 FROM users WHERE id = $1`, [password.userId])).rows).toHaveLength(1);
+    await ctx.http.post("/v1/me/delete").set(password.auth).send({ password: "correct horse battery" }).expect(204);
+  });
+
   it("records an optional age screen only after the Google token is verified, and works without one", async () => {
     const birth = (years: number) => {
       const [y, m, d] = referenceDay().split("-").map(Number) as [number, number, number];

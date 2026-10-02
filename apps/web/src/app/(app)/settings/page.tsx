@@ -11,6 +11,7 @@ import { SignOutButton } from "@/features/auth/sign-out-button";
 import { ConsentToggle } from "@/features/settings/consent-toggle";
 import { DeleteAccountForm } from "@/features/settings/delete-account-form";
 import { DisplayForm } from "@/features/settings/display-form";
+import { getAccount } from "@/lib/api/data";
 import { api, ApiError } from "@/lib/api/server";
 import { getDisplayPrefs } from "@/lib/display-prefs.server";
 import { isPreviewMode } from "@/lib/preview/mode";
@@ -25,12 +26,13 @@ const CONSENTS = [
 ] as const;
 
 export default async function SettingsPage() {
-  const [consents, prefs] = await Promise.all([
+  const [consents, prefs, account] = await Promise.all([
     api<ConsentRecord[]>("me/consents").catch((error) => {
       if (error instanceof ApiError && error.status !== 401) return error;
       throw error;
     }),
     getDisplayPrefs(),
+    getAccount().catch(() => null),
   ]);
   const granted = (kind: string) => !(consents instanceof ApiError) && consents.some((c) => c.kind === kind && c.granted);
   return (
@@ -127,7 +129,7 @@ export default async function SettingsPage() {
             <h2 id="delete" className="mb-3 text-card-title text-error">
               Delete account
             </h2>
-            <DeleteAccountForm />
+            <DeleteAccountForm hasPassword={!account || account.signInMethods.includes("password")} />
           </Card>
         </div>
       </div>

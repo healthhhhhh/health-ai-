@@ -1,4 +1,5 @@
 import type { OAuthProvider } from "../auth/oauth";
+import { hasPasswordSignIn } from "../auth/identity-links";
 import { Inject, Injectable } from "@nestjs/common";
 import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
@@ -144,11 +145,12 @@ export class ProfileService {
     );
     const row = rows[0];
     if (!row) throw notFound("Account");
-    // Local accounts know whether a password exists. Supabase keeps passwords itself: an
-    // account whose first identity arrived with it (within a minute) was created by that
-    // sign-in and has no password; every other Supabase account signed up with one.
-    const createdByIdentity = row.identities.some((i) => Math.abs(new Date(i.created_at).getTime() - row.created_at.getTime()) < 60_000);
-    const hasPassword = row.auth_provider === "local" ? row.has_password : !createdByIdentity;
+    const hasPassword = hasPasswordSignIn({
+      authProvider: row.auth_provider,
+      passwordHashStored: row.has_password,
+      createdAt: row.created_at,
+      identityCreatedAts: row.identities.map((i) => i.created_at),
+    });
     return {
       email: row.email,
       // Local (development) accounts have no email step.

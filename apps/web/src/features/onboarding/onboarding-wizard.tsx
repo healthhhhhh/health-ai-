@@ -52,7 +52,8 @@ export interface OnboardingDefaults {
 }
 
 type Step = (typeof STEPS)[number]["id"];
-type Restriction = "age_review" | "age_not_eligible";
+/** The server restricted this account, or (`device`) recently restricted one in this browser. */
+type Restriction = "age_review" | "age_not_eligible" | "device";
 
 /**
  * First-run setup: welcome, name and date of birth (checked by the server before
@@ -65,11 +66,14 @@ export function OnboardingWizard({
   preview,
   restricted: initialRestriction = null,
   deletionScheduled = false,
+  hasPassword = true,
 }: {
   defaults: OnboardingDefaults;
   preview: boolean;
   restricted?: Restriction | null;
   deletionScheduled?: boolean;
+  /** False for accounts that sign in with Google / Apple only (deletion is confirmed by typing DELETE). */
+  hasPassword?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const current = STEPS[index] ?? STEPS[0];
@@ -95,7 +99,9 @@ export function OnboardingWizard({
     moved.current = true;
   }, [index, restriction]);
 
-  if (restriction) return <RestrictedPanel reason={restriction} deletionScheduled={deletionScheduled || restriction === "age_not_eligible"} headingRef={heading} />;
+  if (restriction) {
+    return <RestrictedPanel reason={restriction} deletionScheduled={deletionScheduled || restriction === "age_not_eligible"} hasPassword={hasPassword} headingRef={heading} />;
+  }
 
   const update = (patch: Partial<OnboardingInput>) => setData((d) => ({ ...d, ...patch }));
   const goNext = () => {
@@ -115,6 +121,7 @@ export function OnboardingWizard({
       setError(null);
       const result = await confirmAge(data.dateOfBirth);
       if ("error" in result) return setError(result.error);
+      if ("deviceBlocked" in result) return setRestriction("device");
       if (result.eligibility === "eligible") return goNext();
       if (result.eligibility === "age_review" || result.eligibility === "age_not_eligible") return setRestriction(result.eligibility);
       setError("We couldn't confirm your date of birth. Please try again.");
@@ -277,22 +284,33 @@ export function OnboardingWizard({
 }
 
 /** What a person sees when the server can't let them use HealthMate (yet). No health data is collected here. */
-function RestrictedPanel({ reason, deletionScheduled, headingRef }: { reason: Restriction; deletionScheduled: boolean; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
-  const underAge = reason === "age_not_eligible";
+function RestrictedPanel({
+  reason,
+  deletionScheduled,
+  hasPassword,
+  headingRef,
+}: {
+  reason: Restriction;
+  deletionScheduled: boolean;
+  hasPassword: boolean;
+  headingRef: React.RefObject<HTMLHeadingElement | null>;
+}) {
+  const heading =
+    reason === "age_not_eligible" ? "HealthMate isn't available for you" : reason === "age_review" ? "We need to check your age" : "We can't set up HealthMate here right now";
   return (
     <div className="rounded-xl bg-card p-6 shadow-card sm:p-8">
       <h1 ref={headingRef} tabIndex={-1} className="text-page-heading text-text-primary focus:outline-none">
-        {underAge ? "HealthMate isn't available for you" : "We need to check your age"}
+        {heading}
       </h1>
       <div className="mt-3 flex flex-col gap-3 text-body text-text-secondary">
-        {underAge ? (
+        {reason === "age_not_eligible" && (
           <>
             <p>HealthMate is for people 13 and older, so we can&apos;t set up this account.</p>
             {deletionScheduled && <p>Nothing you add is used, and this account will be deleted soon.</p>}
           </>
-        ) : (
-          <p>The date of birth you entered doesn&apos;t match what we have on record, so someone needs to check it before you can continue.</p>
         )}
+        {reason === "age_review" && <p>The date of birth you entered doesn&apos;t match what we have on record, so someone needs to check it before you can continue.</p>}
+        {reason === "device" && <p>An age check in this browser recently didn&apos;t allow setup, so we can&apos;t take another date of birth here for now.</p>}
         <p>
           If a date was entered by mistake, see{" "}
           <Link href="/help" className="font-semibold text-primary underline-offset-2 hover:underline">
@@ -308,7 +326,7 @@ function RestrictedPanel({ reason, deletionScheduled, headingRef }: { reason: Re
       <details className="mt-6 rounded-md bg-card-muted p-4">
         <summary className="cursor-pointer text-body font-semibold text-text-primary">Delete my account now</summary>
         <div className="mt-3">
-          <DeleteAccountForm />
+          <DeleteAccountForm hasPassword={hasPassword} />
         </div>
       </details>
     </div>

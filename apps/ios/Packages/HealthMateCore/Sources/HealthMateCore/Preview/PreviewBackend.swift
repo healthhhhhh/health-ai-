@@ -486,6 +486,14 @@ public final class PreviewBackend: @unchecked Sendable {
                 return json(.object(data))
             }
             if b == "delete", method == "POST" {
+                // Like the API: accounts without a password (Google / Apple only) may type DELETE instead.
+                if input["confirm"].string == "DELETE" {
+                    if ctx.account["account"]["signInMethods"].array.contains(.string("password")) {
+                        return fail(403, "forbidden", "Confirm with your password instead.")
+                    }
+                    sessions[ctx.sid] = nil
+                    return noContent()
+                }
                 let password = input["password"].string ?? ""
                 if password == "wrong-password" || password.count < 8 { return fail(403, "forbidden", "Password is incorrect.") }
                 sessions[ctx.sid] = nil

@@ -1,8 +1,10 @@
 "use server";
 
-import type { AgeAssessmentResponse, AgeEligibility, ConsentKind } from "@healthmate/shared-types";
+import type { AccountSummary, AgeAssessmentResponse, AgeEligibility, ConsentKind } from "@healthmate/shared-types";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
+import { AGE_GUARD_COOKIE, AGE_GUARD_MAX_AGE } from "@/lib/age-guard";
 import { api, ApiError, errorMessage } from "@/lib/api/server";
 
 export interface OnboardingInput {
@@ -32,11 +34,23 @@ export async function validateOnboarding(input: OnboardingInput): Promise<string
  * they can use HealthMate (the server is the only judge of age). Nothing else is
  * saved until the last step, so a person who can't use HealthMate leaves nothing behind.
  */
-export async function confirmAge(dateOfBirth: string): Promise<{ eligibility: AgeEligibility } | { error: string }> {
+export async function confirmAge(dateOfBirth: string): Promise<{ eligibility: AgeEligibility } | { deviceBlocked: true } | { error: string }> {
+  const jar = await cookies();
+  // A restriction already happened in this browser: an account whose age isn't confirmed yet
+  // can't try a date here (see lib/age-guard). Accounts the server already confirmed are unaffected.
+  if (jar.get(AGE_GUARD_COOKIE)) {
+    const account = await api<AccountSummary>("me/account").catch(() => null);
+    if ((account?.ageEligibility ?? "age_required") !== "eligible") return { deviceBlocked: true };
+  }
   if (!DAY.test(dateOfBirth)) return { error: "Enter your date of birth." };
   try {
     const result = await api<AgeAssessmentResponse>("me/age", { method: "POST", json: { dateOfBirth } });
-    return { eligibility: result.eligibility ?? "eligible" };
+    const eligibility = result.eligibility ?? "eligible";
+    if (eligibility === "age_review" || eligibility === "age_not_eligible") {
+      // Only that a restriction happened — never the date. Kept through sign-out.
+      jar.set(AGE_GUARD_COOKIE, "1", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: AGE_GUARD_MAX_AGE });
+    }
+    return { eligibility };
   } catch (error) {
     unstable_rethrow(error);
     // Servers without age assessment (older, or turned off) don't restrict anyone by age.
