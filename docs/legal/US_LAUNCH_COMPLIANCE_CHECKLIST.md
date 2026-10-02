@@ -1,5 +1,7 @@
 # HealthMate — US Launch Compliance Checklist
 
+> **Working documents (2026-10-02):** the five user-facing drafts, incident procedure and short launch checklist are in [`policies/`](policies/README.md). Use [`policies/LAUNCH_CHECKLIST.md`](policies/LAUNCH_CHECKLIST.md) day to day; this file is background research and isn't maintained item by item.
+
 > **Status: working checklist for counsel review. Not legal advice and not a statement of compliance.** Nothing here has been confirmed by a lawyer.
 > Review date: **2026-10-01**. Code facts come from `docs/legal/HEALTHMATE_DATA_FLOW_AUDIT.md` (cited as "Audit §n").
 > Operator facts used: individual developer, no registered company, US-first, iOS + web, consumer-facing AI health companion. No partnerships with clinics, insurers or employers are known. If that changes, re-run §2.
@@ -355,7 +357,7 @@ Why: the vision is preserved, minors' data is not collected before child safegua
 **Done in code (server):** age eligibility enforced on every route and job; under-13 refusal, restriction and
 scheduled deletion; birthday transitions; inconsistent-claim handling; no parent access; teen chat note; exact
 DOB kept out of AI payloads and database-error logs; Apple Health data to AI only with current sync permission.
-**Drafted (unpublished):** the eight launch policies in `docs/legal/policies/`.
+**Drafted (unpublished):** the launch documents in `docs/legal/policies/` (five user-facing drafts, incident procedure, launch checklist).
 
 **Blockers that code alone can't resolve:**
 1. **Client age screen and restricted states** (web + iOS): neutral DOB question on every sign-up path, retry

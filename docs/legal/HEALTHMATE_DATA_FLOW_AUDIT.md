@@ -1,5 +1,7 @@
 # HealthMate — Data Flow Audit (US-first launch)
 
+> **Working documents (2026-10-02):** the five user-facing drafts, incident procedure and short launch checklist are in [`policies/`](policies/README.md). Use [`policies/LAUNCH_CHECKLIST.md`](policies/LAUNCH_CHECKLIST.md) day to day; this file is background research and isn't maintained item by item.
+
 > **Status: internal working document. Not legal advice, not a privacy policy, and not a statement of compliance.**
 > Review date: **2026-10-01**. Audited code: branch `claude/inspiring-newton-qmirnd` at `74c300e` (application code as of `8730023`).
 > Prepared from the source code for review by the operator and a US privacy/healthcare lawyer.
