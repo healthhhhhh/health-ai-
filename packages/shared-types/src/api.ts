@@ -18,9 +18,37 @@ export interface AuthResponse extends TokenPair {
 /** `POST /v1/auth/register`: a session, or (Supabase with email confirmation on, HTTP 202) a pending confirmation. */
 export type RegisterResponse = AuthResponse | { confirmationRequired: true };
 
+/**
+ * Age & consent Phase 2A. Age is recorded, never enforced, in this phase:
+ * nothing is restricted by band or status. Computed by the server only.
+ */
+export type AgeBand = "unknown" | "under_13" | "13_15" | "16_17" | "adult";
+/** `blocked_*` describes the band relative to the enabled bands; it is recorded, not enforced. `review`: a later answer claimed an older band. */
+export type AgeStatus = "unknown" | "in_scope" | "blocked_under_13" | "blocked_out_of_scope" | "review";
+export type AgeEnforcement = "off" | "record" | "enforce";
+
+/** Optional self-declared date of birth sent with sign-up or Google sign-in. Never a band. */
+export interface AgeScreen {
+  /** `YYYY-MM-DD`. */
+  dateOfBirth: string;
+}
+
+/** `POST /v1/me/age`. Strict: any other field (a band, status or app-store signal) is refused. */
+export type AgeAssessmentRequest = AgeScreen;
+
+export interface AgeAssessmentResponse {
+  ageBand: Exclude<AgeBand, "unknown">;
+  ageStatus: Exclude<AgeStatus, "unknown">;
+  assessedAt: ISO;
+  /** applied: now the account's band; review: conflicted with a younger band on record, held for review. */
+  outcome: "applied" | "review";
+}
+
 export interface ApiMeta {
   apiVersion: number;
   ai: { available: boolean; demo?: boolean };
+  /** Age & consent Phase 2A. Absent from older servers and Preview. `parentalConsent` is always false: it doesn't exist. */
+  age?: { enforcement: AgeEnforcement; enabledBands: Exclude<AgeBand, "unknown">[]; parentalConsent: false };
   /** Phase 1 Preview mode: sample data, no backend. */
   preview?: boolean;
 }
@@ -480,6 +508,8 @@ export interface OAuthSignInRequest {
   timeZone?: string;
   firstName?: string;
   lastName?: string;
+  /** Optional age screen (Phase 2A), recorded only after the token is verified. */
+  ageScreen?: AgeScreen;
 }
 
 export interface OAuthSignInResponse extends AuthResponse {
@@ -514,6 +544,10 @@ export interface AccountSummary {
   signInMethods: ("password" | OAuthProvider)[];
   createdAt: ISO;
   onboardingCompleted: boolean;
+  /** Age & consent Phase 2A: recorded, never enforced. Absent from older servers and Preview. */
+  ageBand?: AgeBand;
+  ageStatus?: AgeStatus;
+  ageAssessedAt?: ISO | null;
 }
 
 export interface NotificationList {

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { parsePrices, type ModelPrice } from "./modules/ai/ai.pricing";
+import { AGE_BANDS, AGE_ENFORCEMENT_MODES, type AgeBand } from "./modules/account/age";
 import { parseRoutes, type AiProviderName, type AiRoutes } from "./modules/ai/ai.routing";
 
 const optionalUrl = z.string().url().optional();
@@ -84,6 +85,14 @@ const schema = z.object({
   AI_SAFETY_CRITICAL_ALLOWANCE_USD: z.coerce.number().min(0).default(5),
   /** Longest wait for one AI provider call (ms). A timed-out call is charged its reserved worst case. */
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(900_000).default(240_000),
+  /**
+   * Age & consent Phase 2A. `record`: the API records age assessments (POST /v1/me/age,
+   * optional age screen at sign-up) and restricts nothing. `off`: it records nothing.
+   * `enforce` doesn't exist yet and is refused.
+   */
+  AGE_ENFORCEMENT: z.enum(AGE_ENFORCEMENT_MODES).default("record"),
+  /** Age bands the product serves (comma-separated). Only `adult` until minors' features exist. */
+  ENABLED_AGE_BANDS: z.string().default("adult"),
   /** Error reporting. Events are scrubbed of health content before sending. */
   SENTRY_DSN: optionalUrl,
 
@@ -121,6 +130,7 @@ export type AppConfig = Env & {
   storageProvider: "local" | "supabase";
   embeddingsProvider: "supabase" | "hash" | "none";
   migrateOnStart: boolean;
+  enabledAgeBands: AgeBand[];
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -164,6 +174,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (authProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_PUBLISHABLE_KEY || !cfg.SUPABASE_SECRET_KEY, "Supabase Auth needs SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY");
   if (storageProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY, "Supabase Storage needs SUPABASE_URL and SUPABASE_SECRET_KEY");
   if (embeddingsProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY || !cfg.EMBED_FUNCTION_SECRET, "Supabase embeddings need SUPABASE_URL, SUPABASE_SECRET_KEY and EMBED_FUNCTION_SECRET");
+  // Fail closed: age is recorded, never enforced, and no minors' features or parental consent exist.
+  need(cfg.AGE_ENFORCEMENT === "enforce", "AGE_ENFORCEMENT=enforce isn't implemented yet: age is only recorded (use record or off)");
+  const enabledAgeBands = [...new Set(cfg.ENABLED_AGE_BANDS.split(",").map((b) => b.trim()).filter(Boolean))];
+  need(enabledAgeBands.some((b) => !(AGE_BANDS as readonly string[]).includes(b)), `ENABLED_AGE_BANDS: unknown band (bands: ${AGE_BANDS.join(", ")})`);
+  need(
+    enabledAgeBands.length !== 1 || enabledAgeBands[0] !== "adult",
+    "ENABLED_AGE_BANDS can only be adult: features and parental consent for minors aren't implemented",
+  );
   if (production) {
     need(!cfg.DATABASE_URL, "DATABASE_URL is required in production");
     need(storageProvider === "local", "Production must use Supabase Storage (STORAGE_PROVIDER=supabase)");
@@ -187,6 +205,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     storageProvider,
     embeddingsProvider,
     migrateOnStart: cfg.MIGRATE_ON_START ? cfg.MIGRATE_ON_START === "true" : !production,
+    enabledAgeBands: enabledAgeBands as AgeBand[],
   };
 }
 

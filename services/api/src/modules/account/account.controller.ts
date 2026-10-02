@@ -5,12 +5,18 @@ import { ApiError, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { ID_TOKEN_VERIFIERS, type IdTokenVerifiers } from "../auth/oauth";
 import { AccountService } from "./account.service";
+import { AgeService } from "./age.service";
 
 /** Confirm with the password, or — for accounts that sign in with Google only — a fresh Google ID token. */
 const DeleteBody = z.union([
   z.object({ password: z.string().min(1).max(256) }),
   z.object({ provider: z.enum(["google", "apple"]), idToken: z.string().min(20).max(4096), nonce: z.string().min(8).max(256).optional() }),
 ]);
+/**
+ * Strict: only a date of birth. A band, status or unverified app-store signal in the
+ * body is refused (400) — the server computes the band itself.
+ */
+export const AgeBody = z.strictObject({ dateOfBirth: z.string().max(10) });
 const ConsentBody = z.object({ kind: z.enum(["ai_processing", "document_processing", "health_data_sync", "voice"]), granted: z.boolean() });
 
 @Controller("v1/me")
@@ -19,7 +25,16 @@ export class AccountController {
   constructor(
     @Inject(AccountService) private readonly account: AccountService,
     @Inject(ID_TOKEN_VERIFIERS) private readonly verifiers: IdTokenVerifiers,
+    @Inject(AgeService) private readonly age: AgeService,
   ) {}
+
+  /** Records a self-declared date of birth as an age band (recording only; nothing is restricted). */
+  @Post("age")
+  @HttpCode(200)
+  @RateLimit("age", 20, 60 * 60_000)
+  assessAge(@UserId() userId: string, @Body() body: unknown) {
+    return this.age.assessDateOfBirth(userId, parseBody(AgeBody, body).dateOfBirth);
+  }
 
   @Get("export")
   @RateLimit("export", 5, 60 * 60_000)

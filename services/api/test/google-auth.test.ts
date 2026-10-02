@@ -2,6 +2,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { RateLimiter } from "../src/common/rate-limit";
 import { loadConfig } from "../src/config";
+import { referenceDay } from "../src/modules/account/age";
 import { GoogleIdTokenVerifier, idTokenVerifiersFor } from "../src/modules/auth/oauth";
 import { createTestContext, signUp, type TestContext } from "./helpers";
 
@@ -185,6 +186,22 @@ describe("Continue with Google", () => {
     await ctx.http.post("/v1/me/delete").set(auth).send({ provider: "google", idToken: await googleToken({ subject }) }).expect(204);
     expect((await ctx.db.query(`SELECT 1 FROM auth_identities WHERE user_id = $1`, [created.body.userId])).rows).toHaveLength(0);
     expect((await ctx.db.query(`SELECT 1 FROM users WHERE id = $1`, [created.body.userId])).rows).toHaveLength(0);
+  });
+  it("records an optional age screen only after the Google token is verified, and works without one", async () => {
+    const birth = (years: number) => {
+      const [y, m, d] = referenceDay().split("-").map(Number) as [number, number, number];
+      return new Date(Date.UTC(y - years, m - 1, d)).toISOString().slice(0, 10);
+    };
+    const age = async (userId: string) => (await ctx.db.query<{ age_band: string; n: number }>(`SELECT age_band, (SELECT count(*)::int FROM age_assessments WHERE user_id = $1) AS n FROM users WHERE id = $1`, [userId])).rows[0]!;
+    const withScreen = await oauth({ idToken: await googleToken(), ageScreen: { dateOfBirth: birth(25) } }).expect(200);
+    expect(await age(withScreen.body.userId)).toEqual({ age_band: "adult", n: 1 });
+    const without = await oauth({ idToken: await googleToken() }).expect(200);
+    expect(await age(without.body.userId)).toEqual({ age_band: "unknown", n: 0 });
+    // An invalid screen is refused before anything is created; a rejected token records nothing.
+    const email = `screen-refused-${Date.now()}@gmail.com`;
+    await oauth({ idToken: await googleToken({ claims: { email } }), ageScreen: { dateOfBirth: "2026-02-30" } }).expect(400);
+    await oauth({ idToken: await googleToken({ claims: { email }, key: otherKey }), ageScreen: { dateOfBirth: birth(25) } }).expect(401);
+    expect(await users(email)).toBe(0);
   });
 });
 

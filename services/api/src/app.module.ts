@@ -8,6 +8,7 @@ import { CONFIG, type AppConfig } from "./config";
 import { DATABASE, type Database } from "./db/database";
 import { AccountController } from "./modules/account/account.controller";
 import { AccountService } from "./modules/account/account.service";
+import { AgeService } from "./modules/account/age.service";
 import { ProcessingPolicy } from "./modules/account/processing-policy";
 import { AiGateway, registryOf, type AiProviderRegistry } from "./modules/ai/ai.gateway";
 import { AI_PROVIDERS, type AiProvider } from "./modules/ai/ai.types";
@@ -43,7 +44,10 @@ import { TimelineService } from "./modules/timeline/timeline.service";
 
 @Controller()
 class HealthController {
-  constructor(@Inject(AiGateway) private readonly ai: AiGateway) {}
+  constructor(
+    @Inject(AiGateway) private readonly ai: AiGateway,
+    @Inject(CONFIG) private readonly config: AppConfig,
+  ) {}
 
   /** Liveness probe. */
   @Get("health")
@@ -54,7 +58,12 @@ class HealthController {
   /** Lets clients show an honest "AI unavailable" state instead of failing late. */
   @Get("v1/meta")
   meta() {
-    return { apiVersion: 1, ai: { available: this.ai.available, demo: this.ai.demo } };
+    return {
+      apiVersion: 1,
+      ai: { available: this.ai.available, demo: this.ai.demo },
+      // Age & consent Phase 2A: age is recorded at most, never enforced; no minors' features or parental consent exist.
+      age: { enforcement: this.config.AGE_ENFORCEMENT, enabledBands: this.config.enabledAgeBands, parentalConsent: false },
+    };
   }
 }
 
@@ -106,6 +115,7 @@ export class AppModule {
       AuthService,
       ProfileService,
       ProcessingPolicy,
+      AgeService,
       AccountService,
       AiGateway,
       MemoryService,

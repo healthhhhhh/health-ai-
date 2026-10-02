@@ -264,14 +264,23 @@ These are code-level controls only. They are **not** a security guarantee, certi
 
 ## 8. Age handling: actual implementation status [CODE]
 
-**HealthMate currently has no age determination of any kind.** It does not distinguish children, teenagers and adults. It cannot block, route or protect any age group, whatever launch scope is chosen. Verified:
+**Update 2026-10-02 — age & consent Phase 2A (recording only).** The backend can now *record* an age band, but nothing uses it to restrict, route or protect anyone:
+- Migration `0015_age_and_consent_foundation.sql` adds `users.age_band`, `age_status` and `age_assessed_at`. Every existing account is `unknown`, and nothing is inferred from `profiles.date_of_birth`.
+- The append-only `age_assessments` table records band, source, outcome and time, and stores no date of birth. Clients can read their own rows but cannot write them (RLS).
+- `POST /v1/me/age` computes the band on the server from a validated date of birth (`modules/account/age.ts`, `age.service.ts`).
+- An optional `ageScreen` on email sign-up and Google sign-in is recorded through the same logic.
+- The account response, `/v1/meta` and the export include the age state.
+- `AGE_ENFORCEMENT` is `record` by default; `enforce` is refused by configuration, and only the `adult` band can be enabled.
+- No client asks the question yet (no UI). Accounts created without the screen, including direct Supabase Auth sign-ups that bypass the API, stay `unknown`.
 
-1. `POST /v1/auth/register` (`auth.controller.ts` `RegisterBody`) has no age, date-of-birth or attestation field and no check.
-2. `POST /v1/auth/oauth` (Google) creates accounts on first sign-in with no age check (`identity.ts` `signInWithIdToken`).
-3. `profiles.date_of_birth` is optional. `PATCH /v1/me` accepts any valid date (`profile.controller.ts` `day`), including dates showing the user is under 13 or under 18, and nothing reacts to it. **Entering a child's DOB can give HealthMate "actual knowledge" under COPPA** (Checklist §6.1.3), yet no code acts on it.
+Every finding below still holds unless marked otherwise. **HealthMate still has no age gate:** recording a band does not block, route or protect any age group. Verified:
+
+1. `POST /v1/auth/register` (`auth.controller.ts` `RegisterBody`) accepts an optional `ageScreen` (since 2026-10-02) and records it, but performs no age check and refuses nobody.
+2. `POST /v1/auth/oauth` (Google) creates accounts on first sign-in with no age check (`identity.ts` `signInWithIdToken`). An optional `ageScreen` is recorded after the token is verified; nothing is refused by age.
+3. `profiles.date_of_birth` is optional. `PATCH /v1/me` accepts any valid date (`profile.controller.ts` `day`), including dates showing the user is under 13 or under 18, and nothing reacts to it: editing it does not change the recorded age band (deliberately, so an edit can't silently upgrade a band). **Entering a child's DOB can give HealthMate "actual knowledge" under COPPA** (Checklist §6.1.3), yet no code acts on it. The same is true of an `under_13` band recorded through `POST /v1/me/age`: it is stored as `blocked_under_13` but **not acted on** (no block, no deletion).
 4. No age gate, age checkbox or "18+" text exists in the web sign-up (`apps/web/src/app/sign-in`, `onboarding`) or the iOS onboarding (`OnboardingView.swift`, `SignInView.swift`, `AccountSetupView.swift`). A search for "18", "adult" and "years old" across clients, API and docs found nothing relevant.
 5. The iOS app does not use Apple's Declared Age Range API. The App Store age rating is not in the repository **[FACT?]**.
-6. No database constraint and no test enforces any age rule.
+6. Database constraints keep the age state consistent (valid values; `unknown` only before any assessment), but nothing enforces an age *rule*.
 7. **No parent, guardian, child or dependent concept exists.** A search of the API, migrations, web, iOS and safety package for "parent", "guardian", "child", "minor" and "teen" found no such data model or flow. Accounts are single-user; there is no verifiable parental consent, parent dashboard, or parent export or deletion.
 8. **No age-aware behaviour.** The AI prompts (`chat.prompts.ts`, `document.prompts.ts`) assume an adult reader. The deterministic triage rules (`packages/safety/src/rules.ts`) are marked **"PENDING CLINICAL REVIEW"** and contain no pediatric rules.
 9. **The exact DOB goes to the AI provider** in the profile summary (`profile.service.ts` `contextSummary`, §4.2). For a minor, this tells the provider the user is a child.
@@ -311,7 +320,7 @@ The product already makes these statements. Each must be true at launch or be re
 
 | # | Gap | Severity for launch | Section |
 |---|---|---|---|
-| G1 | No age determination or age-based controls (no age screen, no signal handling, no parental consent, no parent accounts) | **Blocker** for every launch option; minors need more (Checklist §6.8) | §8 |
+| G1 | No age-based controls (no age gate in any client, no app-store signal handling, no parental consent, no parent accounts). Since 2026-10-02 the backend can *record* a self-declared age band (recording only). | **Blocker** for every launch option; minors need more (Checklist §6.8) | §8 |
 | G2 | Terms, Privacy Policy and Consumer Health Data Privacy Policy do not exist; links are placeholders; acceptance is not recorded | **Blocker** | §9 |
 | G3 | AI provider not named in consent; iOS onboarding consent omits external sharing; no separate collection vs. sharing consent | **Blocker** (Apple 5.1.2(i); state health-data laws) | §4.2 |
 | G4 | HealthKit-derived data sent to the AI provider without HealthKit-specific disclosure or permission | **Blocker** for an App Store build with HealthKit plus AI | §4.2 |

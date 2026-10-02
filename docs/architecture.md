@@ -117,6 +117,30 @@ feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► 
     $0.33 of the $5 month is unusable for routine chat. This is kept on purpose: reserving less would
     let concurrent requests overrun the limit. Lowering a task's `maxOutputTokens` or routing it to a
     cheaper model is the safe way to shrink this margin.
+- **Age & consent Phase 2A: age is recorded, never enforced** (`modules/account/age.ts`, `age.service.ts`,
+  migration `0015`).
+  - **Account state.** `users.age_band` (`unknown`, `under_13`, `13_15`, `16_17`, `adult`), `age_status`
+    (`unknown`, `in_scope`, `blocked_under_13`, `blocked_out_of_scope`, `review`) and `age_assessed_at`.
+    Existing and API-bypassing accounts are `unknown`. `profiles.date_of_birth` is never used to infer a band.
+  - **History.** `age_assessments` (band, source, outcome, time; no date of birth) is append-only. It is
+    readable by its owner and written only by the API (RLS); clients can't write age state at all.
+  - **Calculation.** `POST /v1/me/age { dateOfBirth }` computes the band on the server. Ages are counted on
+    today's date at UTC−12, the earliest date anywhere, so nobody is counted older than they are. A
+    29 February birthday counts on 1 March in other years. Invalid, future and over-130-year dates are
+    refused with no echo of the value. The body is strict: a band, status or app-store signal is refused,
+    because signals can't be verified server-side yet.
+  - **Review policy.** The same or a younger band is applied. An older band than the one on record is
+    kept as history but sets `review`, because without a stored date of birth the API can't tell a
+    birthday from an edited date. History and account update in one transaction under a row lock.
+  - **Sign-up.** An optional `ageScreen { dateOfBirth }` on register and Google sign-in is validated
+    before any account is created and recorded once a session exists. If recording fails, the account
+    stays `unknown` (no partial history). Supabase email-confirmation sign-ups don't record it, because
+    nothing proves the request created the account.
+  - **Exposure.** The account response has `ageBand`, `ageStatus` and `ageAssessedAt`; `/v1/meta` has
+    `age { enforcement, enabledBands, parentalConsent: false }`; the export has the current state and the
+    history.
+  - **Configuration fails closed.** `AGE_ENFORCEMENT` is `record` (default) or `off`; `enforce` is refused.
+    `ENABLED_AGE_BANDS` can only be `adult`. Nothing restricts, routes or deletes anyone by age.
 - **Consent at execution time** (`ProcessingPolicy`, `modules/account/processing-policy.ts`):
   every piece of server-side processing is checked against the person's *latest* consent when it
   runs, not only when it was requested.

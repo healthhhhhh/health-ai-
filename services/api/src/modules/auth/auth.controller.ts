@@ -5,6 +5,8 @@ import { AuthGuard, UserId } from "../../common/auth";
 import { ApiError, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { CONFIG, type AppConfig } from "../../config";
+import { AgeService } from "../account/age.service";
+import type { AgeBand } from "../account/age";
 import { IDENTITY, type IdentityProvider } from "./identity";
 import { providerName } from "./identity-links";
 import { ID_TOKEN_VERIFIERS, type IdTokenVerifiers, type OAuthProvider } from "./oauth";
@@ -13,7 +15,10 @@ const email = z.string().trim().email().max(254);
 /** NIST 800-63B: length over composition rules; long passphrases allowed. */
 const password = z.string().min(8).max(256);
 
+/** Optional self-declared date of birth sent with sign-up (age & consent Phase 2A). */
+const AgeScreen = z.strictObject({ dateOfBirth: z.string().max(10) }).optional();
 const RegisterBody = z.object({
+  ageScreen: AgeScreen,
   email,
   password,
   firstName: z.string().trim().min(1).max(80),
@@ -37,6 +42,7 @@ const OAuthBody = z.object({
   timeZone: z.string().max(64).default("UTC"),
   firstName: z.string().trim().max(80).optional(),
   lastName: z.string().trim().max(80).optional(),
+  ageScreen: AgeScreen,
 });
 const LinkBody = z.object({ provider, idToken: z.string().min(20).max(4096), nonce: z.string().min(8).max(256).optional() });
 
@@ -54,19 +60,30 @@ export class AuthController {
     @Inject(IDENTITY) private readonly identity: IdentityProvider,
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(ID_TOKEN_VERIFIERS) private readonly verifiers: IdTokenVerifiers,
+    @Inject(AgeService) private readonly age: AgeService,
   ) {}
+
+  /** Validates an optional age screen before any account is created (400 if it can't be used). */
+  private screenBand(screen: { dateOfBirth: string } | undefined): AgeBand | null {
+    return screen && this.age.recording ? this.age.bandFor(screen.dateOfBirth) : null;
+  }
 
   @Post("register")
   @RateLimit("auth-register", 5, 60_000)
   async register(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
-    const input = parseBody(RegisterBody, body);
+    const { ageScreen, ...input } = parseBody(RegisterBody, body);
+    const band = this.screenBand(ageScreen);
     const result = await this.identity.register(input);
     if ("confirmationRequired" in result) {
       // Supabase projects with email confirmation: no session until the link is clicked.
       // No user id: the response must not reveal whether the email already had an account.
+      // The age screen isn't recorded here: without a session nothing proves this request
+      // created the account (the email may belong to someone else). It stays unknown
+      // until the person assesses it after signing in.
       res.status(HttpStatus.ACCEPTED);
       return { confirmationRequired: true };
     }
+    if (band) await this.age.recordScreen(result.userId, band);
     return { userId: result.userId, ...result.tokens };
   }
 
@@ -136,6 +153,7 @@ export class AuthController {
     const input = parseBody(OAuthBody, body);
     const verifier = this.verifiers[input.provider];
     if (!verifier || !input.idToken) throw notAvailable(input.provider);
+    const band = this.screenBand(input.ageScreen);
     const identity = await verifier.verify(input.idToken, input.nonce);
     const { userId, tokens, isNewUser } = await this.identity.signInWithIdToken({
       identity,
@@ -143,6 +161,8 @@ export class AuthController {
       nonce: input.nonce,
       profile: { firstName: input.firstName || identity.givenName || "", lastName: input.lastName || identity.familyName || "", timeZone: input.timeZone },
     });
+    // Recorded only after the provider's token was verified and a session exists.
+    if (band) await this.age.recordScreen(userId, band);
     return { userId, ...tokens, isNewUser };
   }
 

@@ -31,7 +31,9 @@ export class AccountService {
   async export(userId: string) {
     const q = async (sql: string) => (await this.db.query(sql, [userId])).rows;
     const sections = {
-      account: q(`SELECT email, email_verified_at, created_at FROM users WHERE id = $1`),
+      account: q(`SELECT email, email_verified_at, created_at, age_band, age_status, age_assessed_at FROM users WHERE id = $1`),
+      // How the age band was assessed (no dates of birth are kept here).
+      ageAssessments: q(`SELECT band, source, outcome, created_at FROM age_assessments WHERE user_id = $1 ORDER BY created_at`),
       signInIdentities: q(`SELECT provider, email, created_at, last_sign_in_at FROM auth_identities WHERE user_id = $1 ORDER BY created_at`),
       // Device tokens are never exported (they're only useful for sending pushes).
       pushDevices: q(`SELECT platform, environment, app_version, created_at, last_registered_at, disabled_at FROM push_devices WHERE user_id = $1 ORDER BY created_at`),

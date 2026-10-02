@@ -11,7 +11,7 @@
 |---|---|---|
 | **Desired long-term product** | All-ages health companion | Operator decision, 2026-10-01 |
 | **Proposed initial launch scope** | Not decided. Options compared in §6.7; recommendation in §6.7.4. | Decision pending (operator + lawyer) |
-| **Implemented in code** | No age gate, no age signal, no parental consent, no parent or guardian accounts, no child- or teen-specific controls. Single-user accounts only. | Audit §8 (verified from source) |
+| **Implemented in code** | Backend *recording* of a self-declared age band only (2026-10-02: `POST /v1/me/age`, optional sign-up `ageScreen`, history table; never enforced). No age gate in any client, no app-store age signal, no parental consent, no parent or guardian accounts, no child- or teen-specific controls. Single-user accounts only. | Audit §8 (verified from source) |
 
 **Legend**
 
@@ -198,7 +198,7 @@ Also:
 
 | # | Requirement | Code status | Status |
 |---|---|---|---|
-| 6.1.1 | **Determine age before collecting health data**, on every sign-up path (email/password, Google, future Apple) and both platforms. Rules and documents alone do not count. | **None** (Audit §8): no age field at sign-up, no check on Google sign-in, DOB optional and unvalidated, no client gate, no Declared Age Range API | ❌ **Blocker** |
+| 6.1.1 | **Determine age before collecting health data**, on every sign-up path (email/password, Google, future Apple) and both platforms. Rules and documents alone do not count. | **None** (Audit §8): backend recording exists (optional `ageScreen` on sign-up and Google sign-in, `POST /v1/me/age`), but no client asks the question and nothing is checked or refused; DOB in the profile stays optional; no Declared Age Range API | ⚠️ **Blocker** (backend foundation only) |
 | 6.1.2 | **Neutral age screen** (FTC COPPA FAQ). Ask for the full date of birth or age without hinting at the "right" answer (no "I am 18+" checkbox and no pre-filled adult date). Stop retries with a different age after a block (e.g. remember it on the device). Apply it before any health data is collected. | — | ❌ |
 | 6.1.3 | **Handle actual knowledge of an under-13 user.** COPPA covers a general-audience service once it has **actual knowledge** that a user is under 13; a DOB showing under 13 creates that knowledge (FTC COPPA FAQ). Without parental-consent features: do not collect, delete what was collected, and record the decision without keeping health content. | DOB edits are accepted and nothing reacts | ❌ **Blocker** |
 | 6.1.4 | **Handle discovered minors** outside the enabled scope: a DOB edit, a support report, an app-store age signal. Decide whether to block, delete or move them to a supported flow. | — | ❌ |
@@ -329,10 +329,10 @@ Why: the vision is preserved, minors' data is not collected before child safegua
 | # | Blocker / safeguard | Blocks | Owner |
 |---|---|---|---|
 | M1 | Decide the initial launch scope (§6.7) and record it | All | Op + Lawyer |
-| M2 | Neutral age screen before health data collection, on every sign-up path and platform | All | Eng |
+| M2 | Neutral age screen before health data collection, on every sign-up path and platform. *Backend contract and recording exist (2026-10-02); no client screen yet; Supabase sign-ups that bypass the API stay `unknown`.* | All | Eng |
 | M3 | Act on app-store age signals and parental-consent status (Texas, Utah, Louisiana); handle consent-revocation notifications | All (iOS) | Eng + Lawyer |
 | M4 | Under-13 handling: refuse or route to a supported flow, delete data collected without VPC, record the decision without health content | All | Eng |
-| M5 | Re-check age on DOB edits and other signals; block/delete flow for out-of-scope ages | All | Eng |
+| M5 | Re-check age on DOB edits and other signals; block/delete flow for out-of-scope ages. *Implemented so far (2026-10-02): a review policy, where an older band than the one on record is held as `review`; profile DOB edits don't change the band. No block or delete flow.* | All | Eng |
 | M6 | Marketing, App Store metadata and mascot use consistent with the chosen scope (mixed-audience analysis) | All | Op + Lawyer |
 | M7 | State minors'-law map (CT, CO, NY, MD, CA, TX, UT, LA and others) with the obligations per enabled age group | 13–17, <13 | Lawyer |
 | M8 | Age-aware AI behaviour: prompts, content policy and refusal rules for minors; no adult-only content | 13–17, <13 | Eng + clinical |

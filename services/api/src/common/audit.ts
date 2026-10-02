@@ -10,6 +10,7 @@ export type AuditAction =
   | "account.export"
   | "account.delete"
   | "consent.update"
+  | "account.age_assessed"
   | "document.delete"
   | "document.download"
   | "account.delete_requested"

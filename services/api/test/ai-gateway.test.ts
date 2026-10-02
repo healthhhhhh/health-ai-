@@ -307,7 +307,7 @@ describe("chat through the gateway (HTTP)", () => {
     const exported = await ctx.http.get("/v1/me/export").set(user.auth).expect(200);
     expect(JSON.stringify(exported.body)).not.toMatch(/cost_usd|billing_period|ai_usage/);
     const meta = await ctx.http.get("/v1/meta").expect(200);
-    expect(meta.body).toEqual({ apiVersion: 1, ai: { available: true, demo: false } });
+    expect(meta.body).toEqual({ apiVersion: 1, ai: { available: true, demo: false }, age: { enforcement: "record", enabledBands: ["adult"], parentalConsent: false } });
   });
 });
 

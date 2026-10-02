@@ -136,6 +136,13 @@ extension APIClient {
         try await send(Endpoint("GET", "me/account"))
     }
 
+    /// Records a self-declared date of birth (`YYYY-MM-DD`); the server computes the age band.
+    /// Age & consent Phase 2A: recording only. No screen calls this yet.
+    public func assessAge(dateOfBirth: String) async throws -> AgeAssessment {
+        struct Body: Encodable { let dateOfBirth: String }
+        return try await send(.json("POST", "me/age", Body(dateOfBirth: dateOfBirth)))
+    }
+
     /// Marks first-run setup as done for this account (on every device).
     public func completeOnboarding() async throws {
         try await sendNoContent(Endpoint("POST", "me/onboarding"))

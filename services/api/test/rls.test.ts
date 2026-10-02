@@ -278,6 +278,40 @@ describe("Phase 2B daily health data", () => {
   });
 });
 
+describe("age & consent Phase 2A", () => {
+  it("starts accounts created directly through Supabase Auth as unknown (the API never assessed them)", async () => {
+    const direct = await authUser("direct-signup@example.com", "Direct");
+    const { rows } = await db.query<{ age_band: string; age_status: string; age_assessed_at: Date | null }>(`SELECT age_band, age_status, age_assessed_at FROM users WHERE id = $1`, [direct]);
+    expect(rows[0]).toEqual({ age_band: "unknown", age_status: "unknown", age_assessed_at: null });
+  });
+
+  it("lets people read only their own age history, and nobody change age state from a client", async () => {
+    await db.query(`INSERT INTO age_assessments (user_id, band, source, outcome) VALUES ($1, 'adult', 'self_declared', 'applied'), ($2, '16_17', 'self_declared', 'applied')`, [alice, bob]);
+    await as(alice, async (q) => {
+      const rows = (await q.query<{ user_id: string }>(`SELECT user_id FROM age_assessments`)).rows;
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => r.user_id === alice)).toBe(true);
+    });
+    // History is written by the API only: no inserts, updates or deletes from clients.
+    await expect(as(alice, (q) => q.query(`INSERT INTO age_assessments (user_id, band, source, outcome) VALUES ($1, 'adult', 'support', 'applied')`, [alice]))).rejects.toThrow(/permission denied/);
+    await expect(as(alice, (q) => q.query(`UPDATE age_assessments SET band = 'adult' WHERE user_id = $1`, [alice]))).rejects.toThrow(/permission denied/);
+    await expect(as(alice, (q) => q.query(`DELETE FROM age_assessments WHERE user_id = $1`, [alice]))).rejects.toThrow(/permission denied/);
+    // The current age state on the account can't be written by its owner either.
+    await expect(as(alice, (q) => q.query(`UPDATE users SET age_band = 'adult', age_status = 'in_scope', age_assessed_at = now() WHERE id = $1`, [alice]))).rejects.toThrow(/permission denied/);
+    await expect(as(bob, (q) => q.query(`UPDATE users SET age_status = 'in_scope' WHERE id = $1`, [alice]))).rejects.toThrow(/permission denied/);
+    await expect(as(null, (q) => q.query(`SELECT 1 FROM age_assessments`))).rejects.toThrow(/permission denied/);
+    // Reading one's own account (including age state) still works.
+    await as(alice, async (q) => expect(await count(q, `SELECT age_band FROM users WHERE id = $1`, [alice])).toBe(1));
+  });
+
+  it("deletes the age history with the account", async () => {
+    const leaving = await authUser("age-leaving@example.com", "Leaving");
+    await db.query(`INSERT INTO age_assessments (user_id, band, source, outcome) VALUES ($1, 'adult', 'self_declared', 'applied')`, [leaving]);
+    await db.query(`DELETE FROM auth.users WHERE id = $1`, [leaving]);
+    expect((await db.query(`SELECT 1 FROM age_assessments WHERE user_id = $1`, [leaving])).rows).toEqual([]);
+  });
+});
+
 describe("storage policies", () => {
   it("keeps medical buckets private and each person's folder their own", async () => {
     const { rows } = await db.query<{ id: string; public: boolean }>(`SELECT id, public FROM storage.buckets WHERE id IN ('avatars', 'health-images', 'medical-reports') ORDER BY id`);
