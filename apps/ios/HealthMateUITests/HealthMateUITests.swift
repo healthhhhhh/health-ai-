@@ -80,6 +80,18 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertEqual(next.label, "Go to Home")
         next.tap()
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10), "home: \(screen(app))")
+
+        // Every permission was left off: chat asks first, nothing is sent to the AI, and emergency
+        // guidance still appears (checked on the device).
+        app.tabBars.buttons["Chat"].tap()
+        XCTAssertTrue(app.staticTexts["Before we start"].waitForExistence(timeout: 5), "consent gate: \(screen(app))")
+        let field = messageField(app)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("I have crushing chest pain and can't breathe")
+        app.buttons["sendMessage"].tap()
+        XCTAssertTrue(app.staticTexts["This could be an emergency"].waitForExistence(timeout: 5), "escalation: \(screen(app))")
+        XCTAssertTrue(app.staticTexts["Before we start"].exists, "still asking for permission: \(screen(app))")
     }
 
     /// Preview mode: the bell opens the notification centre, and a notification opens what it's about.
