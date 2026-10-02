@@ -76,7 +76,7 @@ All tables live in the `public` schema. "Owner" means `user_id` with `ON DELETE 
 
 | Data | Source | Purpose | Storage |
 |---|---|---|---|
-| Date of birth, sex, height, goals | Profile (`PATCH /v1/me`) | Profile; sent to AI context | `profiles` |
+| Date of birth, sex, height, goals | Profile (`PATCH /v1/me`) | Profile; the AI context gets the **age in whole years**, never the date (since 2026-10-02) | `profiles` |
 | Conditions, allergies, medications (instructions verbatim), treatment plans | User-entered, or `source` = `clinician_provided` or `document_extracted` | Health record; AI context | `health_conditions`, `allergies`, `medications`, `treatment_plans` |
 | Health memories (facts with provenance: `user_reported`, `user_confirmed`, `document_extracted`, `healthkit`, `clinician_provided`, `ai_inferred`, `superseded`) and embeddings | Chat, user, documents | Long-term memory, AI retrieval | `health_memories` (pgvector column) |
 | Chat messages and AI answers (structured payload, triage level) | Chat | Q&A history | `conversations`, `messages` |
@@ -171,7 +171,7 @@ The default production route sends every AI task to `AI_PROVIDER`; `AI_ROUTES` c
 What a chat request sends:
 - the fixed system prompt;
 - `Today` (date);
-- the **profile summary** (exact **date of birth**, sex, current and past conditions with source and dates, allergies and reactions, current medications with **instructions verbatim**, and past medications);
+- the **profile summary** (**age in whole years** computed on the user's local date — the exact date of birth is not sent since 2026-10-02, `ageInYears` in `profile.service.ts`; sex, current and past conditions with source and dates, allergies and reactions, current medications with **instructions verbatim**, and past medications);
 - memories selected by retrieval (with provenance labels; `ai_excluded` and superseded facts are left out);
 - daily-health summaries for the metrics the question mentions, **derived from HealthKit data** (`dailyHealthContext`; 37-day window);
 - safety notes (triage reasons);
@@ -255,7 +255,7 @@ These are code-level controls only. They are **not** a security guarantee, certi
 - **Logging policy:** loggers write ids, counts, status codes and error *names*.
 
 **Security gaps [GAP]:**
-1. **Error logging can capture health data.** `ErrorFilter` (`common/errors.ts`) logs `exception.message` and the stack for unexpected errors. Postgres errors such as not-null violations (`23502`) include `Failing row contains (…)` with row values; unique violations include key values. These are not filtered out. Constraint-check errors (`23514`) are handled before logging.
+1. **Error logging (database errors fixed 2026-10-02).** `ErrorFilter` (`common/errors.ts`) used to log `exception.message` for unexpected errors, and Postgres errors such as not-null violations (`23502`) include `Failing row contains (…)` with row values. Database errors (any error carrying a SQLSTATE `code`) now log only the code plus the table and constraint names; tested in `test/dob-exposure.test.ts`. Other unexpected errors still log name, message and stack; application code does not put health values into error messages, but third-party library messages are not filtered.
 2. **Web preview mode is on by default.** It is enabled whenever `HEALTHMATE_API_URL`/`HEALTHMATE_DATA_SOURCE` is unset (`apps/web/src/lib/preview/mode.ts`). It keeps per-session data in server memory (`lib/preview/store.ts`) and serves a public `/preview/inbox` (`proxy.ts` `PUBLIC_PATHS`). A misconfigured public deployment would accept real health data into a demo store.
 3. **No CSP header** in `apps/web/next.config.ts` **[FACT?]** (hosting might add one).
 4. **No incident response runbook, security contact, vulnerability disclosure policy, key rotation procedure or access-review process** in the repository.
@@ -283,7 +283,7 @@ Every finding below still holds unless marked otherwise. **HealthMate still has 
 6. Database constraints keep the age state consistent (valid values; `unknown` only before any assessment), but nothing enforces an age *rule*.
 7. **No parent, guardian, child or dependent concept exists.** A search of the API, migrations, web, iOS and safety package for "parent", "guardian", "child", "minor" and "teen" found no such data model or flow. Accounts are single-user; there is no verifiable parental consent, parent dashboard, or parent export or deletion.
 8. **No age-aware behaviour.** The AI prompts (`chat.prompts.ts`, `document.prompts.ts`) assume an adult reader. The deterministic triage rules (`packages/safety/src/rules.ts`) are marked **"PENDING CLINICAL REVIEW"** and contain no pediatric rules.
-9. **The exact DOB goes to the AI provider** in the profile summary (`profile.service.ts` `contextSummary`, §4.2). For a minor, this tells the provider the user is a child.
+9. ~~The exact DOB goes to the AI provider~~ **Fixed 2026-10-02:** the profile summary carries only `Age: N years` (`profile.service.ts` `contextSummary`, §4.2; regression tests in `test/dob-exposure.test.ts`). An age in years still tells the provider that a user is a minor; whole years are kept (not a band) because general health information depends on age (screening ages, typical ranges).
 10. Consents (`consents` table) are given by the account holder only. No field records *who* consented (the user or a parent) or for which age group.
 
 A working age screen, with handling for the age groups chosen at launch, is a **launch blocker for every option** (Checklist §6.1, §6.8).
@@ -292,7 +292,7 @@ A working age screen, with handling for the age groups chosen at launch, is a **
 
 | Flow (§4) | If the user is a minor, today | Assessment |
 |---|---|---|
-| Chat | Messages, DOB, conditions, medications and Apple Health summaries go to the AI provider (if configured) with adult prompts | Not safe to enable for minors (Checklist §6.5) |
+| Chat | Messages, age in years, conditions, medications and Apple Health summaries go to the AI provider (if configured) with adult prompts | Not safe to enable for minors (Checklist §6.5) |
 | Reports | The whole document, with the child's identifiers, goes to the AI provider; stored indefinitely | Not safe to enable |
 | Photos | Photo of the child uploaded, stored and sent to the AI **before** the model marks it unsupported | Not safe to enable — highest risk |
 | Apple Health | Synced with `health_data_sync` consent; summaries reach the AI under `ai_processing` | Not safe to enable |
@@ -326,14 +326,14 @@ The product already makes these statements. Each must be true at launch or be re
 | G4 | HealthKit-derived data sent to the AI provider without HealthKit-specific disclosure or permission | **Blocker** for an App Store build with HealthKit plus AI | §4.2 |
 | G5 | AI provider contract, retention and training terms not reviewed; no BAA/DPA analysis | **Blocker** before real health data is sent to any external AI | §3 |
 | G6 | ~~Consent withdrawal does not stop queued document jobs~~ **Fixed 2026-10-02** (execution-time checks). Remaining: in-flight provider calls can't be recalled. | Resolved; limitation documented | §4.2 |
-| G7 | Error logs can contain row values (health data) | High | §7 |
+| G7 | ~~Error logs can contain row values (health data)~~ **Database errors fixed 2026-10-02**: only SQLSTATE, table and constraint are logged. Other unexpected errors still log message and stack | Medium | §7 |
 | G8 | No breach and incident response procedure, security contact or support contact | **Blocker** (FTC HBNR readiness; state laws) | §7 |
 | G9 | Post-deletion residue (audit UUIDs, safety events, usage rows, backups, device data) undefined | High | §6 |
 | G10 | Export lacks original files and the list of third-party recipients | Medium–High | §6 |
 | G11 | Web preview mode on by default; public `/preview/inbox` | High (deployment) | §7 |
 | G12 | No App Store privacy manifest (`PrivacyInfo.xcprivacy`) found; no App Privacy "nutrition label" inventory | High (App Store) | — |
 | G13 | Retention periods undecided (health data indefinite; operational defaults are placeholders) | High | §5 |
-| G14 | Exact DOB sent to the AI when age or age range might suffice (data minimisation) | Medium | §4.2 |
+| G14 | ~~Exact DOB sent to the AI~~ **Fixed 2026-10-02**: age in whole years only. Remaining: DOBs printed on uploaded reports (G15) or typed by the user into chat or memories are not redacted | Low | §4.2 |
 | G15 | Report/photo files sent to the AI unredacted (identifiers on documents) | Medium–High | §4.2 |
 | G16 | MapKit search reveals care-seeking intent plus location to Apple; not disclosed | Medium | §3 |
 | G17 | Regulatory status of symptom triage, image "possible causes" and report flags is unassessed (FDA) | **Blocker** for the image and report features until assessed | Checklist §4 |

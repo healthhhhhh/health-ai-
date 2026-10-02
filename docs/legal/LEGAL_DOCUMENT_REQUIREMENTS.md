@@ -79,7 +79,7 @@ Every public document must match the code at the time it is published. Re-check 
    - Apple: APNs, MapKit search, and server-side speech recognition when on-device recognition is unavailable;
    - links out to Google Maps and findahelpline.com.
 5. **What the AI provider receives, in plain words** (Audit §4.2):
-   - for chat: profile details (including DOB, conditions, allergies, medications), selected memories, relevant Apple Health summaries and recent messages;
+   - for chat: profile details (age in whole years — not the date of birth — sex, conditions, allergies, medications), selected memories, relevant Apple Health summaries and recent messages;
    - for reports and photos: the whole file;
    - for emergencies: nothing — handled without AI.
 6. **HealthKit-specific statements** (Apple 5.1.3; HealthKit terms):
@@ -178,7 +178,7 @@ These are needed only if minors are enabled. **None of the underlying features e
 | Default state | Off until granted (`hasConsent` returns false when there's no record) | Keep this |
 | **Who consented** | Not recorded; there is only one account holder | **[if minors]** Record whether the user or a parent/guardian consented, the age group, and the method (VPC method for under-13) |
 | **Consent per purpose for minors** | One switch per feature; some flows (memory, Apple Health in AI) have no separate consent | **[if minors]** Granular, separately revocable consent for each purpose (Checklist §6.5) |
-| **Minors' AI disclosure** | Exact DOB goes to the AI provider | **[if minors]** Age band only; disclose the AI provider by name to parents/teens; review the provider's terms on minors' data **[FACT?]** |
+| **Minors' AI disclosure** | Age in whole years (not the DOB) goes to the AI provider, which still reveals a minor | **[if minors]** Age band only; disclose the AI provider by name to parents/teens; review the provider's terms on minors' data **[FACT?]** |
 
 **Open questions:**
 - Q11. Must consent be re-collected when the AI provider or model family changes?

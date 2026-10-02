@@ -2,7 +2,7 @@ import type { OAuthProvider } from "../auth/oauth";
 import { Inject, Injectable } from "@nestjs/common";
 import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
-import type { AccountAgeBand, AgeStatus } from "../account/age";
+import { completedYears, isCalendarDay, MAX_AGE_YEARS, type AccountAgeBand, type AgeStatus } from "../account/age";
 import { relativeAge } from "../memory/memory-context";
 
 /** Sources a person can attribute a profile fact to. The AI is never one of them. */
@@ -274,7 +274,11 @@ export class ProfileService {
     const today = localDay(profile.timeZone, now);
     const when = (label: string, day: string | null) => (day && DAY.test(day) ? `, ${label} ${day} (${relativeAge(day, today)})` : "");
     const lines: string[] = [];
-    if (profile.dateOfBirth) lines.push(`Date of birth: ${profile.dateOfBirth}`);
+    // Age in whole years, never the date of birth: general health information can depend on
+    // age (screening ages, typical ranges), but nothing needs the exact date, which would only
+    // add identifying detail for the AI provider. Omitted when the date is unusable.
+    const age = ageInYears(profile.dateOfBirth, today);
+    if (age !== null) lines.push(`Age: ${age} years`);
     if (profile.sex) lines.push(`Sex: ${profile.sex}`);
 
     const activeConditions = conditions.filter((c) => c.status === "active");
@@ -292,4 +296,11 @@ export class ProfileService {
     if (past.items.length) lines.push(`Past medications (stopped, not current): ${past.items.map((m) => `${m.name} [${m.source}${when("stopped", m.stoppedOn)}]`).join("; ")}${more(past.hidden)}`);
     return lines.join("\n");
   }
+}
+
+/** Completed years on `today` (the person's local date), or null for a missing, malformed, future or implausible date. */
+export function ageInYears(dateOfBirth: string | null, today: string): number | null {
+  if (!dateOfBirth || !isCalendarDay(dateOfBirth) || dateOfBirth > today) return null;
+  const years = completedYears(dateOfBirth, today);
+  return years > MAX_AGE_YEARS ? null : years;
 }

@@ -48,6 +48,11 @@ export function parseBody<T>(schema: ZodType<T>, body: unknown): T {
   return result.data;
 }
 
+/** A PostgreSQL error code (SQLSTATE), e.g. "23502". */
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+/** Identifiers only (table and constraint names), never values. */
+const SAFE_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
+
 /** Maps every error to the structured shape; unknown errors never leak details. */
 @Catch()
 export class ErrorFilter implements ExceptionFilter {
@@ -73,7 +78,16 @@ export class ErrorFilter implements ExceptionFilter {
       return;
     }
     // Log the error type and stack only — never request bodies (health data).
-    this.logger.error(exception instanceof Error ? `${exception.name}: ${exception.message}` : "Unknown error", exception instanceof Error ? exception.stack : undefined);
+    if (typeof pgCode === "string" && SQLSTATE.test(pgCode)) {
+      // Database errors repeat the values involved in their message, detail and stack ("Failing row
+      // contains (…)", "Key (…)=(…)") — health data, dates of birth. Log only the code and the
+      // table and constraint names, which identify the problem without any values.
+      const { table, constraint } = exception as { table?: unknown; constraint?: unknown };
+      const where = [table, constraint].filter((v): v is string => typeof v === "string" && SAFE_NAME.test(v)).join(", ");
+      this.logger.error(`Database error ${pgCode}${where ? ` (${where})` : ""}`);
+    } else {
+      this.logger.error(exception instanceof Error ? `${exception.name}: ${exception.message}` : "Unknown error", exception instanceof Error ? exception.stack : undefined);
+    }
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: { code: "internal", message: "Something went wrong on our side. Please try again." } });
   }
 }
