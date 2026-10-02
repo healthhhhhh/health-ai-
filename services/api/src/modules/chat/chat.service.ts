@@ -2,7 +2,9 @@ import { escalationMessage, MEDICATION_CHANGE_NOTICE, reviewAssistantText, triag
 import { Inject, Injectable } from "@nestjs/common";
 import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
-import { ProcessingNotPermittedError } from "../account/processing-policy";
+import { MINOR_BANDS, type AgeBand } from "../account/age";
+import { AgeService } from "../account/age.service";
+import { ProcessingNotPermittedError, ProcessingPolicy } from "../account/processing-policy";
 import { AiGateway } from "../ai/ai.gateway";
 import { AiBudgetExceededError, AiDeclinedError, AiInvalidOutputError, AiUnavailableError } from "../ai/ai.types";
 import type { AiMessage } from "../ai/ai.types";
@@ -10,9 +12,9 @@ import { dailyHealthContext, relevantMetrics } from "../health-data/daily-health
 import { HealthDataService } from "../health-data/health-data.service";
 import { renderMemoryContext } from "../memory/memory-retrieval";
 import { MemoryService } from "../memory/memory.service";
-import { localDay, ProfileService } from "../profile/profile.service";
+import { ageInYears, localDay, ProfileService } from "../profile/profile.service";
 import { TimelineService } from "../timeline/timeline.service";
-import { CHAT_SYSTEM_PROMPT, ChatAnswerSchema, contextBlock, REWRITE_NOTE, SAFE_FALLBACK_ANSWER, safetyNotes, type ChatAnswer } from "./chat.prompts";
+import { CHAT_SYSTEM_PROMPT, ChatAnswerSchema, contextBlock, REWRITE_NOTE, SAFE_FALLBACK_ANSWER, safetyNotes, TEEN_NOTE, type ChatAnswer } from "./chat.prompts";
 
 /** What the client renders for an assistant turn. */
 export type AssistantPayload =
@@ -74,6 +76,8 @@ export class ChatService {
     @Inject(MemoryService) private readonly memories: MemoryService,
     @Inject(TimelineService) private readonly timeline: TimelineService,
     @Inject(HealthDataService) private readonly healthData: HealthDataService,
+    @Inject(ProcessingPolicy) private readonly policy: ProcessingPolicy,
+    @Inject(AgeService) private readonly age: AgeService,
   ) {}
 
   /** Renames a conversation (the person's own label; nothing about the content changes). */
@@ -155,12 +159,18 @@ export class ChatService {
     const { profile } = await this.profiles.get(userId);
     const today = localDay(profile.timeZone);
     const metrics = relevantMetrics(text);
-    const [profileSummary, memories, daily] = await Promise.all([
+    const [profileSummary, memories, allDaily, appleHealthAllowed, ageState] = await Promise.all([
       this.profiles.contextSummary(userId, new Date(), text),
       this.memories.relevant(userId, text, today),
       metrics.length ? this.healthData.daily(userId, shiftDay(today, -37), today, metrics) : Promise.resolve([]),
+      // Apple Health data goes to the AI only while Apple Health permission is also current.
+      this.policy.permitted(userId, "health_data_sync"),
+      this.age.state(userId),
     ]);
+    const daily = appleHealthAllowed ? allDaily : allDaily.filter((r) => r.source !== "apple_health");
     const dailyHealth = dailyHealthContext(daily, metrics, today);
+    const profileAge = ageInYears(profile.dateOfBirth, today);
+    const teen = MINOR_BANDS.includes(ageState.ageBand as AgeBand) || (profileAge !== null && profileAge >= 13 && profileAge < 18);
     const context: AnswerContext = {
       memories: memories.map((m) => ({ id: m.id, fact: m.fact, status: m.status, temporalStatus: m.temporalStatus, occurredOn: m.occurredOn ?? null })),
       usedProfile: profileSummary.trim().length > 0,
@@ -169,6 +179,7 @@ export class ChatService {
     const urgent = result.level === "urgent";
     const baseSystem = [
       CHAT_SYSTEM_PROMPT,
+      ...(teen ? [TEEN_NOTE] : []),
       contextBlock({ today, profileSummary, memorySection: renderMemoryContext(memories, today), dailyHealth: dailyHealth.lines }),
       safetyNotes({ urgentReasons: urgent ? result.matchedRules.map((r) => r.reason) : [], medicationChangeRequest: result.medicationChangeRequest }),
     ];

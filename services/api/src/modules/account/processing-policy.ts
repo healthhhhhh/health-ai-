@@ -1,6 +1,8 @@
-import { HttpStatus, Inject, Injectable } from "@nestjs/common";
-import { ApiError } from "../../common/errors";
+import { HttpStatus, Inject, Injectable, Optional } from "@nestjs/common";
+import { ApiError, type ErrorCode } from "../../common/errors";
+import { CONFIG, type AppConfig } from "../../config";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
+import { effectiveAge, eligibilityFor, referenceDay, type AccountAgeBand, type AgeEligibility, type AgeStatus } from "./age";
 
 /** What a person can grant or withdraw (append-only history in `consents`). */
 export type ConsentKind = "ai_processing" | "document_processing" | "health_data_sync" | "voice";
@@ -15,10 +17,22 @@ export type ProcessingPurpose = Exclude<ConsentKind, "voice">;
 
 export const CONSENT_REQUIRED_MESSAGE = "Please review and accept how HealthMate processes this data before continuing.";
 
-/** The person's current consent doesn't cover this processing. Maps to 403 like `requireConsent`. */
+const AGE_MESSAGE: Record<Exclude<AgeEligibility, "eligible">, string> = {
+  age_required: "Add your date of birth to continue.",
+  age_review: "We need to check your age before you can continue. Please contact support.",
+  age_not_eligible: "HealthMate isn't available for your age.",
+};
+
+/**
+ * The person's current consent (or, when enforcing, their age eligibility) doesn't
+ * cover this processing. Maps to 403 like `requireConsent` / the age gate.
+ */
 export class ProcessingNotPermittedError extends ApiError {
-  constructor(readonly purpose: ProcessingPurpose) {
-    super("forbidden", CONSENT_REQUIRED_MESSAGE, HttpStatus.FORBIDDEN);
+  constructor(
+    readonly purpose: ProcessingPurpose,
+    readonly reason: "consent" | Exclude<AgeEligibility, "eligible"> = "consent",
+  ) {
+    super(reason === "consent" ? "forbidden" : (reason as ErrorCode), reason === "consent" ? CONSENT_REQUIRED_MESSAGE : AGE_MESSAGE[reason], HttpStatus.FORBIDDEN);
     this.name = "ProcessingNotPermittedError";
   }
 }
@@ -39,22 +53,49 @@ const lockKey = (userId: string, kind: ConsentKind) => `healthmate.consent:${use
  * write commits first (then the withdrawal sees and handles its result) or the
  * withdrawal commits first (then the write sees it and is refused).
  *
+ * Age: with AGE_ENFORCEMENT=enforce, processing also needs an eligible age state
+ * (`eligibilityFor`), checked at the same moments — so a job queued before an
+ * account was restricted (e.g. found to be under 13) doesn't run afterwards.
+ *
  * Limit: once a request has been handed to an AI provider it can't be recalled.
  * A withdrawal during that window stops the result from being stored, not the
  * provider from receiving the request.
  */
 @Injectable()
 export class ProcessingPolicy {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    // Optional so unit tests can build a policy from a database alone (no age gate).
+    @Optional() @Inject(CONFIG) private readonly config?: Pick<AppConfig, "AGE_ENFORCEMENT" | "enabledAgeBands">,
+  ) {}
 
-  /** The latest consent for this kind; no record means not granted. */
+  /** The latest consent for this kind is a grant (no record means not granted), and the age gate allows processing. */
   async permitted(userId: string, kind: ConsentKind, tx: Queryable = this.db): Promise<boolean> {
-    const { rows } = await tx.query<{ granted: boolean }>(`SELECT granted FROM consents WHERE user_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT 1`, [userId, kind]);
-    return rows[0]?.granted ?? false;
+    return (await this.refusal(userId, kind, tx)) === null;
   }
 
   async assert(userId: string, purpose: ProcessingPurpose, tx: Queryable = this.db): Promise<void> {
-    if (!(await this.permitted(userId, purpose, tx))) throw new ProcessingNotPermittedError(purpose);
+    const reason = await this.refusal(userId, purpose, tx);
+    if (reason) throw new ProcessingNotPermittedError(purpose, reason);
+  }
+
+  private async refusal(userId: string, kind: ConsentKind, tx: Queryable): Promise<ProcessingNotPermittedError["reason"] | null> {
+    const enforcing = this.config?.AGE_ENFORCEMENT === "enforce";
+    const { rows } = await tx.query<{ granted: boolean | null; age_band: AccountAgeBand; age_status: AgeStatus; age_adult_on: string | null }>(
+      `SELECT (SELECT granted FROM consents WHERE user_id = u.id AND kind = $2 ORDER BY created_at DESC LIMIT 1) AS granted,
+              u.age_band, u.age_status, u.age_adult_on::text AS age_adult_on
+         FROM users u WHERE u.id = $1`,
+      [userId, kind],
+    );
+    const row = rows[0];
+    if (!row) return "consent";
+    if (enforcing) {
+      // The stored state plus any birthday since (AgeService records it on the next request).
+      const { status } = effectiveAge({ band: row.age_band, status: row.age_status, adultOn: row.age_adult_on }, referenceDay(), this.config!.enabledAgeBands);
+      const eligibility = eligibilityFor(status);
+      if (eligibility !== "eligible") return eligibility;
+    }
+    return row.granted ? null : "consent";
   }
 
   /**

@@ -2,8 +2,8 @@ import Foundation
 import XCTest
 @testable import HealthMateCore
 
-/// Age & consent Phase 2A: the account, meta and assessment fields decode from new
-/// servers, and older responses (or Preview) without them still decode.
+/// Age contract: the account, meta and assessment fields decode from new servers
+/// (including eligibility enforcement), and older responses (or Preview) without them still decode.
 final class AgeContractTests: XCTestCase {
     private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
         try JSONCoding.makeDecoder().decode(T.self, from: Data(json.utf8))
@@ -16,6 +16,22 @@ final class AgeContractTests: XCTestCase {
         XCTAssertNil(account.ageBand)
         XCTAssertNil(account.ageStatus)
         XCTAssertNil(account.ageAssessedAt)
+        XCTAssertNil(account.ageEligibility)
+        XCTAssertNil(account.ageDeletionScheduledAt)
+    }
+
+    func testAccountWithEligibility() throws {
+        let restricted = try decode(AccountSummary.self, """
+        {"email":"sam@example.com","emailVerified":true,"signInMethods":["password"],"createdAt":"2026-09-30T10:00:00.000Z","onboardingCompleted":true,
+         "ageBand":"under_13","ageStatus":"blocked_under_13","ageAssessedAt":"2026-10-02T12:00:00.000Z","ageEligibility":"age_not_eligible","ageDeletionScheduledAt":"2026-10-05T12:00:00.000Z"}
+        """)
+        XCTAssertEqual(restricted.ageEligibility, .ageNotEligible)
+        XCTAssertNotNil(restricted.ageDeletionScheduledAt)
+        let future = try decode(AccountSummary.self, """
+        {"email":"sam@example.com","emailVerified":true,"signInMethods":[],"createdAt":"2026-09-30T10:00:00.000Z","onboardingCompleted":true,"ageEligibility":"some_new_value"}
+        """)
+        XCTAssertEqual(future.ageEligibility, .unknown)
+        XCTAssertEqual(AgeEligibility.allCases.map(\.rawValue), ["eligible", "age_required", "age_review", "age_not_eligible", "unknown"])
     }
 
     func testAccountWithAgeFields() throws {
@@ -64,6 +80,11 @@ final class AgeContractTests: XCTestCase {
         XCTAssertEqual(result.ageBand, .age13to15)
         XCTAssertEqual(result.ageStatus, .review)
         XCTAssertEqual(result.outcome, "review")
+        XCTAssertNil(result.eligibility)
+
+        let enforced = try decode(AgeAssessment.self, #"{"ageBand":"13_15","ageStatus":"in_scope","assessedAt":"2026-10-02T12:00:00.000Z","outcome":"applied","eligibility":"eligible","deletionScheduledAt":null}"#)
+        XCTAssertEqual(enforced.eligibility, .eligible)
+        XCTAssertNil(enforced.deletionScheduledAt)
     }
 
     func testAssessAgeSendsOnlyTheDateOfBirth() async throws {

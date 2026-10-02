@@ -2,14 +2,16 @@ import { type INestApplication, Logger } from "@nestjs/common";
 import { CONFIG, type AppConfig } from "./config";
 import { DATABASE, type Database } from "./db/database";
 import { AccountService } from "./modules/account/account.service";
+import { AgeService } from "./modules/account/age.service";
 import { AiGateway } from "./modules/ai/ai.gateway";
 import { DocumentsService } from "./modules/documents/documents.service";
 import { pruneOperationalRecords } from "./retention";
 
 /**
  * Periodic housekeeping: marks report/photo processing that was interrupted
- * (crash, deploy) as failed, and completes account deletions that were
- * interrupted part-way, charges AI cost reservations left held by interrupted
+ * (crash, deploy) as failed, completes account deletions that were
+ * interrupted part-way or are due (under-13 accounts, when enforcing age),
+ * charges AI cost reservations left held by interrupted
  * requests, and prunes operational logs past their retention
  * period (never health data). Runs in the worker (or the API when there's no Redis).
  */
@@ -17,6 +19,7 @@ export function startMaintenance(app: INestApplication, intervalMs = 5 * 60_000)
   const logger = new Logger("Maintenance");
   const documents = app.get(DocumentsService);
   const account = app.get(AccountService);
+  const age = app.get(AgeService);
   const ai = app.get(AiGateway);
   const db = app.get<Database>(DATABASE);
   const config = app.get<AppConfig>(CONFIG);
@@ -26,6 +29,8 @@ export function startMaintenance(app: INestApplication, intervalMs = 5 * 60_000)
     running = true;
     try {
       const stuck = await documents.recoverStuck();
+      const scheduled = await age.scheduleUnderThirteenDeletions();
+      if (scheduled) logger.log(`scheduled deletion of ${scheduled} account(s) restricted by age`);
       const deleted = await account.finishPendingDeletions();
       if (stuck || deleted) logger.log(`recovered ${stuck} stuck upload(s), finished ${deleted} deletion(s)`);
       const expired = await ai.expireStaleReservations();

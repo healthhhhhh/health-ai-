@@ -155,7 +155,7 @@ export class ProfileService {
       signInMethods: [...(hasPassword ? (["password"] as const) : []), ...row.identities.map((i) => i.provider)],
       createdAt: row.created_at.toISOString(),
       onboardingCompleted: row.onboarding_completed_at !== null,
-      // Age & consent Phase 2A: recorded only, never enforced in this phase.
+      // As stored; ProfileController applies birthdays and adds eligibility (AgeService).
       ageBand: row.age_band,
       ageStatus: row.age_status,
       ageAssessedAt: row.age_assessed_at?.toISOString() ?? null,

@@ -30,13 +30,15 @@ export async function testDatabase(): Promise<Database> {
 }
 
 /** A full app with a fake AI provider (and, when given, test ID-token verifiers and push provider). */
-export async function createTestContext(options: { env?: Record<string, string>; ai?: FakeAiProvider; idTokenVerifiers?: IdTokenVerifiers; pushProvider?: PushProvider } = {}): Promise<TestContext> {
+export async function createTestContext(
+  options: { env?: Record<string, string>; ai?: FakeAiProvider; idTokenVerifiers?: IdTokenVerifiers; pushProvider?: PushProvider; jobQueue?: JobQueue } = {},
+): Promise<TestContext> {
   const config = loadConfig({ NODE_ENV: "test", PUBLIC_BASE_URL: "http://127.0.0.1", ...options.env } as NodeJS.ProcessEnv);
   const db = await testDatabase();
   await migrate(db);
   const ai = options.ai ?? new FakeAiProvider();
   const storage = new LocalObjectStorage(mkdtempSync(join(tmpdir(), "hm-uploads-")), config.PUBLIC_BASE_URL, config.jwtSecret);
-  const app = await createApp({ config, database: db, aiProvider: ai, storage, idTokenVerifiers: options.idTokenVerifiers, pushProvider: options.pushProvider }, { logger: false });
+  const app = await createApp({ config, database: db, aiProvider: ai, storage, idTokenVerifiers: options.idTokenVerifiers, pushProvider: options.pushProvider, jobQueue: options.jobQueue }, { logger: false });
   const http = request(app.getHttpServer());
   return {
     app,

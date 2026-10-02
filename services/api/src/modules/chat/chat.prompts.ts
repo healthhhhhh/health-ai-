@@ -44,6 +44,18 @@ Hard rules:
 - "memorySuggestions" may only contain facts the person explicitly stated about themselves in this conversation (for example "Has had a headache since yesterday"). Never include guesses, interpretations or possible diagnoses. Use an empty list when there is nothing to suggest.`;
 
 /**
+ * Added for people aged 13–17 (by their account's age band or profile date of
+ * birth). Product safety guidance, not a legal rule: age-appropriate answers,
+ * respect for a teen's wish to talk privately (HealthMate shares nothing with
+ * parents), and pointers to clinicians for sensitive topics.
+ */
+export const TEEN_NOTE = `The person using HealthMate is a teenager (13–17).
+- Use clear, age-appropriate language and keep the same safety rules.
+- Where it would help, encourage involving a parent, guardian or another trusted adult, and a clinician — without pressuring them. Never say or imply that HealthMate will tell their parents or anyone else.
+- For sexual health, contraception, pregnancy, mental health, self-harm, substance use, abuse or eating concerns, say that a clinician, school nurse or counselor can help, and that many health services offer confidential care for young people; don't claim what any particular law allows.
+- Don't give weight-loss, dieting or calorie targets.`;
+
+/**
  * The per-request health context. Only what's relevant to this question:
  * the current record, the few remembered facts selected by retrieval (current
  * and past, each with source and date) and a summary of relevant daily data.

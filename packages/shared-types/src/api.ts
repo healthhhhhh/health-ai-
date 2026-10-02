@@ -19,13 +19,19 @@ export interface AuthResponse extends TokenPair {
 export type RegisterResponse = AuthResponse | { confirmationRequired: true };
 
 /**
- * Age & consent Phase 2A. Age is recorded, never enforced, in this phase:
- * nothing is restricted by band or status. Computed by the server only.
+ * Age bands, computed by the server only. With `AGE_ENFORCEMENT=enforce` (always
+ * in production) only `in_scope` accounts may use health features; the US launch
+ * serves 13_15, 16_17 and adult. Under-13s are never served.
  */
 export type AgeBand = "unknown" | "under_13" | "13_15" | "16_17" | "adult";
-/** `blocked_*` describes the band relative to the enabled bands; it is recorded, not enforced. `review`: a later answer claimed an older band. */
+/** `blocked_*`: the band isn't served (enforced only with `enforce`). `review`: a blocked account claimed an older band; a person must resolve it. */
 export type AgeStatus = "unknown" | "in_scope" | "blocked_under_13" | "blocked_out_of_scope" | "review";
 export type AgeEnforcement = "off" | "record" | "enforce";
+/**
+ * What the server enforces now (always `eligible` unless enforcing). The other
+ * values are also the `error.code` of the 403 a restricted account gets.
+ */
+export type AgeEligibility = "eligible" | "age_required" | "age_review" | "age_not_eligible";
 
 /** Optional self-declared date of birth sent with sign-up or Google sign-in. Never a band. */
 export interface AgeScreen {
@@ -40,14 +46,18 @@ export interface AgeAssessmentResponse {
   ageBand: Exclude<AgeBand, "unknown">;
   ageStatus: Exclude<AgeStatus, "unknown">;
   assessedAt: ISO;
-  /** applied: now the account's band; review: conflicted with a younger band on record, held for review. */
+  /** applied: now the account's band; review: claimed an older band than the one on record, which was kept. */
   outcome: "applied" | "review";
+  /** Absent from older servers. */
+  eligibility?: AgeEligibility;
+  /** Set when the account was found to belong to someone under 13; it is deleted then. Absent from older servers. */
+  deletionScheduledAt?: ISO | null;
 }
 
 export interface ApiMeta {
   apiVersion: number;
   ai: { available: boolean; demo?: boolean };
-  /** Age & consent Phase 2A. Absent from older servers and Preview. `parentalConsent` is always false: it doesn't exist. */
+  /** Absent from older servers and Preview. `parentalConsent` is always false: it doesn't exist. */
   age?: { enforcement: AgeEnforcement; enabledBands: Exclude<AgeBand, "unknown">[]; parentalConsent: false };
   /** Phase 1 Preview mode: sample data, no backend. */
   preview?: boolean;
@@ -508,7 +518,7 @@ export interface OAuthSignInRequest {
   timeZone?: string;
   firstName?: string;
   lastName?: string;
-  /** Optional age screen (Phase 2A), recorded only after the token is verified. */
+  /** Optional age screen, recorded only after the token is verified. With enforcement, an age that isn't served creates no account (403). */
   ageScreen?: AgeScreen;
 }
 
@@ -544,10 +554,13 @@ export interface AccountSummary {
   signInMethods: ("password" | OAuthProvider)[];
   createdAt: ISO;
   onboardingCompleted: boolean;
-  /** Age & consent Phase 2A: recorded, never enforced. Absent from older servers and Preview. */
+  /** Absent from older servers and Preview. */
   ageBand?: AgeBand;
   ageStatus?: AgeStatus;
   ageAssessedAt?: ISO | null;
+  ageEligibility?: AgeEligibility;
+  /** Set when the account was found to belong to someone under 13. */
+  ageDeletionScheduledAt?: ISO | null;
 }
 
 export interface NotificationList {

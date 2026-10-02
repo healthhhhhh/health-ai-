@@ -1,11 +1,12 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Injectable, Logger, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Injectable, Logger, Optional, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AuditService } from "../../common/audit";
-import { AuthGuard, UserId } from "../../common/auth";
+import { AgeExempt, AuthGuard, UserId } from "../../common/auth";
 import { ApiError, notFound, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { CONFIG, type AppConfig } from "../../config";
 import { DATABASE, type Database } from "../../db/database";
+import { AgeService } from "../account/age.service";
 import { JobQueue } from "../documents/job-queue";
 import { decryptToken, encryptToken, inQuietHours, PUSH_PROVIDER, tokenHash, type PushMessage, type PushProvider } from "./push";
 
@@ -35,7 +36,7 @@ const toDevice = (r: DeviceRow): PushDevice => ({
 /** What a lock screen shows when the person hasn't allowed health details there. */
 export const PRIVATE_PUSH = { title: "HealthMate", body: "You have a new notification. Open HealthMate to see it." };
 
-export type DispatchResult = { sent: number; failed: number; invalidated: number } | { skipped: "push_disabled" | "not_found" | "already_read" | "category_off" | "quiet_hours" | "no_devices" };
+export type DispatchResult = { sent: number; failed: number; invalidated: number } | { skipped: "push_disabled" | "not_found" | "already_read" | "category_off" | "quiet_hours" | "no_devices" | "age_restricted" };
 
 /**
  * Push delivery for in-app notifications. The notification row is the source
@@ -54,6 +55,7 @@ export class PushService {
     @Inject(PUSH_PROVIDER) private readonly provider: PushProvider,
     @Inject(JobQueue) private readonly jobs: JobQueue,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Optional() @Inject(AgeService) private readonly age?: AgeService,
   ) {
     this.jobs.register("push-notification", async ({ userId, notificationId }) => {
       await this.dispatch(userId, notificationId);
@@ -124,6 +126,8 @@ export class PushService {
     if (!n) return { skipped: "not_found" };
     if (n.read_at) return { skipped: "already_read" };
     if (!n.enabled) return { skipped: "category_off" };
+    // Accounts restricted by the age gate get no pushes (the notification stays in the app).
+    if (this.age && (await this.age.eligibility(userId)) !== "eligible") return { skipped: "age_restricted" };
     // Quiet hours: the notification waits in the app; no push is sent.
     if (n.quiet_hours_enabled && inQuietHours(now, n.time_zone ?? "UTC", n.quiet_start, n.quiet_end)) return { skipped: "quiet_hours" };
 
@@ -182,9 +186,10 @@ export class DevicesController {
     return this.push.register(userId, parseBody(RegisterDeviceBody, body));
   }
 
-  /** Sign-out on a device: the app sends its own token. */
+  /** Sign-out on a device: the app sends its own token. Allowed whatever the age state. */
   @Delete()
   @HttpCode(204)
+  @AgeExempt()
   @RateLimit("devices-write", 20, 60_000)
   async unregisterToken(@UserId() userId: string, @Body() body: unknown) {
     await this.push.unregisterToken(userId, parseBody(UnregisterDeviceBody, body).token);
@@ -192,6 +197,7 @@ export class DevicesController {
 
   @Delete(":id")
   @HttpCode(204)
+  @AgeExempt()
   @RateLimit("devices-write", 20, 60_000)
   async unregister(@UserId() userId: string, @Param("id", ParseUUIDPipe) id: string) {
     await this.push.unregister(userId, id);

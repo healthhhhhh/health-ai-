@@ -1,5 +1,7 @@
 # HealthMate — Legal Document Requirements and Open Questions
 
+> **2026-10-02:** unpublished drafts of the launch documents, written from the implementation for the US adult-and-teen scope, are in [`policies/`](policies/README.md). They need counsel review and owner facts before publication.
+
 > **Status: requirements only. These are not drafts and must not be published.** A US privacy/healthcare lawyer must draft or approve every public document.
 > Review date: **2026-10-01**. Cross-references: `HEALTHMATE_DATA_FLOW_AUDIT.md` (Audit) and `US_LAUNCH_COMPLIANCE_CHECKLIST.md` (Checklist).
 

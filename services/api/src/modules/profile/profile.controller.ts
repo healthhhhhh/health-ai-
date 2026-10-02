@@ -1,8 +1,9 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from "@nestjs/common";
 import { z } from "zod";
-import { AuthGuard, UserId } from "../../common/auth";
+import { AgeExempt, AuthGuard, UserId } from "../../common/auth";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { parseBody } from "../../common/errors";
+import { AgeService } from "../account/age.service";
 import { ProfileService } from "./profile.service";
 
 const source = z.enum(["user_reported", "clinician_provided", "document_extracted"]).default("user_reported");
@@ -82,16 +83,30 @@ const NotificationPreferencesBody = z
 @UseGuards(AuthGuard, RateLimitGuard)
 @RateLimit("profile", 120, 60_000)
 export class ProfileController {
-  constructor(@Inject(ProfileService) private readonly profiles: ProfileService) {}
+  constructor(
+    @Inject(ProfileService) private readonly profiles: ProfileService,
+    @Inject(AgeService) private readonly age: AgeService,
+  ) {}
 
   @Get()
   get(@UserId() userId: string) {
     return this.profiles.get(userId);
   }
 
+  /** Includes the age state and eligibility, so it stays available to restricted accounts. */
   @Get("account")
-  account(@UserId() userId: string) {
-    return this.profiles.account(userId);
+  @AgeExempt()
+  async account(@UserId() userId: string) {
+    // The age state is read through AgeService so a birthday since the last assessment is applied.
+    const [summary, age] = await Promise.all([this.profiles.account(userId), this.age.state(userId)]);
+    return {
+      ...summary,
+      ageBand: age.ageBand,
+      ageStatus: age.ageStatus,
+      ageAssessedAt: age.assessedAt,
+      ageEligibility: age.eligibility,
+      ageDeletionScheduledAt: age.deletionScheduledAt,
+    };
   }
 
   @Post("onboarding")

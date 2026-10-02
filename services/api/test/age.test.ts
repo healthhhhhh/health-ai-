@@ -25,7 +25,7 @@ describe("age bands (pure)", () => {
   it("uses the wire values shared with web and iOS (packages/shared-types, HealthMateCore AgeBand/AgeStatus)", () => {
     expect([...AGE_BANDS]).toEqual(["under_13", "13_15", "16_17", "adult"]);
     expect([...AGE_STATUSES]).toEqual(["unknown", "in_scope", "blocked_under_13", "blocked_out_of_scope", "review"]);
-    expect([...AGE_SOURCES]).toEqual(["self_declared", "apple_declared_age_range", "app_store_signal", "support", "parent_declared"]);
+    expect([...AGE_SOURCES]).toEqual(["self_declared", "apple_declared_age_range", "app_store_signal", "support", "parent_declared", "birthday"]);
   });
 
   it("counts ages on the earliest calendar date in effect anywhere (UTC−12)", () => {
@@ -72,30 +72,46 @@ describe("age bands (pure)", () => {
   });
 
   it("never lets a later assessment raise the band by itself (review policy)", () => {
-    const adult = ["adult"] as const;
-    expect(decide({ band: "unknown" }, "16_17", adult)).toEqual({ band: "16_17", status: "blocked_out_of_scope", outcome: "applied" });
-    expect(decide({ band: "unknown" }, "under_13", adult)).toEqual({ band: "under_13", status: "blocked_under_13", outcome: "applied" });
-    expect(decide({ band: "unknown" }, "adult", adult)).toEqual({ band: "adult", status: "in_scope", outcome: "applied" });
-    expect(decide({ band: "13_15" }, "adult", adult)).toEqual({ band: "13_15", status: "review", outcome: "review" });
-    expect(decide({ band: "adult" }, "13_15", adult)).toEqual({ band: "13_15", status: "blocked_out_of_scope", outcome: "applied" });
-    expect(decide({ band: "16_17" }, "16_17", adult)).toEqual({ band: "16_17", status: "blocked_out_of_scope", outcome: "applied" });
+    const launch = ["13_15", "16_17", "adult"] as const;
+    const adultOnly = ["adult"] as const;
+    const unknown = { band: "unknown", status: "unknown", adultOn: null } as const;
+    const teen = (band: "13_15" | "16_17", adultOn: string, status: "in_scope" | "blocked_out_of_scope" | "review" = "in_scope") => ({ band, status, adultOn });
+    expect(decide(unknown, { band: "16_17", adultOn: "2027-05-01" }, launch)).toEqual({ band: "16_17", status: "in_scope", adultOn: "2027-05-01", outcome: "applied" });
+    expect(decide(unknown, { band: "16_17", adultOn: "2027-05-01" }, adultOnly)).toMatchObject({ status: "blocked_out_of_scope", outcome: "applied" });
+    expect(decide(unknown, { band: "under_13", adultOn: null }, launch)).toEqual({ band: "under_13", status: "blocked_under_13", adultOn: null, outcome: "applied" });
+    expect(decide(unknown, { band: "adult", adultOn: null }, launch)).toEqual({ band: "adult", status: "in_scope", adultOn: null, outcome: "applied" });
+    // An older claim from an account that's served: it keeps its younger band and access.
+    expect(decide(teen("13_15", "2030-01-01"), { band: "adult", adultOn: null }, launch)).toEqual({ band: "13_15", status: "in_scope", adultOn: "2030-01-01", outcome: "review" });
+    // From a blocked account: held for a person to check, still restricted.
+    expect(decide({ band: "under_13", status: "blocked_under_13", adultOn: null }, { band: "adult", adultOn: null }, launch)).toEqual({ band: "under_13", status: "review", adultOn: null, outcome: "review" });
+    expect(decide(teen("13_15", "2030-01-01", "blocked_out_of_scope"), { band: "adult", adultOn: null }, adultOnly)).toMatchObject({ status: "review", outcome: "review" });
+    // Younger and same-band answers apply; within a band the later date of turning 18 is kept.
+    expect(decide({ band: "adult", status: "in_scope", adultOn: null }, { band: "13_15", adultOn: "2030-01-01" }, launch)).toEqual({ band: "13_15", status: "in_scope", adultOn: "2030-01-01", outcome: "applied" });
+    expect(decide(teen("16_17", "2027-06-01"), { band: "16_17", adultOn: "2027-01-01" }, launch).adultOn).toBe("2027-06-01");
+    expect(decide(teen("16_17", "2027-01-01"), { band: "16_17", adultOn: "2027-06-01" }, launch).adultOn).toBe("2027-06-01");
+    // A consistent answer clears an earlier review.
+    expect(decide({ band: "under_13", status: "review", adultOn: null }, { band: "under_13", adultOn: null }, launch)).toMatchObject({ status: "blocked_under_13", outcome: "applied" });
   });
 });
 
 describe("configuration", () => {
   const config = (env: Record<string, string> = {}) => loadConfig({ NODE_ENV: "test", ...env } as NodeJS.ProcessEnv);
+  const prod = { NODE_ENV: "production", DATABASE_URL: "postgres://x", SUPABASE_URL: "https://x.supabase.co", SUPABASE_PUBLISHABLE_KEY: "p", SUPABASE_SECRET_KEY: "s" };
 
-  it("records by default, with only adults enabled", () => {
-    expect(config()).toMatchObject({ AGE_ENFORCEMENT: "record", enabledAgeBands: ["adult"] });
+  it("records outside production by default, with the US launch bands (13–17 and adults) enabled", () => {
+    expect(config()).toMatchObject({ AGE_ENFORCEMENT: "record", enabledAgeBands: ["13_15", "16_17", "adult"], UNDER_13_DELETION_HOURS: 72 });
     expect(config({ AGE_ENFORCEMENT: "off" }).AGE_ENFORCEMENT).toBe("off");
+    expect(config({ AGE_ENFORCEMENT: "enforce", ENABLED_AGE_BANDS: "adult" })).toMatchObject({ AGE_ENFORCEMENT: "enforce", enabledAgeBands: ["adult"] });
   });
 
-  it("refuses enforcement and minors' bands, which don't exist yet (production included)", () => {
-    expect(() => config({ AGE_ENFORCEMENT: "enforce" })).toThrow(/isn't implemented/);
-    expect(() => config({ ENABLED_AGE_BANDS: "adult,16_17" })).toThrow(/can only be adult/);
-    expect(() => config({ ENABLED_AGE_BANDS: "under_13" })).toThrow(/can only be adult/);
+  it("never enables under-13s, and production always enforces", () => {
+    expect(() => config({ ENABLED_AGE_BANDS: "under_13" })).toThrow(/can't include under_13/);
+    expect(() => config({ ENABLED_AGE_BANDS: "adult,under_13" })).toThrow(/can't include under_13/);
     expect(() => config({ ENABLED_AGE_BANDS: "toddlers" })).toThrow(/unknown band/);
-    expect(() => config({ NODE_ENV: "production", DATABASE_URL: "postgres://x", ENABLED_AGE_BANDS: "13_15", SUPABASE_URL: "https://x.supabase.co", SUPABASE_PUBLISHABLE_KEY: "p", SUPABASE_SECRET_KEY: "s" })).toThrow(/can only be adult/);
+    expect(() => config({ ENABLED_AGE_BANDS: " , " })).toThrow(/at least one band/);
+    expect(loadConfig(prod as unknown as NodeJS.ProcessEnv).AGE_ENFORCEMENT).toBe("enforce");
+    for (const mode of ["record", "off"]) expect(() => loadConfig({ ...prod, AGE_ENFORCEMENT: mode } as unknown as NodeJS.ProcessEnv)).toThrow(/requires AGE_ENFORCEMENT=enforce/);
+    expect(() => loadConfig({ ...prod, ENABLED_AGE_BANDS: "under_13" } as unknown as NodeJS.ProcessEnv)).toThrow(/can't include under_13/);
   });
 });
 
@@ -121,8 +137,8 @@ describe("POST /v1/me/age", () => {
     expect(await stored(user.userId)).toEqual({ age_band: "unknown", age_status: "unknown", assessed: false });
     const cases: [string, string, string][] = [
       [born(18), "adult", "in_scope"],
-      [born(18, 1), "16_17", "blocked_out_of_scope"],
-      [born(16, 1), "13_15", "blocked_out_of_scope"],
+      [born(18, 1), "16_17", "in_scope"],
+      [born(16, 1), "13_15", "in_scope"],
       [born(13, 1), "under_13", "blocked_under_13"],
     ];
     for (const [dateOfBirth, band, status] of cases) {
@@ -161,14 +177,14 @@ describe("POST /v1/me/age", () => {
     expect(await history(user.userId)).toEqual([]);
   });
 
-  it("holds an older band for review instead of upgrading, and a consistent answer clears the review", async () => {
+  it("never upgrades a band from an older claim: a served teen keeps the younger band; a consistent answer applies", async () => {
     const user = await signUp(ctx);
     await ctx.http.post("/v1/me/age").set(user.auth).send({ dateOfBirth: born(14) }).expect(200);
     const upgrade = await ctx.http.post("/v1/me/age").set(user.auth).send({ dateOfBirth: born(30) }).expect(200);
-    expect(upgrade.body).toMatchObject({ ageBand: "13_15", ageStatus: "review", outcome: "review" });
-    expect(await stored(user.userId)).toMatchObject({ age_band: "13_15", age_status: "review" });
+    expect(upgrade.body).toMatchObject({ ageBand: "13_15", ageStatus: "in_scope", outcome: "review" });
+    expect(await stored(user.userId)).toMatchObject({ age_band: "13_15", age_status: "in_scope" });
     const consistent = await ctx.http.post("/v1/me/age").set(user.auth).send({ dateOfBirth: born(14) }).expect(200);
-    expect(consistent.body).toMatchObject({ ageBand: "13_15", ageStatus: "blocked_out_of_scope", outcome: "applied" });
+    expect(consistent.body).toMatchObject({ ageBand: "13_15", ageStatus: "in_scope", outcome: "applied" });
     const younger = await ctx.http.post("/v1/me/age").set(user.auth).send({ dateOfBirth: born(9) }).expect(200);
     expect(younger.body).toMatchObject({ ageBand: "under_13", ageStatus: "blocked_under_13", outcome: "applied" });
     expect((await history(user.userId)).map((h) => `${h.band}:${h.outcome}`)).toEqual(["13_15:applied", "adult:review", "13_15:applied", "under_13:applied"]);
@@ -178,10 +194,10 @@ describe("POST /v1/me/age", () => {
     const user = await signUp(ctx);
     const age = ctx.app.get(AgeService);
     // A history row that can't be written (invalid source) rolls the account update back too.
-    await expect(age.record(user.userId, "adult", "not-a-source" as never)).rejects.toThrow();
+    await expect(age.record(user.userId, { band: "adult", adultOn: null }, "not-a-source" as never)).rejects.toThrow();
     expect(await history(user.userId)).toEqual([]);
     expect(await stored(user.userId)).toEqual({ age_band: "unknown", age_status: "unknown", assessed: false });
-    await expect(age.record(randomUUID(), "adult", "self_declared")).rejects.toMatchObject({ status: 404 });
+    await expect(age.record(randomUUID(), { band: "adult", adultOn: null }, "self_declared")).rejects.toMatchObject({ status: 404 });
     // Concurrent assessments apply one after the other.
     await Promise.all([born(30), born(40), born(14), born(50)].map((dateOfBirth) => ctx.http.post("/v1/me/age").set(user.auth).send({ dateOfBirth }).expect(200)));
     const rows = await history(user.userId);
@@ -204,13 +220,13 @@ describe("POST /v1/me/age", () => {
     const user = await signUp(ctx);
     const other = await signUp(ctx);
     const before = (await ctx.http.get("/v1/me/account").set(user.auth).expect(200)).body;
-    expect(before).toMatchObject({ ageBand: "unknown", ageStatus: "unknown", ageAssessedAt: null });
+    expect(before).toMatchObject({ ageBand: "unknown", ageStatus: "unknown", ageAssessedAt: null, ageEligibility: "eligible", ageDeletionScheduledAt: null });
     await ctx.http.post("/v1/me/age").set(user.auth).send({ dateOfBirth: born(35) }).expect(200);
     await ctx.http.post("/v1/me/age").set(other.auth).send({ dateOfBirth: born(15) }).expect(200);
     const after = (await ctx.http.get("/v1/me/account").set(user.auth).expect(200)).body;
     expect(after).toMatchObject({ ageBand: "adult", ageStatus: "in_scope", ageAssessedAt: expect.any(String) });
 
-    expect((await ctx.http.get("/v1/meta").expect(200)).body.age).toEqual({ enforcement: "record", enabledBands: ["adult"], parentalConsent: false });
+    expect((await ctx.http.get("/v1/meta").expect(200)).body.age).toEqual({ enforcement: "record", enabledBands: ["13_15", "16_17", "adult"], parentalConsent: false });
 
     const exported = (await ctx.http.get("/v1/me/export").set(user.auth).expect(200)).body;
     expect(exported.account).toMatchObject({ age_band: "adult", age_status: "in_scope", age_assessed_at: expect.any(String) });
@@ -218,7 +234,7 @@ describe("POST /v1/me/age", () => {
     expect(JSON.stringify(exported.ageAssessments)).not.toContain("13_15"); // the other person's history isn't included
   });
 
-  it("restricts nothing and deletes nothing by age in this phase", async () => {
+  it("restricts nothing and deletes nothing by age in record mode (enforcement: test/age-eligibility.test.ts)", async () => {
     const user = await signUp(ctx);
     ctx.ai.on("chat", () => chatAnswer());
     await ctx.http.post("/v1/me/conditions").set(user.auth).send({ name: "Synthetic condition" }).expect(201);
@@ -266,7 +282,7 @@ describe("age screen at sign-up", () => {
 
   it("records a valid screen as a self-declared assessment", async () => {
     const res = await register({ ageScreen: { dateOfBirth: born(17) } }).expect(201);
-    expect(await state(res.body.userId)).toEqual({ age_band: "16_17", age_status: "blocked_out_of_scope" });
+    expect(await state(res.body.userId)).toEqual({ age_band: "16_17", age_status: "in_scope" });
     const rows = (await ctx.db.query(`SELECT band, source, outcome FROM age_assessments WHERE user_id = $1`, [res.body.userId])).rows;
     expect(rows).toEqual([{ band: "16_17", source: "self_declared", outcome: "applied" }]);
     // Sign-up itself works exactly as before: the session is usable.
@@ -307,7 +323,7 @@ describe("migration 0015", () => {
       await db.query(`UPDATE profiles SET date_of_birth = '2016-05-01' WHERE user_id = $1`, [minorByProfile]);
       await db.query(`UPDATE profiles SET date_of_birth = '1980-05-01' WHERE user_id = $1`, [adultByProfile]);
 
-      expect(await migrate(db, all)).toEqual(["0015_age_and_consent_foundation.sql"]);
+      expect(await migrate(db, all)).toEqual(["0015_age_and_consent_foundation.sql", "0016_age_eligibility.sql"]);
       const { rows } = await db.query<{ age_band: string; age_status: string; age_assessed_at: Date | null; date_of_birth: string }>(
         `SELECT u.age_band, u.age_status, u.age_assessed_at, p.date_of_birth::text AS date_of_birth FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.id = ANY($1::uuid[]) ORDER BY p.date_of_birth`,
         [[minorByProfile, adultByProfile]],

@@ -11,6 +11,12 @@ export type ErrorCode =
   | "invalid_token"
   | "not_available"
   | "forbidden"
+  /** Age gate (AGE_ENFORCEMENT=enforce): a date of birth is needed first. */
+  | "age_required"
+  /** Age gate: the account's age is waiting for a person to check it. */
+  | "age_review"
+  /** Age gate: HealthMate doesn't serve this age (under 13, or a band not enabled). */
+  | "age_not_eligible"
   | "not_found"
   | "conflict"
   | "plan_conflict"

@@ -264,6 +264,15 @@ These are code-level controls only. They are **not** a security guarantee, certi
 
 ## 8. Age handling: actual implementation status [CODE]
 
+**Update 2026-10-02 (later) — server-side eligibility enforcement for the US launch scope (adults and 13–17; under-13 excluded).** Migration `0016_age_eligibility.sql`; `age.ts`, `age.service.ts`, `common/auth.ts`, `processing-policy.ts`; tests in `test/age-eligibility.test.ts`. What now holds in code:
+- With `AGE_ENFORCEMENT=enforce` (production's default and only accepted value) **every authenticated route refuses accounts that aren't `in_scope`** (403 `age_required` / `age_review` / `age_not_eligible`), except account controls marked `@AgeExempt()` (age, account summary, consents, export, deletion, password, sign-in identities, device sign-out). `ProcessingPolicy` repeats the check when work executes (AI gateway, report/photo jobs, Apple Health sync, embeddings), and push delivery skips restricted accounts.
+- **Legacy sign-up paths** (no age screen; Google sign-in; Supabase sign-ups that bypass the API) leave the account `unknown`, which is restricted until a date of birth is given.
+- **Under 13:** refused before account creation at sign-up and first Google sign-in (nothing stored). An existing account assessed under 13 is restricted at once, its queued analyses are stopped and it is deleted after `UNDER_13_DELETION_HOURS` (default 72, placeholder) by the maintenance sweep; pre-enforcement under-13 records are scheduled by the same sweep. Findings 3 and 6 below are superseded for enforcement mode.
+- **Inconsistent claims:** an older band never applies by itself. A served teen keeps the younger band; a blocked account goes to `review` and stays restricted (no unlock by re-entering a date).
+- **Birthdays:** for 13–17 only, `users.age_adult_on` (DOB-equivalent; never sent to AI or logged; exported; deleted with the account) moves the band on birthdays, recorded as source `birthday`.
+- **Teens:** chat adds a fixed teen note (age-appropriate answers; HealthMate shares nothing with parents; clinicians and confidential services for sensitive topics). Finding 8 is partly addressed for chat only; report and photo prompts and the triage rules are unchanged and still need clinical review.
+- **Still missing** (client work and legal decisions, not code-only fixes): no client asks for a date of birth or handles the 403s; no Apple Declared Age Range / app-store parental-consent handling (finding 5); no support tool to resolve `review`; no parent concept (finding 7, by design for this launch).
+
 **Update 2026-10-02 — age & consent Phase 2A (recording only).** The backend can now *record* an age band, but nothing uses it to restrict, route or protect anyone:
 - Migration `0015_age_and_consent_foundation.sql` adds `users.age_band`, `age_status` and `age_assessed_at`. Every existing account is `unknown`, and nothing is inferred from `profiles.date_of_birth`.
 - The append-only `age_assessments` table records band, source, outcome and time, and stores no date of birth. Clients can read their own rows but cannot write them (RLS).
@@ -320,14 +329,14 @@ The product already makes these statements. Each must be true at launch or be re
 
 | # | Gap | Severity for launch | Section |
 |---|---|---|---|
-| G1 | No age-based controls (no age gate in any client, no app-store signal handling, no parental consent, no parent accounts). Since 2026-10-02 the backend can *record* a self-declared age band (recording only). | **Blocker** for every launch option; minors need more (Checklist §6.8) | §8 |
-| G2 | Terms, Privacy Policy and Consumer Health Data Privacy Policy do not exist; links are placeholders; acceptance is not recorded | **Blocker** | §9 |
+| G1 | ~~No age-based controls~~ **Server-side eligibility enforced since 2026-10-02** (adults and 13–17; under-13 refused/deleted; unknown ages restricted). Still missing: the client age screen and 403 handling, app-store age signals and parental consent (iOS: TX, UT, LA), a support tool for `review`. | **Blocker** for every launch option; minors need more (Checklist §6.8) | §8 |
+| G2 | Terms, Privacy Policy and Consumer Health Data Privacy Policy exist only as **unpublished drafts** (`docs/legal/policies/`, 2026-10-02) pending counsel and owner facts; links are placeholders; acceptance is not recorded | **Blocker** | §9 |
 | G3 | AI provider not named in consent; iOS onboarding consent omits external sharing; no separate collection vs. sharing consent | **Blocker** (Apple 5.1.2(i); state health-data laws) | §4.2 |
-| G4 | HealthKit-derived data sent to the AI provider without HealthKit-specific disclosure or permission | **Blocker** for an App Store build with HealthKit plus AI | §4.2 |
+| G4 | HealthKit-derived data sent to the AI provider without HealthKit-specific disclosure. *Since 2026-10-02 it is sent only while `health_data_sync` permission is also current; the disclosure itself is drafted (policy 04) but not shown in the clients.* | **Blocker** for an App Store build with HealthKit plus AI | §4.2 |
 | G5 | AI provider contract, retention and training terms not reviewed; no BAA/DPA analysis | **Blocker** before real health data is sent to any external AI | §3 |
 | G6 | ~~Consent withdrawal does not stop queued document jobs~~ **Fixed 2026-10-02** (execution-time checks). Remaining: in-flight provider calls can't be recalled. | Resolved; limitation documented | §4.2 |
 | G7 | ~~Error logs can contain row values (health data)~~ **Database errors fixed 2026-10-02**: only SQLSTATE, table and constraint are logged. Other unexpected errors still log message and stack | Medium | §7 |
-| G8 | No breach and incident response procedure, security contact or support contact | **Blocker** (FTC HBNR readiness; state laws) | §7 |
+| G8 | Breach and incident procedure **drafted** (policy 08, internal); no security contact, support contact or rotation runbook yet | **Blocker** (FTC HBNR readiness; state laws) | §7 |
 | G9 | Post-deletion residue (audit UUIDs, safety events, usage rows, backups, device data) undefined | High | §6 |
 | G10 | Export lacks original files and the list of third-party recipients | Medium–High | §6 |
 | G11 | Web preview mode on by default; public `/preview/inbox` | High (deployment) | §7 |

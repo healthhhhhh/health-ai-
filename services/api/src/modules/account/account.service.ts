@@ -31,7 +31,7 @@ export class AccountService {
   async export(userId: string) {
     const q = async (sql: string) => (await this.db.query(sql, [userId])).rows;
     const sections = {
-      account: q(`SELECT email, email_verified_at, created_at, age_band, age_status, age_assessed_at FROM users WHERE id = $1`),
+      account: q(`SELECT email, email_verified_at, created_at, age_band, age_status, age_assessed_at, age_adult_on::text AS age_adult_on, age_deletion_due_at FROM users WHERE id = $1`),
       // How the age band was assessed (no dates of birth are kept here).
       ageAssessments: q(`SELECT band, source, outcome, created_at FROM age_assessments WHERE user_id = $1 ORDER BY created_at`),
       signInIdentities: q(`SELECT provider, email, created_at, last_sign_in_at FROM auth_identities WHERE user_id = $1 ORDER BY created_at`),
@@ -137,8 +137,18 @@ export class AccountService {
     await this.purge(userId);
   }
 
-  /** Completes deletions that were requested but interrupted. Returns how many finished. */
+  /**
+   * Completes deletions that were requested but interrupted, and deletes accounts
+   * found to belong to someone under 13 once their deletion is due (AgeService).
+   * Returns how many finished.
+   */
   async finishPendingDeletions(olderThanMinutes = 10): Promise<number> {
+    const due = await this.db.query<{ id: string }>(
+      // Backdated so this sweep picks them up below.
+      `UPDATE users SET deletion_requested_at = now() - make_interval(mins => $1 + 1) WHERE age_deletion_due_at <= now() AND deletion_requested_at IS NULL RETURNING id`,
+      [olderThanMinutes],
+    );
+    for (const { id } of due.rows) await this.audit.log("account.delete_requested", id, { reason: "age" });
     const { rows } = await this.db.query<{ id: string }>(
       `SELECT id FROM users WHERE deletion_requested_at < now() - make_interval(mins => $1) LIMIT 50`,
       [olderThanMinutes],

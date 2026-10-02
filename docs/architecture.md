@@ -117,30 +117,51 @@ feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► 
     $0.33 of the $5 month is unusable for routine chat. This is kept on purpose: reserving less would
     let concurrent requests overrun the limit. Lowering a task's `maxOutputTokens` or routing it to a
     cheaper model is the safe way to shrink this margin.
-- **Age & consent Phase 2A: age is recorded, never enforced** (`modules/account/age.ts`, `age.service.ts`,
-  migration `0015`).
+- **Age eligibility** (`modules/account/age.ts`, `age.service.ts`, migrations `0015`–`0016`). The US
+  launch serves 13–15, 16–17 and adults; under-13s are never served (no parental consent exists).
   - **Account state.** `users.age_band` (`unknown`, `under_13`, `13_15`, `16_17`, `adult`), `age_status`
-    (`unknown`, `in_scope`, `blocked_under_13`, `blocked_out_of_scope`, `review`) and `age_assessed_at`.
-    Existing and API-bypassing accounts are `unknown`. `profiles.date_of_birth` is never used to infer a band.
-  - **History.** `age_assessments` (band, source, outcome, time; no date of birth) is append-only. It is
-    readable by its owner and written only by the API (RLS); clients can't write age state at all.
+    (`unknown`, `in_scope`, `blocked_under_13`, `blocked_out_of_scope`, `review`), `age_assessed_at`,
+    `age_adult_on` (13–17 only: the date they turn 18, so the band follows birthdays; DOB-equivalent, never
+    sent to AI or logged) and `age_deletion_due_at` (under-13 accounts). Existing and API-bypassing
+    accounts are `unknown`. `profiles.date_of_birth` is never used to infer a band.
+  - **History.** `age_assessments` (band, source, outcome, time; no date of birth) is append-only, readable
+    by its owner and written only by the API (RLS). Source `birthday` marks an automatic band change.
   - **Calculation.** `POST /v1/me/age { dateOfBirth }` computes the band on the server. Ages are counted on
     today's date at UTC−12, the earliest date anywhere, so nobody is counted older than they are. A
     29 February birthday counts on 1 March in other years. Invalid, future and over-130-year dates are
     refused with no echo of the value. The body is strict: a band, status or app-store signal is refused,
     because signals can't be verified server-side yet.
-  - **Review policy.** The same or a younger band is applied. An older band than the one on record is
-    kept as history but sets `review`, because without a stored date of birth the API can't tell a
-    birthday from an edited date. History and account update in one transaction under a row lock.
-  - **Sign-up.** An optional `ageScreen { dateOfBirth }` on register and Google sign-in is validated
-    before any account is created and recorded once a session exists. If recording fails, the account
-    stays `unknown` (no partial history). Supabase email-confirmation sign-ups don't record it, because
-    nothing proves the request created the account.
-  - **Exposure.** The account response has `ageBand`, `ageStatus` and `ageAssessedAt`; `/v1/meta` has
-    `age { enforcement, enabledBands, parentalConsent: false }`; the export has the current state and the
-    history.
-  - **Configuration fails closed.** `AGE_ENFORCEMENT` is `record` (default) or `off`; `enforce` is refused.
-    `ENABLED_AGE_BANDS` can only be `adult`. Nothing restricts, routes or deletes anyone by age.
+  - **Inconsistent answers.** The same or a younger band is applied (within a band, the later date of
+    turning 18 is kept). An older band is never applied by itself: a served account keeps its younger band
+    and access (outcome `review` in the history); a blocked account becomes `review` and stays restricted
+    until a person resolves it, so retrying with another date after a block unlocks nothing.
+  - **Enforcement** (`AGE_ENFORCEMENT=enforce`; the default and only value accepted in production). Only
+    `in_scope` accounts are eligible. `AuthGuard` refuses every authenticated route with 403
+    `age_required` (unknown age), `age_review` or `age_not_eligible`, except routes marked `@AgeExempt()`:
+    `POST /v1/me/age`, `GET /v1/me/account`, consents, export, account deletion, password change,
+    sign-in identities and device sign-out. New routes are restricted by default. `ProcessingPolicy`
+    applies the same check when work executes (AI gateway, report/photo jobs, Apple Health sync, memory
+    embeddings), and push delivery skips restricted accounts.
+  - **Under 13.** An age screen showing under 13 at sign-up or a first Google sign-in is refused before any
+    account exists (nothing is stored). An existing account assessed under 13 is restricted at once, its
+    queued analyses are stopped, and it is deleted after `UNDER_13_DELETION_HOURS` (default 72,
+    placeholder pending legal review) by the maintenance sweep; under-13 accounts recorded before
+    enforcement was on are scheduled by the same sweep.
+  - **Sign-up.** The optional `ageScreen { dateOfBirth }` on register and Google sign-in is validated
+    before any account is created and recorded once a session exists. Without it (older clients) the
+    account is `unknown` and restricted until the person gives a date of birth. Supabase
+    email-confirmation sign-ups don't record it, because nothing proves the request created the account.
+  - **Teens.** Same data isolation as everyone (no parent or guardian access exists). Chat adds a fixed
+    teen note to the system prompt (age-appropriate answers; HealthMate shares nothing with parents;
+    clinicians and confidential services for sensitive topics). Report and photo prompts are unchanged.
+  - **Exposure.** The account response has `ageBand`, `ageStatus`, `ageAssessedAt`, `ageEligibility` and
+    `ageDeletionScheduledAt`; `/v1/meta` has `age { enforcement, enabledBands, parentalConsent: false }`;
+    the export has the current state (including `age_adult_on`) and the history.
+  - **Clients.** No client asks for a date of birth or handles the `age_*` 403s yet; the deterministic
+    on-device emergency check runs before any request, so emergency guidance doesn't depend on the server.
+- **AI context minimisation.** The profile summary sends the age in whole years, never the date of birth.
+  Apple Health-derived daily data goes to the AI only while `health_data_sync` permission is current, as
+  well as `ai_processing`.
 - **Consent at execution time** (`ProcessingPolicy`, `modules/account/processing-policy.ts`):
   every piece of server-side processing is checked against the person's *latest* consent when it
   runs, not only when it was requested.

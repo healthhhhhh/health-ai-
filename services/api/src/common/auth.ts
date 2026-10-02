@@ -1,22 +1,39 @@
-import { CanActivate, createParamDecorator, ExecutionContext, Inject, Injectable } from "@nestjs/common";
+import { CanActivate, createParamDecorator, ExecutionContext, Inject, Injectable, SetMetadata } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { unauthorized } from "./errors";
 import { DATABASE, type Database } from "../db/database";
 import { IDENTITY, type IdentityProvider } from "../modules/auth/identity";
+import { AgeService } from "../modules/account/age.service";
 
 export interface AuthedRequest extends Request {
   userId?: string;
 }
 
+const AGE_EXEMPT = "healthmate:ageExempt";
+
+/**
+ * Marks a route (or controller) that an account may use whatever its age state:
+ * telling us an age, consents, export, deletion and sign-in security. Everything
+ * else is restricted while the age gate refuses the account, so a new route is
+ * restricted unless it opts out here.
+ */
+export const AgeExempt = () => SetMetadata(AGE_EXEMPT, true);
+
 /**
  * Requires a valid access token (local or Supabase) for an account that still
  * exists. Every health route uses it; each query then filters by this user id.
+ * With AGE_ENFORCEMENT=enforce it also refuses (403 `age_required`,
+ * `age_review` or `age_not_eligible`) accounts that aren't eligible, except on
+ * `@AgeExempt()` routes.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     @Inject(IDENTITY) private readonly identity: IdentityProvider,
     @Inject(DATABASE) private readonly db: Database,
+    @Inject(Reflector) private readonly reflector: Reflector,
+    @Inject(AgeService) private readonly age: AgeService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -29,6 +46,9 @@ export class AuthGuard implements CanActivate {
     const { rows } = await this.db.query<{ id: string }>(`SELECT id FROM users WHERE id = $1`, [userId]);
     if (!rows[0]) throw unauthorized();
     req.userId = userId;
+    if (this.age.enforcing && !this.reflector.getAllAndOverride<boolean>(AGE_EXEMPT, [context.getHandler(), context.getClass()])) {
+      await this.age.assertEligible(userId);
+    }
     return true;
   }
 }

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { parsePrices, type ModelPrice } from "./modules/ai/ai.pricing";
-import { AGE_BANDS, AGE_ENFORCEMENT_MODES, type AgeBand } from "./modules/account/age";
+import { AGE_BANDS, AGE_ENFORCEMENT_MODES, type AgeBand, type AgeEnforcement } from "./modules/account/age";
 import { parseRoutes, type AiProviderName, type AiRoutes } from "./modules/ai/ai.routing";
 
 const optionalUrl = z.string().url().optional();
@@ -86,13 +86,21 @@ const schema = z.object({
   /** Longest wait for one AI provider call (ms). A timed-out call is charged its reserved worst case. */
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(900_000).default(240_000),
   /**
-   * Age & consent Phase 2A. `record`: the API records age assessments (POST /v1/me/age,
-   * optional age screen at sign-up) and restricts nothing. `off`: it records nothing.
-   * `enforce` doesn't exist yet and is refused.
+   * `enforce`: only accounts whose age band is enabled may use health features; an
+   * unknown age must be given first (POST /v1/me/age) and under-13 accounts are
+   * restricted and deleted after UNDER_13_DELETION_HOURS. `record`: assessments are
+   * recorded and nothing is restricted. `off`: nothing is recorded. Production
+   * accepts only `enforce` (its default).
    */
-  AGE_ENFORCEMENT: z.enum(AGE_ENFORCEMENT_MODES).default("record"),
-  /** Age bands the product serves (comma-separated). Only `adult` until minors' features exist. */
-  ENABLED_AGE_BANDS: z.string().default("adult"),
+  AGE_ENFORCEMENT: z.enum(AGE_ENFORCEMENT_MODES).optional(),
+  /** Age bands served (comma-separated). The US launch: 13_15,16_17,adult. under_13 can't be enabled. */
+  ENABLED_AGE_BANDS: z.string().default("13_15,16_17,adult"),
+  /**
+   * How long an account found to belong to someone under 13 is kept (restricted
+   * and unprocessed) before deletion, so a mistyped date can be raised with support.
+   * Placeholder pending legal review.
+   */
+  UNDER_13_DELETION_HOURS: z.coerce.number().int().min(0).max(24 * 30).default(72),
   /** Error reporting. Events are scrubbed of health content before sending. */
   SENTRY_DSN: optionalUrl,
 
@@ -114,7 +122,9 @@ const schema = z.object({
 
 type Env = z.infer<typeof schema>;
 
-export type AppConfig = Env & {
+export type AppConfig = Omit<Env, "AGE_ENFORCEMENT"> & {
+  /** Resolved: `enforce` by default in production, `record` elsewhere. */
+  AGE_ENFORCEMENT: AgeEnforcement;
   jwtSecret: string;
   aiEnabled: boolean;
   aiProvider: "anthropic" | "development" | "none";
@@ -174,15 +184,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (authProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_PUBLISHABLE_KEY || !cfg.SUPABASE_SECRET_KEY, "Supabase Auth needs SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY");
   if (storageProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY, "Supabase Storage needs SUPABASE_URL and SUPABASE_SECRET_KEY");
   if (embeddingsProvider === "supabase") need(!cfg.SUPABASE_URL || !cfg.SUPABASE_SECRET_KEY || !cfg.EMBED_FUNCTION_SECRET, "Supabase embeddings need SUPABASE_URL, SUPABASE_SECRET_KEY and EMBED_FUNCTION_SECRET");
-  // Fail closed: age is recorded, never enforced, and no minors' features or parental consent exist.
-  need(cfg.AGE_ENFORCEMENT === "enforce", "AGE_ENFORCEMENT=enforce isn't implemented yet: age is only recorded (use record or off)");
+  const ageEnforcement = cfg.AGE_ENFORCEMENT ?? (production ? "enforce" : "record");
   const enabledAgeBands = [...new Set(cfg.ENABLED_AGE_BANDS.split(",").map((b) => b.trim()).filter(Boolean))];
   need(enabledAgeBands.some((b) => !(AGE_BANDS as readonly string[]).includes(b)), `ENABLED_AGE_BANDS: unknown band (bands: ${AGE_BANDS.join(", ")})`);
-  need(
-    enabledAgeBands.length !== 1 || enabledAgeBands[0] !== "adult",
-    "ENABLED_AGE_BANDS can only be adult: features and parental consent for minors aren't implemented",
-  );
+  need(enabledAgeBands.length === 0, "ENABLED_AGE_BANDS needs at least one band");
+  // Fail closed: serving under-13s needs verifiable parental consent, which doesn't exist.
+  need(enabledAgeBands.includes("under_13"), "ENABLED_AGE_BANDS can't include under_13: parental consent isn't implemented");
   if (production) {
+    need(ageEnforcement !== "enforce", "Production requires AGE_ENFORCEMENT=enforce");
     need(!cfg.DATABASE_URL, "DATABASE_URL is required in production");
     need(storageProvider === "local", "Production must use Supabase Storage (STORAGE_PROVIDER=supabase)");
     need(embeddingsProvider === "hash", "The hash embeddings provider is for development only");
@@ -191,6 +200,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   return {
     ...cfg,
+    AGE_ENFORCEMENT: ageEnforcement,
     // Dev/test only: a random per-process secret (local sessions reset on restart).
     jwtSecret: cfg.JWT_SECRET ?? randomBytes(48).toString("base64url"),
     aiEnabled: aiProvider !== "none",

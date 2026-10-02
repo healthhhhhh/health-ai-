@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
-import { AuthGuard, UserId } from "../../common/auth";
+import { AgeExempt, AuthGuard, UserId } from "../../common/auth";
 import { ApiError, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { ID_TOKEN_VERIFIERS, type IdTokenVerifiers } from "../auth/oauth";
@@ -19,8 +19,10 @@ const DeleteBody = z.union([
 export const AgeBody = z.strictObject({ dateOfBirth: z.string().max(10) });
 const ConsentBody = z.object({ kind: z.enum(["ai_processing", "document_processing", "health_data_sync", "voice"]), granted: z.boolean() });
 
+/** Age, consents, export and deletion stay available whatever the account's age state (`@AgeExempt`). */
 @Controller("v1/me")
 @UseGuards(AuthGuard, RateLimitGuard)
+@AgeExempt()
 export class AccountController {
   constructor(
     @Inject(AccountService) private readonly account: AccountService,
@@ -28,7 +30,7 @@ export class AccountController {
     @Inject(AgeService) private readonly age: AgeService,
   ) {}
 
-  /** Records a self-declared date of birth as an age band (recording only; nothing is restricted). */
+  /** Records a self-declared date of birth as an age band; with enforcement, decides what the account may use. */
   @Post("age")
   @HttpCode(200)
   @RateLimit("age", 20, 60 * 60_000)

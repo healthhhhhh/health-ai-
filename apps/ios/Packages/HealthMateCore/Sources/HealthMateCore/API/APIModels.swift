@@ -44,12 +44,12 @@ public struct APIMeta: Codable, Sendable {
         /// Scripted demo answers, not a real model (demo server only).
         public let demo: Bool?
     }
-    /// Age & consent Phase 2A: how the server handles age. Recorded at most, never enforced yet.
+    /// How the server handles age. With "enforce" (production) only in-scope accounts may use health features.
     public struct Age: Codable, Sendable {
-        /// "off", "record" or (not implemented) "enforce".
+        /// "off", "record" or "enforce".
         public let enforcement: String
         public let enabledBands: [AgeBand]
-        /// Always false: parental consent doesn't exist yet.
+        /// Always false: parental consent doesn't exist (under-13s are never served).
         public let parentalConsent: Bool
     }
     public let apiVersion: Int
@@ -60,7 +60,7 @@ public struct APIMeta: Codable, Sendable {
     public var age: Age? = nil
 }
 
-// MARK: Age (age & consent Phase 2A — recorded only, never enforced)
+// MARK: Age (computed by the server; enforced when the server's age enforcement is "enforce")
 
 /// An account's age band, computed by the server. Values this app doesn't know decode as `.unknown`.
 public enum AgeBand: String, Codable, Sendable, CaseIterable {
@@ -76,7 +76,7 @@ public enum AgeBand: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// Where the band sits relative to the bands the product serves. Recorded, not enforced.
+/// Where the band sits relative to the bands the product serves.
 /// Values this app doesn't know decode as `.unknown`.
 public enum AgeStatus: String, Codable, Sendable, CaseIterable {
     case unknown
@@ -91,13 +91,32 @@ public enum AgeStatus: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// What the server enforces now. The restricted values are also the `error.code` of the
+/// 403 a restricted account gets. Values this app doesn't know decode as `.unknown`.
+public enum AgeEligibility: String, Codable, Sendable, CaseIterable {
+    case eligible
+    case ageRequired = "age_required"
+    case ageReview = "age_review"
+    case ageNotEligible = "age_not_eligible"
+    case unknown
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = AgeEligibility(rawValue: raw) ?? .unknown
+    }
+}
+
 /// `POST /v1/me/age` result. The band is the server's; the client only sends a date of birth.
 public struct AgeAssessment: Codable, Equatable, Sendable {
     public let ageBand: AgeBand
     public let ageStatus: AgeStatus
     public let assessedAt: Date
-    /// "applied", or "review" when it conflicted with a younger band on record.
+    /// "applied", or "review" when it claimed an older band than the one on record (which was kept).
     public let outcome: String
+    /// `nil` from older servers.
+    public var eligibility: AgeEligibility? = nil
+    /// Set when the account was found to belong to someone under 13; it is deleted then.
+    public var deletionScheduledAt: Date? = nil
 }
 
 // MARK: Profile
@@ -140,10 +159,13 @@ public struct AccountSummary: Codable, Equatable, Sendable {
     public let signInMethods: [String]
     public let createdAt: Date
     public let onboardingCompleted: Bool
-    /// Age & consent Phase 2A (recorded, never enforced). `nil` from older servers and Preview.
+    /// `nil` from older servers and Preview.
     public var ageBand: AgeBand? = nil
     public var ageStatus: AgeStatus? = nil
     public var ageAssessedAt: Date? = nil
+    public var ageEligibility: AgeEligibility? = nil
+    /// Set when the account was found to belong to someone under 13.
+    public var ageDeletionScheduledAt: Date? = nil
 }
 
 /// A device registered for push notifications (`/v1/me/devices`, Phase 2D).

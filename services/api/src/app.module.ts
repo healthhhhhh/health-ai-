@@ -61,7 +61,7 @@ class HealthController {
     return {
       apiVersion: 1,
       ai: { available: this.ai.available, demo: this.ai.demo },
-      // Age & consent Phase 2A: age is recorded at most, never enforced; no minors' features or parental consent exist.
+      // `enforce`: only enabled bands may use health features. Under-13s are never served; no parental consent exists.
       age: { enforcement: this.config.AGE_ENFORCEMENT, enabledBands: this.config.enabledAgeBands, parentalConsent: false },
     };
   }

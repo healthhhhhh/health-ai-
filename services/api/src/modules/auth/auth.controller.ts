@@ -1,21 +1,25 @@
 import { Body, Controller, Delete, Headers, HttpCode, HttpStatus, Inject, Param, Post, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
-import { AuthGuard, UserId } from "../../common/auth";
+import { AgeExempt, AuthGuard, UserId } from "../../common/auth";
 import { ApiError, parseBody } from "../../common/errors";
 import { RateLimit, RateLimitGuard } from "../../common/rate-limit";
 import { CONFIG, type AppConfig } from "../../config";
-import { AgeService } from "../account/age.service";
-import type { AgeBand } from "../account/age";
+import { AgeService, type Assessed } from "../account/age.service";
+import { DATABASE, type Database } from "../../db/database";
 import { IDENTITY, type IdentityProvider } from "./identity";
-import { providerName } from "./identity-links";
+import { findLinkedUser, providerName } from "./identity-links";
 import { ID_TOKEN_VERIFIERS, type IdTokenVerifiers, type OAuthProvider } from "./oauth";
 
 const email = z.string().trim().email().max(254);
 /** NIST 800-63B: length over composition rules; long passphrases allowed. */
 const password = z.string().min(8).max(256);
 
-/** Optional self-declared date of birth sent with sign-up (age & consent Phase 2A). */
+/**
+ * Optional self-declared date of birth sent with sign-up. With AGE_ENFORCEMENT=enforce,
+ * an age HealthMate doesn't serve is refused before an account exists; without a
+ * screen the account starts with an unknown age and is restricted until one is given.
+ */
 const AgeScreen = z.strictObject({ dateOfBirth: z.string().max(10) }).optional();
 const RegisterBody = z.object({
   ageScreen: AgeScreen,
@@ -61,18 +65,20 @@ export class AuthController {
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(ID_TOKEN_VERIFIERS) private readonly verifiers: IdTokenVerifiers,
     @Inject(AgeService) private readonly age: AgeService,
+    @Inject(DATABASE) private readonly db: Database,
   ) {}
 
   /** Validates an optional age screen before any account is created (400 if it can't be used). */
-  private screenBand(screen: { dateOfBirth: string } | undefined): AgeBand | null {
-    return screen && this.age.recording ? this.age.bandFor(screen.dateOfBirth) : null;
+  private screen(screen: { dateOfBirth: string } | undefined): Assessed | null {
+    return screen && this.age.recording ? this.age.assess(screen.dateOfBirth) : null;
   }
 
   @Post("register")
   @RateLimit("auth-register", 5, 60_000)
   async register(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
     const { ageScreen, ...input } = parseBody(RegisterBody, body);
-    const band = this.screenBand(ageScreen);
+    const assessed = this.screen(ageScreen);
+    if (assessed) this.age.assertCanSignUp(assessed);
     const result = await this.identity.register(input);
     if ("confirmationRequired" in result) {
       // Supabase projects with email confirmation: no session until the link is clicked.
@@ -83,7 +89,7 @@ export class AuthController {
       res.status(HttpStatus.ACCEPTED);
       return { confirmationRequired: true };
     }
-    if (band) await this.age.recordScreen(result.userId, band);
+    if (assessed) await this.age.recordScreen(result.userId, assessed);
     return { userId: result.userId, ...result.tokens };
   }
 
@@ -114,6 +120,7 @@ export class AuthController {
   @Post("change-password")
   @HttpCode(204)
   @UseGuards(AuthGuard)
+  @AgeExempt()
   @RateLimit("auth-change-password", 5, 60_000)
   async changePassword(@UserId() userId: string, @Body() body: unknown, @Headers("authorization") authorization?: string) {
     const { currentPassword, newPassword } = parseBody(ChangePasswordBody, body);
@@ -153,8 +160,11 @@ export class AuthController {
     const input = parseBody(OAuthBody, body);
     const verifier = this.verifiers[input.provider];
     if (!verifier || !input.idToken) throw notAvailable(input.provider);
-    const band = this.screenBand(input.ageScreen);
+    const assessed = this.screen(input.ageScreen);
     const identity = await verifier.verify(input.idToken, input.nonce);
+    // A first sign-in with an age that isn't served creates nothing. An existing account
+    // signs in as usual and the answer is recorded (which restricts it when enforcing).
+    if (assessed && !(await findLinkedUser(this.db, identity.provider, identity.subject))) this.age.assertCanSignUp(assessed);
     const { userId, tokens, isNewUser } = await this.identity.signInWithIdToken({
       identity,
       idToken: input.idToken,
@@ -162,7 +172,7 @@ export class AuthController {
       profile: { firstName: input.firstName || identity.givenName || "", lastName: input.lastName || identity.familyName || "", timeZone: input.timeZone },
     });
     // Recorded only after the provider's token was verified and a session exists.
-    if (band) await this.age.recordScreen(userId, band);
+    if (assessed) await this.age.recordScreen(userId, assessed);
     return { userId, ...tokens, isNewUser };
   }
 
@@ -188,6 +198,7 @@ export class AuthController {
 /** Sign-in methods connected to the signed-in account (local accounts; Supabase links through its own flow). */
 @Controller("v1/me/identities")
 @UseGuards(AuthGuard, RateLimitGuard)
+@AgeExempt()
 export class IdentitiesController {
   constructor(
     @Inject(IDENTITY) private readonly identity: IdentityProvider,
