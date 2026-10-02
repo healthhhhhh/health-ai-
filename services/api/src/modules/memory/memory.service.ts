@@ -1,6 +1,7 @@
 import { HttpStatus, Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { ApiError, notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
+import { ProcessingPolicy } from "../account/processing-policy";
 import { JobQueue } from "../documents/job-queue";
 import { EMBEDDINGS, toVectorLiteral, type EmbeddingProvider } from "./embeddings";
 import {
@@ -97,6 +98,7 @@ export class MemoryService implements OnModuleInit {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(JobQueue) private readonly jobs: JobQueue,
     @Inject(EMBEDDINGS) private readonly embeddings: EmbeddingProvider,
+    @Inject(ProcessingPolicy) private readonly policy: ProcessingPolicy,
   ) {}
 
   onModuleInit() {
@@ -306,9 +308,15 @@ export class MemoryService implements OnModuleInit {
     await this.db.query(`UPDATE health_memories SET last_used_at = now() WHERE user_id = $1 AND id = ANY($2::uuid[])`, [userId, ids]).catch(() => undefined);
   }
 
-  /** Background job: store the embedding for one memory (skips if already current). */
+  /**
+   * Background job: store the embedding for one memory (skips if already current).
+   * Embeddings exist only to pick context for the AI Health Assistant, so they
+   * need the AI-processing consent at the time the job runs; without it the
+   * job does nothing (the memory stays usable and is found by full-text search).
+   */
   async embed(userId: string, memoryId: string) {
     if (!this.embeddings.available) return;
+    if (!(await this.policy.permitted(userId, "ai_processing"))) return;
     const { rows } = await this.db.query<{ fact: string }>(`SELECT fact FROM health_memories WHERE id = $2 AND user_id = $1 AND embedding IS NULL`, [userId, memoryId]);
     if (!rows[0]) return;
     const [vector] = await this.embeddings.embed([rows[0].fact]);
@@ -316,6 +324,20 @@ export class MemoryService implements OnModuleInit {
       `UPDATE health_memories SET embedding = $3::vector, embedding_model = $4, embedded_at = now() WHERE id = $2 AND user_id = $1 AND fact = $5`,
       [userId, memoryId, toVectorLiteral(vector!), this.embeddings.name, rows[0].fact],
     );
+  }
+
+  /**
+   * Queues embeddings skipped while AI-processing consent was off (called when
+   * it's granted again), so semantic retrieval covers every memory once more.
+   */
+  async queueMissingEmbeddings(userId: string, limit = 500): Promise<number> {
+    if (!this.embeddings.available) return 0;
+    const { rows } = await this.db.query<{ id: string }>(
+      `SELECT id FROM health_memories WHERE user_id = $1 AND embedding IS NULL AND status <> 'superseded' ORDER BY created_at DESC LIMIT $2`,
+      [userId, limit],
+    );
+    for (const { id } of rows) await this.jobs.enqueue("embed-memory", { userId, memoryId: id });
+    return rows.length;
   }
 
   private async queueEmbedding(userId: string, memoryId: string) {

@@ -89,7 +89,7 @@ Every public document must match the code at the time it is published. Re-check 
    - shared with the AI provider only with permission (once implemented);
    - not stored in iCloud.
 7. **Retention by category** (‹TBD› — Audit §5; there are no decided periods today), including backups and operational records.
-8. **Deletion** (§5 of this document), **export**, **correction**, and **consent withdrawal**, with honest exceptions. The queued-job gap must be fixed first, or disclosed (Audit §4.2).
+8. **Deletion** (§5 of this document), **export**, **correction**, and **consent withdrawal**, with honest exceptions. Queued work is now stopped on withdrawal (Audit §4.2, fixed 2026-10-02); disclose that a request already sent to the AI provider can't be recalled.
 9. **Security:** describe it in general terms. Do not claim certifications or guarantees.
 10. **Children and age.** Describe the age groups actually enabled, how age is determined, and what happens to accounts outside that scope (COPPA actual knowledge — Checklist §6.1.3).
     - **[if under-13]** A COPPA-compliant children's privacy notice (§2A).
@@ -173,7 +173,7 @@ These are needed only if minors are enabled. **None of the underlying features e
 | **Separate** consent to collect vs. consent to share (MHMDA, Nevada) | One switch per feature | Counsel to define the structure (Q6) |
 | HealthKit data to the AI | Covered only implicitly by `ai_processing` | Explicit HealthKit-to-AI permission, or exclude HealthKit data from AI context until it exists |
 | Record the exact text the user agreed to | Only `version="2026-09"` is stored (`CONSENT_VERSION`) | A version registry mapping each version to its copy; store platform and locale |
-| Withdrawal takes effect | Checked at request time; **background document jobs don't re-check** | Fix in engineering, or disclose |
+| Withdrawal takes effect | Checked when requested **and when work runs** (fixed 2026-10-02); queued analyses are stopped. An in-flight provider call can't be recalled (its result is discarded). | Disclose the in-flight limit |
 | Voice | `voice` consent exists; Apple speech may run server-side when on-device recognition is unsupported | Accurate copy |
 | Default state | Off until granted (`hasConsent` returns false when there's no record) | Keep this |
 | **Who consented** | Not recorded; there is only one account holder | **[if minors]** Record whether the user or a parent/guardian consented, the age group, and the method (VPC method for under-13) |

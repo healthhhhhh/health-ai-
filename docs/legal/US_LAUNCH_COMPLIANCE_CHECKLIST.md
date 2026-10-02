@@ -32,7 +32,7 @@ Sources and review dates are listed in §12. Where a law's applicability depends
 
 | # | Requirement / risk | Code status | Status | Owner |
 |---|---|---|---|---|
-| 1.1.1 | Every privacy and security statement must be true. Existing statements: "We never sell health data" (web `/help`), "never sold or used for advertising" (iOS Settings), "stops new processing right away" (iOS Settings), "Audio isn't stored" | The first two match the code. The "stops processing right away" claim is **not fully true**: queued document jobs don't re-check consent (Audit §4.2, §9). | ⚠️ | Eng + Lawyer |
+| 1.1.1 | Every privacy and security statement must be true. Existing statements: "We never sell health data" (web `/help`), "never sold or used for advertising" (iOS Settings), "stops new processing right away" (iOS Settings), "Audio isn't stored" | The first two match the code. Queued work is now stopped when consent is withdrawn (Audit §4.2, fixed 2026-10-02); a call already in flight can't be recalled, only its result discarded — confirm the wording (Audit §9). | ⚠️ | Eng + Lawyer |
 | 1.1.2 | No sharing of health data for advertising without affirmative express consent (FTC GoodRx, BetterHelp and similar orders) | No ad or analytics SDKs (Audit §3) | ✅ code | Op (keep it that way) |
 | 1.1.3 | Substantiate health and AI capability claims (FTC Health Products Compliance Guidance; AI claims enforcement). Marketing must not imply diagnosis or clinical accuracy. | No marketing site copy reviewed. In-app copy says "not a doctor". | ⚠️ | Lawyer |
 | 1.1.4 | Reasonable data security proportionate to the sensitivity of the data (FTC unfairness theory) | Code controls in Audit §7. No written security program; logs can contain row values (Audit §7 G7). | ⚠️ | Eng |
@@ -89,7 +89,7 @@ Which of these apply depends on where users are located and on thresholds. A US-
 | 3.1.4 | **Valid authorization** (signed, specific, expiring) before any *sale* | No sale path | ✅ code |
 | 3.1.5 | Right to confirm and access, **including a list of all third parties and affiliates** the data was shared with | Export exists but has no third-party list (Audit §6) | ⚠️ |
 | 3.1.6 | Right to delete, extending to processors and archived or backup systems | API deletion cascades. Backups, AI-provider copies and operational residue are undefined (Audit §6). | ⚠️ |
-| 3.1.7 | Right to withdraw consent | Consent switches exist; queued jobs ignore withdrawal | ⚠️ |
+| 3.1.7 | Right to withdraw consent | Consent switches exist; withdrawal stops queued work (fixed 2026-10-02); in-flight provider calls can't be recalled | ⚠️ |
 | 3.1.8 | Respond to requests within the statutory period (45 days, extendable — confirm); provide an appeal process | No request intake or contact channel | ❌ |
 | 3.1.9 | Processor contracts binding processors to the regulated entity's instructions | Not reviewed | ❌ |
 | 3.1.10 | Access restricted to those who need it; reasonable data security | Code controls exist; no written policy | ⚠️ |
@@ -263,7 +263,7 @@ COPPA does not cover teens. Obligations come from a **patchwork of state laws** 
 | # | Item | Status |
 |---|---|---|
 | 6.4.1 | Everything else in this checklist (§1–5, §7–10) applies | See sections |
-| 6.4.2 | Age screen confirms 18+; adult consent flows (Audit §4.2 gaps G3, G4, G6 still open) | ❌ |
+| 6.4.2 | Age screen confirms 18+; adult consent flows (Audit §4.2 gaps G3 and G4 still open; G6 fixed 2026-10-02) | ❌ |
 | 6.4.3 | If adults later manage a child's or teen's data (caregiver or dependent profiles): parent-entered data about a child is generally outside COPPA but is still consumer health data. Needs proof of authority, then handling at 18 or when custody changes. | Not built; the data model is single-user |
 
 ### 6.5 Can HealthMate safely process minors' data today? Feature-by-feature
@@ -282,7 +282,7 @@ Assessment of **current code** (Audit §4, §8). "Today" means as the code stand
 **Does parental consent need to cover each processing or disclosure purpose?**
 - For under-13 users, COPPA requires the notice to describe each collection, use and disclosure. Since 2025 it requires a **separate** consent for disclosure to third parties that is not integral to the service.
 - Recommendation for design, pending counsel: **granular parental consent for each purpose**: account and record keeping; AI chat; report analysis; photo analysis; Apple Health sync; Apple Health in AI; long-term memory; voice.
-- Each item should be revocable on its own, and revoking it should stop **queued** jobs too. Today queued jobs ignore withdrawal (Audit §4.2).
+- Each item should be revocable on its own, and revoking it should stop **queued** jobs too. Queued work now honours withdrawal of the account holder's consent (Audit §4.2, 2026-10-02); per-purpose parental revocation does not exist yet.
 
 ### 6.6 Implementation needs by age group (none exist in code)
 
@@ -324,7 +324,7 @@ Why: the vision is preserved, minors' data is not collected before child safegua
 
 ### 6.8 Minors: Launch Blockers and Required Safeguards
 
-**None of these exist in the code today** (Audit §8). Existing findings stay open: no age checks on any path (Audit G1) and adult consent gaps (G3, G4, G6). A blocker marked for an age group must be resolved before that group is enabled. "All" means it blocks every launch option, including adults-only.
+**None of these exist in the code today** (Audit §8). Existing findings stay open: no age checks on any path (Audit G1) and adult consent gaps (G3, G4). G6 (queued work after withdrawal) was fixed on 2026-10-02. A blocker marked for an age group must be resolved before that group is enabled. "All" means it blocks every launch option, including adults-only.
 
 | # | Blocker / safeguard | Blocks | Owner |
 |---|---|---|---|
@@ -343,7 +343,7 @@ Why: the vision is preserved, minors' data is not collected before child safegua
 | M13 | COPPA: direct and online notice, **verifiable parental consent**, **separate consent for non-integral third-party disclosure** (incl. the AI provider if counsel so concludes), parent review, export, deletion and revocation | <13 | Eng + Lawyer |
 | M14 | Written data-retention policy with automatic deletion for minors' data (COPPA for <13; CT/CO "no longer than necessary") | 13–17, <13 | Op + Eng |
 | M15 | Written information-security program (COPPA §312.8; also good practice for all ages) | 13–17, <13 | Op |
-| M16 | Withdrawal of consent stops queued processing (today it doesn't — Audit G6) | All (worse for minors) | Eng |
+| M16 | Withdrawal of consent stops queued processing — **implemented 2026-10-02** for the account holder's consent (Audit G6). In-flight provider calls can't be recalled. Parental-consent revocation does not exist yet. | All (worse for minors) | Eng |
 | M17 | Parent and guardian accounts with proof of authority, if caregiver use is in scope | Product-dependent | Eng + Lawyer |
 | M18 | Turning-18 transition: re-consent, review and deletion offer | 13–17 | Eng |
 | M19 | Incident plan covering minors (notices to parents for <13; state AG duties) | 13–17, <13 | Op + Lawyer |

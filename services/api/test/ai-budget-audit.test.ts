@@ -30,7 +30,12 @@ beforeAll(async () => {
 });
 afterAll(() => db.close());
 
-const newUser = async () => (await db.query<{ id: string }>(`INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, [`audit-${Math.random()}@example.com`])).rows[0]!.id;
+/** A person who has granted AI processing (the gateway checks consent before anything else). */
+const newUser = async () => {
+  const id = (await db.query<{ id: string }>(`INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, [`audit-${Math.random()}@example.com`])).rows[0]!.id;
+  await db.query(`INSERT INTO consents (user_id, kind, granted, version) VALUES ($1, 'ai_processing', true, 'test'), ($1, 'document_processing', true, 'test')`, [id]);
+  return id;
+};
 const request = (userId: string | null, extra: Record<string, unknown> = {}) => ({
   task: "health_chat" as const,
   userId,

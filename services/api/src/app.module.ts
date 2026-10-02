@@ -8,6 +8,7 @@ import { CONFIG, type AppConfig } from "./config";
 import { DATABASE, type Database } from "./db/database";
 import { AccountController } from "./modules/account/account.controller";
 import { AccountService } from "./modules/account/account.service";
+import { ProcessingPolicy } from "./modules/account/processing-policy";
 import { AiGateway, registryOf, type AiProviderRegistry } from "./modules/ai/ai.gateway";
 import { AI_PROVIDERS, type AiProvider } from "./modules/ai/ai.types";
 import { AuthController, IdentitiesController } from "./modules/auth/auth.controller";
@@ -104,6 +105,7 @@ export class AppModule {
       AuthGuard,
       AuthService,
       ProfileService,
+      ProcessingPolicy,
       AccountService,
       AiGateway,
       MemoryService,

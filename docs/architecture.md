@@ -117,6 +117,23 @@ feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► 
     $0.33 of the $5 month is unusable for routine chat. This is kept on purpose: reserving less would
     let concurrent requests overrun the limit. Lowering a task's `maxOutputTokens` or routing it to a
     cheaper model is the safe way to shrink this margin.
+- **Consent at execution time** (`ProcessingPolicy`, `modules/account/processing-policy.ts`):
+  every piece of server-side processing is checked against the person's *latest* consent when it
+  runs, not only when it was requested.
+  - **AI**: the purpose comes from the task (`TASK_PURPOSE`: chat → `ai_processing`, report/photo →
+    `document_processing`), never from a request. `AiGateway.generate` checks it first: refused work
+    reserves nothing, records no usage and never reaches a provider.
+  - **Report and photo jobs**: withdrawing `document_processing` marks queued and running analyses as
+    stopped ("permission … was withdrawn") in the same transaction. The worker re-checks before reading
+    the file, the gateway checks again, and the result is stored only if permission still holds when
+    it's saved. Consent changes and these saves serialise on a per-person advisory lock, so either the
+    save commits first (the result is kept) or the withdrawal does (nothing is stored).
+  - **Memory embeddings** run only while `ai_processing` is granted; granting it again queues the ones
+    that were skipped. **Apple Health writes** re-check `health_data_sync` inside their transaction.
+  - **Limit:** a request already handed to an AI provider can't be recalled. A withdrawal during that
+    window discards the result (and its cost is still accounted); it can't stop the provider receiving
+    the request. Urgent chat messages fall back to the deterministic escalation if consent disappears
+    mid-request; emergencies never use a model.
 - **Accounting**: `ai_usage` (server-only, no health content) keeps user, billing period, task,
   provider, requested and serving model, input/output/cache tokens, estimated and charged cost, the
   cost basis (`usage`, `reservation` or `none`), price version, status (`ok`, `flagged`,

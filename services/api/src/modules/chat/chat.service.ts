@@ -2,6 +2,7 @@ import { escalationMessage, MEDICATION_CHANGE_NOTICE, reviewAssistantText, triag
 import { Inject, Injectable } from "@nestjs/common";
 import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
+import { ProcessingNotPermittedError } from "../account/processing-policy";
 import { AiGateway } from "../ai/ai.gateway";
 import { AiBudgetExceededError, AiDeclinedError, AiInvalidOutputError, AiUnavailableError } from "../ai/ai.types";
 import type { AiMessage } from "../ai/ai.types";
@@ -195,8 +196,9 @@ export class ChatService {
       }
     } catch (error) {
       // Urgent symptoms always get guidance. If the model can't answer (AI down, the
-      // safety-critical allowance used up, declined or unusable), the deterministic
-      // urgent escalation from the safety rules is returned instead of an error.
+      // safety-critical allowance used up, declined or unusable, or AI-processing
+      // consent withdrawn mid-request), the deterministic urgent escalation from the
+      // safety rules is returned instead of an error — no model is involved.
       if (urgent && isAiFailure(error)) {
         const escalation = escalationMessage(result)!;
         return { triage: result, payload: { kind: "escalation", escalation }, content: `${escalation.title}. ${escalation.body}` };
@@ -265,4 +267,5 @@ export class ChatService {
 }
 
 const isAiFailure = (error: unknown) =>
+  error instanceof ProcessingNotPermittedError ||
   error instanceof AiUnavailableError || error instanceof AiBudgetExceededError || error instanceof AiDeclinedError || error instanceof AiInvalidOutputError;

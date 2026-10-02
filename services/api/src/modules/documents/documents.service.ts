@@ -3,7 +3,9 @@ import { HttpStatus, Inject, Injectable, Logger, type OnModuleInit } from "@nest
 import { randomUUID } from "node:crypto";
 import { AuditService } from "../../common/audit";
 import { ApiError, notFound } from "../../common/errors";
-import { DATABASE, type Database } from "../../db/database";
+import { DATABASE, type Database, type Queryable } from "../../db/database";
+import { PERMISSION_WITHDRAWN_REASON } from "../account/account.service";
+import { ProcessingNotPermittedError, ProcessingPolicy } from "../account/processing-policy";
 import { AiGateway } from "../ai/ai.gateway";
 import { AiBudgetExceededError, AiDeclinedError, AiUnavailableError } from "../ai/ai.types";
 import { NotificationsService } from "../notifications/notifications.controller";
@@ -98,6 +100,7 @@ export class DocumentsService implements OnModuleInit {
     @Inject(TimelineService) private readonly timeline: TimelineService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(ProcessingPolicy) private readonly policy: ProcessingPolicy,
   ) {}
 
   onModuleInit() {
@@ -194,11 +197,19 @@ export class DocumentsService implements OnModuleInit {
     return count;
   }
 
-  /** Background job: analyse one uploaded file. Idempotent — finished work is skipped. */
+  /**
+   * Background job: analyse one uploaded file. Idempotent — finished work is skipped.
+   * Permission is checked again here (not only when the job was queued): if it
+   * was withdrawn meanwhile, the file is neither read nor sent anywhere. The
+   * gateway checks once more before the provider call, and the result is only
+   * stored if permission still holds at that moment (`save*`).
+   */
   private async run(userId: string, kind: DocumentKind, id: string) {
     const row = await this.find(userId, id).catch(() => null);
-    if (!row || row.status !== "processing") return; // deleted, or already finished
+    if (!row || row.status !== "processing") return; // deleted, stopped by a withdrawal, or already finished
     try {
+      await this.policy.assert(userId, "document_processing");
+      let saved: boolean;
       const data = await this.storage.read(refOf(row));
       const contentType = data ? sniffContentType(data) : null;
       if (!data || !contentType || contentType !== row.content_type) {
@@ -207,11 +218,13 @@ export class DocumentsService implements OnModuleInit {
       }
       if (kind === "report") {
         const result = await this.extractReport(userId, data, contentType);
-        await this.saveReport(userId, id, result);
+        saved = await this.saveReport(userId, id, result);
       } else {
         const result = await this.analyseImage(userId, data, contentType, row.purpose, row.note ?? undefined);
-        await this.saveImage(userId, id, result);
+        saved = await this.saveImage(userId, id, result);
       }
+      // Not stored (deleted, or stopped by a withdrawal while the call was in flight): nothing to record.
+      if (!saved) return;
       await this.timeline.add(userId, {
         eventType: kind === "report" ? "report" : "image",
         title: kind === "report" ? "Report analysed" : "Photo analysed",
@@ -220,6 +233,10 @@ export class DocumentsService implements OnModuleInit {
         payload: null,
       });
     } catch (error) {
+      if (error instanceof ProcessingNotPermittedError) {
+        await this.markWithdrawn(kind, id);
+        return;
+      }
       const reason =
         error instanceof AiUnavailableError || error instanceof AiBudgetExceededError
           ? "The analysis couldn't be completed right now. Nothing was analysed — please try again later."
@@ -231,8 +248,9 @@ export class DocumentsService implements OnModuleInit {
     }
   }
 
-  private async saveReport(userId: string, id: string, result: Extract<StoredResult, { type: "report" }>) {
+  private async saveReport(userId: string, id: string, result: Extract<StoredResult, { type: "report" }>): Promise<boolean> {
     const notificationId = await this.db.transaction(async (tx) => {
+      if (!(await this.stillWanted(tx, userId, "report", id))) return null;
       const { rows } = await tx.query<{ id: string }>(
         `INSERT INTO document_analysis (user_id, document_id, model, readable, summary, suggested_questions, injection_detected, result)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb) RETURNING id`,
@@ -250,11 +268,14 @@ export class DocumentsService implements OnModuleInit {
       // Generic wording: no health details in notifications.
       return this.notifications.notify(userId, { category: "report", title: "Your report summary is ready", body: "Open it to see the plain-language summary and questions for your clinician.", link: `/reports/${id}`, aiGenerated: true }, tx);
     });
+    if (!notificationId) return false;
     await this.notifications.deliver(userId, notificationId);
+    return true;
   }
 
-  private async saveImage(userId: string, id: string, result: Extract<StoredResult, { type: "image" }>) {
+  private async saveImage(userId: string, id: string, result: Extract<StoredResult, { type: "image" }>): Promise<boolean> {
     const notificationId = await this.db.transaction(async (tx) => {
+      if (!(await this.stillWanted(tx, userId, "image", id))) return null;
       await tx.query(
         `INSERT INTO image_analysis (user_id, image_id, model, quality, supported, care_urgency, injection_detected, note_triage_level, result)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
@@ -264,7 +285,27 @@ export class DocumentsService implements OnModuleInit {
       await tx.query(`UPDATE health_images SET status = 'ready', note = NULL, processed_at = now() WHERE id = $1 AND user_id = $2`, [id, userId]);
       return this.notifications.notify(userId, { category: "report", title: "Your photo check is ready", body: "Open it to see what could be described and suggested next steps.", link: `/reports/${id}`, aiGenerated: true }, tx);
     });
+    if (!notificationId) return false;
     await this.notifications.deliver(userId, notificationId);
+    return true;
+  }
+
+  /**
+   * Inside the save transaction: waits for any consent change in progress, then
+   * requires that permission still holds (else ProcessingNotPermittedError rolls
+   * the save back) and that the file is still waiting for this result — not
+   * deleted, finished, or stopped by a withdrawal (row locked until commit).
+   */
+  private async stillWanted(tx: Queryable, userId: string, kind: DocumentKind, id: string): Promise<boolean> {
+    await this.policy.assertLocked(tx, userId, "document_processing");
+    const { rows } = await tx.query<{ status: string }>(`SELECT status FROM ${TABLE[kind]} WHERE id = $1 AND user_id = $2 FOR UPDATE`, [id, userId]);
+    return rows[0]?.status === "processing";
+  }
+
+  /** A withdrawal stopped this file's analysis (no-op if it's no longer waiting). */
+  private async markWithdrawn(kind: DocumentKind, id: string) {
+    const note = kind === "image" ? ", note = NULL" : "";
+    await this.db.query(`UPDATE ${TABLE[kind]} SET status = 'failed', failure_reason = $2${note}, processed_at = now() WHERE id = $1 AND status = 'processing'`, [id, PERMISSION_WITHDRAWN_REASON]);
   }
 
   private async extractReport(userId: string, data: Buffer, contentType: SupportedContentType): Promise<Extract<StoredResult, { type: "report" }>> {

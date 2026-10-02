@@ -186,7 +186,7 @@ Cross-cutting facts [CODE]:
 - **Consent gate:**
   - chat needs the latest `ai_processing` consent = granted (`chat.controller.ts`);
   - document create and process need `document_processing` (`documents.controller.ts`).
-- **[GAP]** The background job (`documents.service.ts` `run`, registered for `process-document`) **does not re-check consent**. A file queued before consent is withdrawn is still sent to the AI provider. This contradicts the iOS copy "Turning a switch off stops new processing right away" (`SettingsView.swift:62`) for jobs already queued.
+- **[CODE] Fixed 2026-10-02 (G6).** Consent is re-checked when work *executes*, not only when it is requested (`modules/account/processing-policy.ts`). `AiGateway.generate` refuses before any reservation or provider call. Withdrawing `document_processing` stops queued analyses in the same transaction. The worker re-checks before reading the file, and a result is stored only if permission still holds when it is saved. Memory embeddings need `ai_processing` when they run, and Apple Health writes re-check `health_data_sync`. Tests: `test/consent-enforcement.test.ts`. **Remaining limit:** a request already handed to the AI provider when consent is withdrawn cannot be recalled; its result is discarded but the provider has received it.
 - **[GAP]** Daily health data from HealthKit flows to the AI provider under `ai_processing` consent. The `health_data_sync` consent copy ("Store Apple Health measurements you choose in your account") does not mention AI processing. Apple's HealthKit terms and Guideline 5.1.3 apply (see the checklist).
 - **[GAP]** Consent copy says "our AI provider" (`settings/page.tsx:22–23`, `SettingsView.swift:56–57`) and does not name the third party. The iOS onboarding copy for `ai_processing` ("Lets the assistant use what you share in chat to answer", `AccountSetupView.swift:186`) does not say data leaves HealthMate. App Review Guideline 5.1.2(i) requires clear disclosure of sharing "with third-party AI" and explicit permission.
 - **Logging:** the gateway and provider log task names, status codes, refusal categories and the model name. They never log prompt or answer content (`anthropic.provider.ts`, `ai.gateway.ts`). Tested: "the API key never appears in logs" (`test/ai-budget-audit.test.ts`).
@@ -300,7 +300,7 @@ The product already makes these statements. Each must be true at launch or be re
 |---|---|---|
 | "We never sell health data." | `apps/web/src/app/help/page.tsx` | True of the code (no sale path). It remains a binding promise. |
 | "Your data is never sold or used for advertising." | `apps/ios/.../SettingsView.swift:62` | True of the code (no ad SDKs) |
-| "Turning a switch off stops new processing right away." | Same | **Partly inaccurate**: queued document jobs are not re-checked (§4.2) |
+| "Turning a switch off stops new processing right away." | Same | Queued work is now stopped (§4.2, fixed 2026-10-02). A call already in flight to the AI provider can't be recalled; its result is discarded. Counsel to confirm the wording is accurate enough. |
 | "Audio is transcribed and not kept." / "Audio isn't stored." | `AccountSetupView.swift:189`; `project.yml` `NSMicrophoneUsageDescription` | HealthMate does not store audio. Apple may process it server-side when on-device recognition is unavailable — **[COUNSEL]** whether to disclose. |
 | "It isn't sent to HealthMate." (location) | `project.yml` `NSLocationWhenInUseUsageDescription` | True. It is sent to Apple MapKit. |
 | "You'll be able to export, correct and delete it." | `help/page.tsx` | Export, correction and deletion exist, with the gaps listed in §6 |
@@ -316,7 +316,7 @@ The product already makes these statements. Each must be true at launch or be re
 | G3 | AI provider not named in consent; iOS onboarding consent omits external sharing; no separate collection vs. sharing consent | **Blocker** (Apple 5.1.2(i); state health-data laws) | §4.2 |
 | G4 | HealthKit-derived data sent to the AI provider without HealthKit-specific disclosure or permission | **Blocker** for an App Store build with HealthKit plus AI | §4.2 |
 | G5 | AI provider contract, retention and training terms not reviewed; no BAA/DPA analysis | **Blocker** before real health data is sent to any external AI | §3 |
-| G6 | Consent withdrawal does not stop queued document jobs | High | §4.2 |
+| G6 | ~~Consent withdrawal does not stop queued document jobs~~ **Fixed 2026-10-02** (execution-time checks). Remaining: in-flight provider calls can't be recalled. | Resolved; limitation documented | §4.2 |
 | G7 | Error logs can contain row values (health data) | High | §7 |
 | G8 | No breach and incident response procedure, security contact or support contact | **Blocker** (FTC HBNR readiness; state laws) | §7 |
 | G9 | Post-deletion residue (audit UUIDs, safety events, usage rows, backups, device data) undefined | High | §6 |

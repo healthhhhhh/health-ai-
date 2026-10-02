@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { notFound } from "../../common/errors";
 import { DATABASE, type Database, type Queryable } from "../../db/database";
+import { ProcessingPolicy } from "../account/processing-policy";
 
 /** Canonical kinds and units. Clients convert before sending (HealthKit does this natively). */
 export const MEASUREMENT_UNITS = {
@@ -106,7 +107,10 @@ const toRecord = (r: SummaryRow): DailyRecord => ({
 
 @Injectable()
 export class HealthDataService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(ProcessingPolicy) private readonly policy: ProcessingPolicy,
+  ) {}
 
   private async timeZone(userId: string, tx: Queryable = this.db): Promise<string> {
     const { rows } = await tx.query<{ time_zone: string }>(`SELECT time_zone FROM profiles WHERE user_id = $1`, [userId]);
@@ -122,6 +126,7 @@ export class HealthDataService {
     let inserted = 0;
     const legacyDays: DailyRecordInput[] = [];
     await this.db.transaction(async (tx) => {
+      if (measurements.some((m) => m.source === "apple_health")) await this.policy.assertLocked(tx, userId, "health_data_sync");
       const tz = await this.timeZone(userId, tx);
       const touched = new Map<string, { kind: MeasurementKind; day: string }>();
       for (const m of measurements) {
@@ -181,6 +186,9 @@ export class HealthDataService {
     const result = { upserted: 0, unchanged: 0, ignoredOlder: 0 };
     if (!records.length) return result;
     await this.db.transaction(async (tx) => {
+      // Apple Health data is stored only while sync consent holds — checked in the
+      // write transaction, so a withdrawal that commits first is always respected.
+      await this.policy.assertLocked(tx, userId, "health_data_sync");
       const tz = meta.timeZone ?? (await this.timeZone(userId, tx));
       if (meta.syncRunId) {
         const owned = await tx.query(`SELECT 1 FROM health_sync_runs WHERE id = $1 AND user_id = $2`, [meta.syncRunId, userId]);

@@ -3,11 +3,16 @@ import type { VerifiedIdentity } from "../auth/oauth";
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { AuditService } from "../../common/audit";
 import { ApiError } from "../../common/errors";
-import { DATABASE, type Database } from "../../db/database";
+import { DATABASE, type Database, type Queryable } from "../../db/database";
 import { IDENTITY, type IdentityProvider } from "../auth/identity";
 import { STORAGE, type ObjectStorage } from "../documents/storage";
+import { MemoryService } from "../memory/memory.service";
+import { CONSENT_REQUIRED_MESSAGE, ProcessingPolicy, type ConsentKind } from "./processing-policy";
 
-export type ConsentKind = "ai_processing" | "document_processing" | "health_data_sync" | "voice";
+export type { ConsentKind } from "./processing-policy";
+
+/** Shown on reports and photos whose queued analysis was stopped by a withdrawal. */
+export const PERMISSION_WITHDRAWN_REASON = "Analysis was stopped because permission for report and photo analysis was withdrawn.";
 export const CONSENT_VERSION = "2026-09";
 
 /** Data controls: export, delete, consent (spec §16.2, FR-015). */
@@ -18,6 +23,8 @@ export class AccountService {
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(IDENTITY) private readonly identity: IdentityProvider,
     @Inject(STORAGE) private readonly storage: ObjectStorage,
+    @Inject(ProcessingPolicy) private readonly policy: ProcessingPolicy,
+    @Inject(MemoryService) private readonly memories: MemoryService,
   ) {}
 
   /** Everything we hold about the user, as JSON. Operational logs are excluded (they hold no health content). */
@@ -165,20 +172,47 @@ export class AccountService {
     return rows.map((r) => ({ kind: r.kind, granted: r.granted, version: r.version, updatedAt: r.created_at.toISOString() }));
   }
 
-  /** Consent history is append-only so it remains auditable. */
+  /**
+   * Consent history is append-only so it remains auditable. A withdrawal of
+   * report and photo analysis also stops analyses that are queued but not yet
+   * finished, in the same transaction and under the consent lock
+   * (`ProcessingPolicy`), so a job can't store a result after it. Repeating a
+   * withdrawal is harmless: it adds a history row and finds nothing left to stop.
+   */
   async setConsent(userId: string, kind: ConsentKind, granted: boolean) {
-    await this.db.query(`INSERT INTO consents (user_id, kind, granted, version) VALUES ($1, $2, $3, $4)`, [userId, kind, granted, CONSENT_VERSION]);
-    await this.audit.log("consent.update", userId, { kind, granted });
+    const stopped = await this.db.transaction(async (tx) => {
+      await ProcessingPolicy.lockForChange(tx, userId, kind);
+      await tx.query(`INSERT INTO consents (user_id, kind, granted, version) VALUES ($1, $2, $3, $4)`, [userId, kind, granted, CONSENT_VERSION]);
+      return !granted && kind === "document_processing" ? stopQueuedAnalyses(tx, userId) : 0;
+    });
+    await this.audit.log("consent.update", userId, { kind, granted, ...(stopped ? { stopped } : {}) });
+    // Memories saved while AI processing was off weren't embedded (MemoryService.embed).
+    if (granted && kind === "ai_processing") await this.memories.queueMissingEmbeddings(userId);
   }
 
   async hasConsent(userId: string, kind: ConsentKind): Promise<boolean> {
-    const { rows } = await this.db.query<{ granted: boolean }>(`SELECT granted FROM consents WHERE user_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT 1`, [userId, kind]);
-    return rows[0]?.granted ?? false;
+    return this.policy.permitted(userId, kind);
   }
 
   async requireConsent(userId: string, kind: ConsentKind) {
-    if (!(await this.hasConsent(userId, kind))) {
-      throw new ApiError("forbidden", "Please review and accept how HealthMate processes this data before continuing.", HttpStatus.FORBIDDEN);
-    }
+    if (!(await this.hasConsent(userId, kind))) throw new ApiError("forbidden", CONSENT_REQUIRED_MESSAGE, HttpStatus.FORBIDDEN);
   }
+}
+
+/**
+ * Marks the person's reports and photos still waiting for (or in) analysis as
+ * stopped. Their queued jobs then find nothing to do; a call already handed to
+ * an AI provider can't be recalled, but its result is discarded (DocumentsService).
+ * The photo note is cleared: it was kept only for the analysis.
+ */
+export async function stopQueuedAnalyses(tx: Queryable, userId: string): Promise<number> {
+  const reports = await tx.query(
+    `UPDATE medical_documents SET status = 'failed', failure_reason = $2, processed_at = now() WHERE user_id = $1 AND status = 'processing' RETURNING id`,
+    [userId, PERMISSION_WITHDRAWN_REASON],
+  );
+  const images = await tx.query(
+    `UPDATE health_images SET status = 'failed', failure_reason = $2, note = NULL, processed_at = now() WHERE user_id = $1 AND status = 'processing' RETURNING id`,
+    [userId, PERMISSION_WITHDRAWN_REASON],
+  );
+  return reports.rows.length + images.rows.length;
 }

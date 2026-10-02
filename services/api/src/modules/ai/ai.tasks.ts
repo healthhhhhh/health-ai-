@@ -1,6 +1,7 @@
 import { detectPromptInjection, reviewAssistantText } from "@healthmate/safety";
 import { z } from "zod";
 import type { AiContentPart, AiEffort, AiMessage, AiTask } from "./ai.types";
+import type { ProcessingPurpose } from "../account/processing-policy";
 
 /**
  * Per-task generation defaults. `expectedOutputTokens` is only used to
@@ -20,6 +21,20 @@ export const TASK_PROFILES: Record<AiTask, TaskProfile> = {
   image_analysis: { effort: "high", maxOutputTokens: 16_000, expectedOutputTokens: 2_500 },
   task_generation: { effort: "low", maxOutputTokens: 4_000, expectedOutputTokens: 800 },
   summarization: { effort: "low", maxOutputTokens: 4_000, expectedOutputTokens: 600 },
+};
+
+/**
+ * The consent each task needs, derived here from the task type — never from a
+ * request. The gateway checks it before any reservation or provider call.
+ * Every task sends the person's health information to the AI provider.
+ */
+export const TASK_PURPOSE: Record<AiTask, ProcessingPurpose> = {
+  health_chat: "ai_processing",
+  complex_health: "ai_processing",
+  report_analysis: "document_processing",
+  image_analysis: "document_processing",
+  task_generation: "ai_processing",
+  summarization: "ai_processing",
 };
 
 // ── Output contracts for the tasks that don't have a feature-owned schema yet ──

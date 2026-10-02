@@ -4,7 +4,8 @@ import { CONFIG, type AppConfig } from "../../config";
 import { DATABASE, type Database } from "../../db/database";
 import { AiBudgetLedger, type UsageRow } from "./ai.budget";
 import { billingPeriod, isValidUsage, PRICES_EFFECTIVE_DATE, PriceBook } from "./ai.pricing";
-import { estimateInputTokens, TASK_PROFILES, validateTaskOutput } from "./ai.tasks";
+import { ProcessingPolicy } from "../account/processing-policy";
+import { estimateInputTokens, TASK_PROFILES, TASK_PURPOSE, validateTaskOutput } from "./ai.tasks";
 import {
   AI_PROVIDERS,
   AiBudgetExceededError,
@@ -48,6 +49,8 @@ const NO_USAGE: AiUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
  * The single entry point for every AI operation. Features describe a task;
  * the gateway:
  *
+ * 0. checks the person's current consent for the task's purpose (`TASK_PURPOSE`,
+ *    `ProcessingPolicy`) — refused work reserves nothing and reaches no provider;
  * 1. routes it to a provider and model (`AI_ROUTES`, else the default provider);
  * 2. prices it — a paid model without a price is refused (fail closed);
  * 3. reserves the request's worst-case cost against the person's monthly
@@ -69,14 +72,17 @@ export class AiGateway {
   private readonly logger = new Logger("AiGateway");
   private readonly prices: PriceBook;
   private readonly ledger: AiBudgetLedger;
+  private readonly policy: ProcessingPolicy;
 
   constructor(
     @Inject(AI_PROVIDERS) private readonly providers: AiProviderRegistry,
     @Inject(DATABASE) db: Database,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(ProcessingPolicy) policy?: ProcessingPolicy,
   ) {
     this.prices = new PriceBook(config.aiPrices);
     this.ledger = new AiBudgetLedger(db);
+    this.policy = policy ?? new ProcessingPolicy(db);
     for (const [task, route] of Object.entries(config.aiRoutes)) {
       if (!providers.byName.has(route.provider)) throw new Error(`AI route for ${task} names provider "${route.provider}", which isn't configured`);
     }
@@ -104,6 +110,9 @@ export class AiGateway {
   }
 
   async generate<T>(request: AiTaskRequest<T>): Promise<AiTaskResult<T>> {
+    // Consent first, from the latest record — this is also what stops queued work after a
+    // withdrawal. Refused work never reaches a provider, reserves nothing and records no usage.
+    if (request.userId) await this.policy.assert(request.userId, TASK_PURPOSE[request.task]);
     const { provider, model, effort: routeEffort } = this.route(request.task);
     const profile = TASK_PROFILES[request.task];
     const period = billingPeriod(new Date());

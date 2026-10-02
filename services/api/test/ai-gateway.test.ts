@@ -29,7 +29,12 @@ beforeAll(async () => {
 });
 afterAll(() => db.close());
 
-const user = async () => (await db.query<{ id: string }>(`INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, [`gw-${Math.random()}@example.com`])).rows[0]!.id;
+/** A person who has granted AI processing (the gateway checks consent before anything else). */
+const user = async () => {
+  const id = (await db.query<{ id: string }>(`INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, [`gw-${Math.random()}@example.com`])).rows[0]!.id;
+  await db.query(`INSERT INTO consents (user_id, kind, granted, version) VALUES ($1, 'ai_processing', true, 'test'), ($1, 'document_processing', true, 'test')`, [id]);
+  return id;
+};
 const usage = async (userId: string) =>
   (await db.query<Record<string, unknown>>(`SELECT task, provider, model, billing_period, input_tokens, output_tokens, cache_read_tokens, estimated_cost_usd::float8 AS estimated, cost_usd::float8 AS cost, status, safety_critical, validation_issue_count FROM ai_usage WHERE user_id = $1 ORDER BY created_at`, [userId])).rows;
 const chatRequest = (userId: string | null, extra: Partial<{ task: AiTask; safetyCritical: boolean }> = {}) => ({
