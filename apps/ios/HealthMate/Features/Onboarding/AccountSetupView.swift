@@ -54,7 +54,7 @@ struct AccountSetupView: View {
             if let eligibility = account?.ageEligibility, eligibility == .ageReview || eligibility == .ageNotEligible {
                 restriction = eligibility
             }
-            hasPassword = account?.signInMethods.contains("password") ?? true
+            hasPassword = AccountDeletion.requiresPassword(signInMethods: account?.signInMethods)
             blockedOnDevice = session.ageQuestionBlockedOnDevice
             // The health profile is readable only once the age check has passed.
             var profile: HealthProfile?
@@ -412,7 +412,7 @@ struct AccountSetupView: View {
                             }
                             Button("Delete everything") { Task { _ = await session.deleteAccountWithoutPassword() } }
                                 .buttonStyle(.hmSecondary)
-                                .disabled(deleteConfirmation.trimmingCharacters(in: .whitespaces) != "DELETE" || session.busy)
+                                .disabled(!AccountDeletion.isConfirmed(deleteConfirmation) || session.busy)
                         }
                         if let message = session.errorMessage {
                             Text(message).font(.hmCaption).foregroundStyle(HM.Colors.error)

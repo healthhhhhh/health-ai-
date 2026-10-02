@@ -220,6 +220,32 @@ test.describe("signed out", () => {
     await expect(page.getByRole("heading", { level: 1, name: "We can't set up HealthMate here right now" })).toBeVisible();
   });
 
+  test("a Google-only account deletes from Settings by typing DELETE (no password asked)", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with Google" }).click();
+    await page.getByRole("button", { name: "Get started" }).click();
+    await page.getByLabel("First name").fill("Gale");
+    await page.getByLabel("Date of birth").fill("1988-08-08");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Go to Home" }).click();
+    await expect(page).toHaveURL(/\/home/);
+
+    await page.goto("/settings");
+    const card = page.locator("section", { has: page.getByRole("heading", { name: "Delete account" }) });
+    await expect(card.getByLabel("Password")).toHaveCount(0);
+    await card.getByLabel("I understand this can't be undone").check();
+    await card.getByLabel("Type DELETE to confirm").fill("delete");
+    await card.getByRole("button", { name: "Delete everything" }).click();
+    await expect(card.getByText("Type DELETE to confirm.")).toBeVisible();
+    // The form resets after a refused attempt, so confirm again.
+    await card.getByLabel("I understand this can't be undone").check();
+    await card.getByLabel("Type DELETE to confirm").fill("DELETE");
+    await card.getByRole("button", { name: "Delete everything" }).click();
+    await expect(page).toHaveURL(/\/\?deleted=1$/);
+  });
+
   test("a new browser without a restriction still takes a date of birth normally", async ({ page }) => {
     await page.goto("/sign-in");
     await page.getByRole("button", { name: "Continue with Google" }).click();

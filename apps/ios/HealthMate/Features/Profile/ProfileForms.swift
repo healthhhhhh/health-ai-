@@ -82,13 +82,17 @@ struct AddProfileItemView: View {
     }
 }
 
-/// Permanent deletion, confirmed with the account password.
+/// Permanent deletion, confirmed with the account password — or, for accounts that sign in
+/// with Google or Apple only (no password), by typing DELETE (`AccountDeletion`).
 struct DeleteAccountView: View {
     let session: SessionStore
 
     @Environment(\.dismiss) private var dismiss
     @State private var password = ""
+    @State private var typedConfirmation = ""
     @State private var confirmed = false
+    /// nil until the account's sign-in methods have loaded.
+    @State private var requiresPassword: Bool?
 
     var body: some View {
         NavigationStack {
@@ -104,9 +108,26 @@ struct DeleteAccountView: View {
                         .font(.hmCaption)
                         .foregroundStyle(HM.Colors.textSecondary)
                 }
-                Section("Confirm with your password") {
-                    SecureField("Password", text: $password).textContentType(.password)
-                    Toggle("I understand this can't be undone", isOn: $confirmed)
+                switch requiresPassword {
+                case nil:
+                    Section { ProgressView() }
+                case true?:
+                    Section("Confirm with your password") {
+                        SecureField("Password", text: $password).textContentType(.password)
+                        Toggle("I understand this can't be undone", isOn: $confirmed)
+                    }
+                case false?:
+                    Section {
+                        TextField("Type DELETE to confirm", text: $typedConfirmation)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("deleteConfirmation")
+                        Toggle("I understand this can't be undone", isOn: $confirmed)
+                    } header: {
+                        Text("Type DELETE to confirm")
+                    } footer: {
+                        Text("You sign in with Google or Apple, so there's no HealthMate password to enter.")
+                    }
                 }
                 if let error = session.errorMessage {
                     Section { Label(error, systemImage: "exclamationmark.circle.fill").foregroundStyle(HM.Colors.error) }
@@ -114,7 +135,13 @@ struct DeleteAccountView: View {
                 Section {
                     Button(role: .destructive) {
                         Task {
-                            if await session.deleteAccount(password: password) { dismiss() }
+                            let deleted: Bool
+                            if requiresPassword == false {
+                                deleted = await session.deleteAccountWithoutPassword()
+                            } else {
+                                deleted = await session.deleteAccount(password: password)
+                            }
+                            if deleted { dismiss() }
                         }
                     } label: {
                         HStack {
@@ -123,14 +150,23 @@ struct DeleteAccountView: View {
                             if session.busy { ProgressView() }
                         }
                     }
-                    .disabled(password.isEmpty || !confirmed || session.busy)
+                    .disabled(!canDelete || session.busy)
                 }
             }
             .navigationTitle("Delete account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .onAppear { session.errorMessage = nil }
+            .task {
+                let account = try? await session.api.accountSummary()
+                requiresPassword = AccountDeletion.requiresPassword(signInMethods: account?.signInMethods)
+            }
         }
+    }
+
+    private var canDelete: Bool {
+        guard confirmed, let requiresPassword else { return false }
+        return requiresPassword ? !password.isEmpty : AccountDeletion.isConfirmed(typedConfirmation)
     }
 }
 
