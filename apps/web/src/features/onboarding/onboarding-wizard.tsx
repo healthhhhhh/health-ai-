@@ -1,23 +1,22 @@
 "use client";
 
 import type { ConsentKind } from "@healthmate/shared-types";
-import { AlertCircle, ArrowLeft, Bell, Check, HeartPulse, Plus, ShieldCheck, Smartphone, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, FileText, HeartPulse, MessageCircle, ShieldCheck, Smartphone, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/fields";
 import { Input } from "@/components/ui/input";
-import { PermissionPrimer, type PermissionStatus } from "@/components/ui/permission-primer";
+import { PermissionPrimer } from "@/components/ui/permission-primer";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/cn";
-import { HEALTH_GOALS } from "@/lib/onboarding";
-import { completeOnboarding, type OnboardingInput } from "./actions";
+import { SignOutButton } from "@/features/auth/sign-out-button";
+import { DeleteAccountForm } from "@/features/settings/delete-account-form";
+import { completeOnboarding, confirmAge, type OnboardingInput } from "./actions";
 
 const STEPS = [
+  { id: "welcome", title: "Welcome to HealthMate" },
   { id: "about", title: "About you" },
-  { id: "goals", title: "What would help most?" },
-  { id: "health", title: "Your health details" },
   { id: "privacy", title: "Your privacy choices" },
-  { id: "reminders", title: "Reminders" },
   { id: "sync", title: "Apple Health" },
   { id: "done", title: "You're all set" },
 ] as const;
@@ -33,8 +32,14 @@ const SEX_OPTIONS = [
 const CONSENT_COPY: { kind: ConsentKind; title: string; description: string }[] = [
   { kind: "ai_processing", title: "AI Health Assistant", description: "Lets the assistant use what you share in chat to answer. Needed for AI chat." },
   { kind: "document_processing", title: "Report and photo analysis", description: "Lets HealthMate read reports and photos you upload to explain them in plain language." },
-  { kind: "health_data_sync", title: "Health data sync", description: "Lets HealthMate store readings from Apple Health or that you add yourself." },
+  { kind: "health_data_sync", title: "Health data sync", description: "Lets HealthMate store readings from Apple Health (set up in the iPhone app)." },
   { kind: "voice", title: "Voice input", description: "Lets you speak to the assistant. Audio is transcribed and not kept." },
+];
+
+const WELCOME_POINTS = [
+  { icon: <MessageCircle aria-hidden className="size-5" />, text: "Ask health questions and get plain-language answers" },
+  { icon: <FileText aria-hidden className="size-5" />, text: "Understand medical reports and letters" },
+  { icon: <TrendingUp aria-hidden className="size-5" />, text: "See how your readings change over time" },
 ];
 
 export interface OnboardingDefaults {
@@ -47,13 +52,25 @@ export interface OnboardingDefaults {
 }
 
 type Step = (typeof STEPS)[number]["id"];
+type Restriction = "age_review" | "age_not_eligible";
 
 /**
- * First-run setup after creating an account. Everything except a first name
- * is optional and can be changed later in Profile and Settings; nothing is
- * saved until the last step.
+ * First-run setup: welcome, name and date of birth (checked by the server before
+ * anything else is saved), privacy choices, Apple Health (connected from the
+ * iPhone app) and a summary. Also shown to accounts whose age the server hasn't
+ * confirmed or can't serve.
  */
-export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDefaults; preview: boolean }) {
+export function OnboardingWizard({
+  defaults,
+  preview,
+  restricted: initialRestriction = null,
+  deletionScheduled = false,
+}: {
+  defaults: OnboardingDefaults;
+  preview: boolean;
+  restricted?: Restriction | null;
+  deletionScheduled?: boolean;
+}) {
   const [index, setIndex] = useState(0);
   const current = STEPS[index] ?? STEPS[0];
   const step: Step = current.id;
@@ -63,14 +80,11 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
     dateOfBirth: defaults.dateOfBirth,
     sex: defaults.sex,
     goals: defaults.goals,
-    conditions: [],
-    allergies: [],
-    medications: [],
     consents: defaults.consents,
-    reminders: { medication: true, task: true, appointment: true, showDetails: false },
   });
+  const [restriction, setRestriction] = useState<Restriction | null>(initialRestriction);
   const [error, setError] = useState<string | null>(null);
-  const [firstNameError, setFirstNameError] = useState<string | undefined>();
+  const [fieldErrors, setFieldErrors] = useState<{ firstName?: string; dateOfBirth?: string }>({});
   const [pending, start] = useTransition();
   const heading = useRef<HTMLHeadingElement>(null);
   const moved = useRef(false);
@@ -79,17 +93,32 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
     // Move focus to the new step's heading so screen readers announce it (not on first load).
     if (moved.current) heading.current?.focus();
     moved.current = true;
-  }, [index]);
+  }, [index, restriction]);
+
+  if (restriction) return <RestrictedPanel reason={restriction} deletionScheduled={deletionScheduled || restriction === "age_not_eligible"} headingRef={heading} />;
 
   const update = (patch: Partial<OnboardingInput>) => setData((d) => ({ ...d, ...patch }));
-  const next = () => {
-    if (step === "about" && !data.firstName.trim()) {
-      setFirstNameError("Enter your first name.");
-      return;
-    }
-    setFirstNameError(undefined);
+  const goNext = () => {
     setError(null);
     setIndex((i) => Math.min(i + 1, STEPS.length - 1));
+  };
+  const next = () => {
+    if (step !== "about") return goNext();
+    const errors = {
+      firstName: data.firstName.trim() ? undefined : "Enter your first name.",
+      dateOfBirth: data.dateOfBirth ? undefined : "Enter your date of birth.",
+    };
+    setFieldErrors(errors);
+    if (errors.firstName || errors.dateOfBirth) return;
+    // The server decides who can use HealthMate; nothing else is saved before it has.
+    start(async () => {
+      setError(null);
+      const result = await confirmAge(data.dateOfBirth);
+      if ("error" in result) return setError(result.error);
+      if (result.eligibility === "eligible") return goNext();
+      if (result.eligibility === "age_review" || result.eligibility === "age_not_eligible") return setRestriction(result.eligibility);
+      setError("We couldn't confirm your date of birth. Please try again.");
+    });
   };
   const back = () => {
     setError(null);
@@ -102,21 +131,22 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
       if (result?.error) setError(result.error);
     });
 
-  const total = STEPS.length - 1;
-  const optional = step === "health" || step === "sync";
+  // The welcome screen isn't counted as a step.
+  const total = STEPS.length - 2;
+  const optional = step === "sync";
 
   return (
     <div className="rounded-xl bg-card p-6 shadow-card sm:p-8">
-      {step !== "done" && (
+      {step !== "done" && step !== "welcome" && (
         <div className="mb-6">
           <div className="mb-2 flex items-center justify-between text-caption text-text-secondary">
             <span>
-              Step {index + 1} of {total}
+              Step {index} of {total}
             </span>
             {optional && <span className="font-semibold">Optional</span>}
           </div>
-          <div role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={index + 1} className="h-1.5 overflow-hidden rounded-pill bg-card-muted">
-            <div className="h-full rounded-pill bg-primary-fill transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${((index + 1) / total) * 100}%` }} />
+          <div role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={index} className="h-1.5 overflow-hidden rounded-pill bg-card-muted">
+            <div className="h-full rounded-pill bg-primary-fill transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${(index / total) * 100}%` }} />
           </div>
         </div>
       )}
@@ -126,59 +156,41 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
       </h1>
 
       <div className="mt-2">
+        {step === "welcome" && (
+          <div className="flex flex-col gap-5">
+            <p className="text-body text-text-secondary">Your AI health companion. Setup takes about a minute.</p>
+            <ul className="flex flex-col gap-3">
+              {WELCOME_POINTS.map((point) => (
+                <li key={point.text} className="flex items-center gap-3 rounded-md bg-card-muted p-3 text-body text-text-primary">
+                  <span className="text-primary">{point.icon}</span>
+                  {point.text}
+                </li>
+              ))}
+            </ul>
+            <p className="text-caption text-text-secondary">HealthMate gives general information, not medical advice. In an emergency, call 911.</p>
+          </div>
+        )}
+
         {step === "about" && (
           <div className="flex flex-col gap-4">
-            <p className="text-body text-text-secondary">This helps the assistant speak to you personally. Only your first name is needed.</p>
+            <p className="text-body text-text-secondary">We need your name and date of birth. Everything else is optional.</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input label="First name" value={data.firstName} onChange={(e) => update({ firstName: e.target.value })} autoComplete="given-name" error={firstNameError} maxLength={80} />
+              <Input label="First name" value={data.firstName} onChange={(e) => update({ firstName: e.target.value })} autoComplete="given-name" error={fieldErrors.firstName} maxLength={80} />
               <Input label="Last name (optional)" value={data.lastName} onChange={(e) => update({ lastName: e.target.value })} autoComplete="family-name" maxLength={80} />
             </div>
             <Input
-              label="Date of birth (optional)"
+              label="Date of birth"
               type="date"
               value={data.dateOfBirth}
               max={new Date().toISOString().slice(0, 10)}
               onChange={(e) => update({ dateOfBirth: e.target.value })}
               autoComplete="bday"
-              hint="Some health measures depend on age."
+              error={fieldErrors.dateOfBirth}
+              hint="Used to confirm you can use HealthMate and to give age-appropriate information. It's never sent to the AI."
             />
             <Select label="Sex (optional)" value={data.sex} onChange={(e) => update({ sex: e.target.value })} options={SEX_OPTIONS} hint="Used only to give context to readings and reports." />
           </div>
         )}
-
-        {step === "goals" && (
-          <div className="flex flex-col gap-4">
-            <p className="text-body text-text-secondary">Choose any that apply. We&apos;ll shape your Home screen and suggestions around them.</p>
-            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {HEALTH_GOALS.map((goal) => {
-                const selected = data.goals.includes(goal.id);
-                return (
-                  <li key={goal.id}>
-                    <button
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => update({ goals: selected ? data.goals.filter((g) => g !== goal.id) : [...data.goals, goal.id] })}
-                      className={cn(
-                        "flex h-full w-full items-start gap-3 rounded-lg p-4 text-left ring-1 transition-colors",
-                        selected ? "bg-primary-soft ring-2 ring-primary" : "bg-card ring-separator hover:bg-card-muted",
-                      )}
-                    >
-                      <span className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full", selected ? "bg-primary-fill text-on-primary" : "ring-1 ring-separator")}>
-                        {selected && <Check aria-hidden className="size-3.5" />}
-                      </span>
-                      <span>
-                        <span className="block text-body font-semibold text-text-primary">{goal.label}</span>
-                        <span className="block text-caption text-text-secondary">{goal.description}</span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-
-        {step === "health" && <HealthDetailsStep data={data} update={update} />}
 
         {step === "privacy" && (
           <div className="flex flex-col gap-2">
@@ -196,48 +208,37 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
             </div>
             <p className="flex items-start gap-2 rounded-md bg-card-muted p-3 text-caption text-text-secondary">
               <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
-              Your health information is never sold or used for advertising. You can export or delete it at any time.
+              Your health information is never sold or used for advertising. You can download or delete it at any time.
             </p>
           </div>
         )}
 
-        {step === "reminders" && <RemindersStep data={data} update={update} />}
-
         {step === "sync" && (
           <div className="flex flex-col gap-4">
-            <p className="text-body text-text-secondary">Apple Health connects from the HealthMate app on your iPhone. You can do this later from Health › Connect.</p>
+            <p className="text-body text-text-secondary">Apple Health connects from the HealthMate app on your iPhone — it can&apos;t be connected from a web browser.</p>
             <PermissionPrimer
               icon={<HeartPulse />}
               tone="red"
               title="Bring in readings from Apple Health"
-              description="With your permission, HealthMate reads the measurements you choose — you decide which ones."
+              description="On your iPhone, HealthMate can read the measurements you choose — you decide which ones."
               benefits={["Steps, sleep, heart rate and more, in one place", "Compared with your own usual range over time", "Read-only: HealthMate never writes to Apple Health"]}
-              privacyNote="You can turn off any measurement, or disconnect completely, in the Health app on your iPhone."
+              privacyNote="Readings are only imported after you allow them on your iPhone. You can turn off any measurement, or disconnect, in the Health app."
+              status="unavailable"
             />
             <p className="flex items-center gap-2 text-caption text-text-secondary">
-              <Smartphone aria-hidden className="size-4 text-primary" /> Open HealthMate on your iPhone and choose Health › Connect Apple Health.
+              <Smartphone aria-hidden className="size-4 text-primary" /> Later, open HealthMate on your iPhone and choose Health › Connect Apple Health.
             </p>
           </div>
         )}
 
         {step === "done" && (
           <div className="flex flex-col gap-5">
-            <p className="text-body text-text-secondary">Here&apos;s what you chose. You can change any of it later in Profile and Settings.</p>
+            <p className="text-body text-text-secondary">Here&apos;s what you set up. You can change any of it later in Profile and Settings.</p>
             <ul className="flex flex-col gap-2.5">
-              <SummaryRow label="Goals" value={data.goals.length ? HEALTH_GOALS.filter((g) => data.goals.includes(g.id)).map((g) => g.label).join(", ") : "None chosen"} />
-              <SummaryRow
-                label="Health details you added"
-                value={
-                  data.conditions.length + data.allergies.length + data.medications.length
-                    ? [plural(data.conditions.length, "condition"), plural(data.allergies.length, "allergy", "allergies"), plural(data.medications.length, "medication")].filter(Boolean).join(", ")
-                    : "None yet"
-                }
-              />
+              <SummaryRow label="Name" value={[data.firstName.trim(), data.lastName.trim()].filter(Boolean).join(" ")} />
+              <SummaryRow label="Date of birth" value="Confirmed" />
               <SummaryRow label="Privacy" value={`${CONSENT_COPY.filter((c) => data.consents[c.kind]).length} of ${CONSENT_COPY.length} turned on`} />
-              <SummaryRow
-                label="Reminders"
-                value={[data.reminders.medication && "medications", data.reminders.task && "tasks", data.reminders.appointment && "appointments"].filter(Boolean).join(", ") || "Off"}
-              />
+              <SummaryRow label="Apple Health" value="Not connected — connect it in the iPhone app" done={false} />
             </ul>
             {preview && <p className="rounded-md bg-card-muted p-3 text-caption text-text-secondary">Preview mode: your Home screen will show a sample account so you can explore every feature.</p>}
           </div>
@@ -260,18 +261,13 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
           <span />
         )}
         <div className="flex items-center gap-2">
-          {optional && (
-            <Button variant="ghost" onClick={next}>
-              Skip
-            </Button>
-          )}
           {step === "done" ? (
             <Button size="lg" onClick={finish} disabled={pending}>
               {pending ? "Saving…" : "Go to Home"}
             </Button>
           ) : (
-            <Button size="lg" onClick={next}>
-              Continue
+            <Button size="lg" onClick={next} disabled={pending}>
+              {pending ? "Checking…" : step === "welcome" ? "Get started" : "Continue"}
             </Button>
           )}
         </div>
@@ -280,207 +276,53 @@ export function OnboardingWizard({ defaults, preview }: { defaults: OnboardingDe
   );
 }
 
-function plural(n: number, one: string, many = `${one}s`) {
-  return n ? `${n} ${n === 1 ? one : many}` : "";
+/** What a person sees when the server can't let them use HealthMate (yet). No health data is collected here. */
+function RestrictedPanel({ reason, deletionScheduled, headingRef }: { reason: Restriction; deletionScheduled: boolean; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+  const underAge = reason === "age_not_eligible";
+  return (
+    <div className="rounded-xl bg-card p-6 shadow-card sm:p-8">
+      <h1 ref={headingRef} tabIndex={-1} className="text-page-heading text-text-primary focus:outline-none">
+        {underAge ? "HealthMate isn't available for you" : "We need to check your age"}
+      </h1>
+      <div className="mt-3 flex flex-col gap-3 text-body text-text-secondary">
+        {underAge ? (
+          <>
+            <p>HealthMate is for people 13 and older, so we can&apos;t set up this account.</p>
+            {deletionScheduled && <p>Nothing you add is used, and this account will be deleted soon.</p>}
+          </>
+        ) : (
+          <p>The date of birth you entered doesn&apos;t match what we have on record, so someone needs to check it before you can continue.</p>
+        )}
+        <p>
+          If a date was entered by mistake, see{" "}
+          <Link href="/help" className="font-semibold text-primary underline-offset-2 hover:underline">
+            Help
+          </Link>{" "}
+          to contact us.
+        </p>
+        <p className="text-caption">If you&apos;re in danger or thinking about hurting yourself, call or text 988, or call 911.</p>
+      </div>
+      <div className="mt-6">
+        <SignOutButton />
+      </div>
+      <details className="mt-6 rounded-md bg-card-muted p-4">
+        <summary className="cursor-pointer text-body font-semibold text-text-primary">Delete my account now</summary>
+        <div className="mt-3">
+          <DeleteAccountForm />
+        </div>
+      </details>
+    </div>
+  );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value, done = true }: { label: string; value: string; done?: boolean }) {
   return (
     <li className="flex items-start gap-3 rounded-md bg-card-muted p-3">
-      <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />
+      {done ? <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-success" /> : <Smartphone aria-hidden className="mt-0.5 size-4 shrink-0 text-text-secondary" />}
       <span>
         <span className="block text-caption font-semibold text-text-primary">{label}</span>
         <span className="block text-caption text-text-secondary">{value}</span>
       </span>
     </li>
-  );
-}
-
-function HealthDetailsStep({ data, update }: { data: OnboardingInput; update: (patch: Partial<OnboardingInput>) => void }) {
-  const [condition, setCondition] = useState("");
-  const [allergy, setAllergy] = useState("");
-  const [medName, setMedName] = useState("");
-  const [medInstruction, setMedInstruction] = useState("");
-  const [medError, setMedError] = useState<string | undefined>();
-
-  const addMedication = () => {
-    if (!medName.trim()) return setMedError("Enter the medication name.");
-    if (!medInstruction.trim()) return setMedError("Copy the instructions exactly as written on your prescription or label.");
-    setMedError(undefined);
-    update({ medications: [...data.medications, { name: medName, instruction: medInstruction }] });
-    setMedName("");
-    setMedInstruction("");
-  };
-
-  return (
-    <div className="flex flex-col gap-6">
-      <p className="text-body text-text-secondary">
-        Add anything you&apos;d like the assistant to keep in mind. It&apos;s saved as something <strong className="font-semibold">you added</strong> — you can edit or remove it later in Profile.
-      </p>
-      <ChipList
-        label="Conditions"
-        placeholder="e.g. a condition you've been diagnosed with"
-        items={data.conditions}
-        value={condition}
-        onValue={setCondition}
-        onAdd={() => {
-          if (condition.trim()) update({ conditions: [...data.conditions, condition.trim()] });
-          setCondition("");
-        }}
-        onRemove={(i) => update({ conditions: data.conditions.filter((_, j) => j !== i) })}
-      />
-      <ChipList
-        label="Allergies"
-        placeholder="e.g. something you're allergic to"
-        items={data.allergies}
-        value={allergy}
-        onValue={setAllergy}
-        onAdd={() => {
-          if (allergy.trim()) update({ allergies: [...data.allergies, allergy.trim()] });
-          setAllergy("");
-        }}
-        onRemove={(i) => update({ allergies: data.allergies.filter((_, j) => j !== i) })}
-      />
-      <fieldset className="flex flex-col gap-3">
-        <legend className="mb-2 text-card-title text-text-primary">Medications</legend>
-        {data.medications.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {data.medications.map((m, i) => (
-              <li key={`${m.name}-${i}`} className="flex items-start gap-3 rounded-md bg-card-muted p-3">
-                <span className="flex-1">
-                  <span className="block text-body font-semibold text-text-primary">{m.name}</span>
-                  <span className="block text-caption text-text-secondary">{m.instruction}</span>
-                </span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${m.name}`}
-                  onClick={() => update({ medications: data.medications.filter((_, j) => j !== i) })}
-                  className="rounded-full p-1 text-text-secondary hover:bg-card hover:text-text-primary"
-                >
-                  <X aria-hidden className="size-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1.4fr]">
-          <Input label="Medication name" value={medName} onChange={(e) => setMedName(e.target.value)} maxLength={120} />
-          <Input
-            label="Instructions exactly as written"
-            value={medInstruction}
-            onChange={(e) => setMedInstruction(e.target.value)}
-            maxLength={500}
-            hint="Copy them word for word from your prescription or label."
-          />
-        </div>
-        {medError && (
-          <p role="alert" className="text-caption font-medium text-error">
-            {medError}
-          </p>
-        )}
-        <Button variant="soft" size="sm" className="self-start" onClick={addMedication}>
-          <Plus aria-hidden /> Add medication
-        </Button>
-      </fieldset>
-    </div>
-  );
-}
-
-function ChipList({
-  label,
-  placeholder,
-  items,
-  value,
-  onValue,
-  onAdd,
-  onRemove,
-}: {
-  label: string;
-  placeholder: string;
-  items: string[];
-  value: string;
-  onValue: (v: string) => void;
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-}) {
-  return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="mb-2 text-card-title text-text-primary">{label}</legend>
-      {items.length > 0 && (
-        <ul className="flex flex-wrap gap-2">
-          {items.map((item, i) => (
-            <li key={`${item}-${i}`} className="inline-flex items-center gap-1 rounded-pill bg-primary-soft py-1 pr-1 pl-3 text-caption font-semibold text-primary">
-              {item}
-              <button type="button" aria-label={`Remove ${item}`} onClick={() => onRemove(i)} className="rounded-full p-1 hover:bg-primary-tint">
-                <X aria-hidden className="size-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onAdd();
-        }}
-      >
-        <div className="flex-1">
-          <Input label={`Add to ${label.toLowerCase()}`} hideLabel placeholder={placeholder} value={value} onChange={(e) => onValue(e.target.value)} maxLength={120} />
-        </div>
-        <Button type="submit" variant="soft" aria-label={`Add to ${label.toLowerCase()}`}>
-          <Plus aria-hidden /> Add
-        </Button>
-      </form>
-    </fieldset>
-  );
-}
-
-function RemindersStep({ data, update }: { data: OnboardingInput; update: (patch: Partial<OnboardingInput>) => void }) {
-  const [permission, setPermission] = useState<PermissionStatus>("prompt");
-  useEffect(() => {
-    // Read the browser's current notification permission once on mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!("Notification" in window)) setPermission("unavailable");
-    else if (Notification.permission === "granted") setPermission("granted");
-    else if (Notification.permission === "denied") setPermission("denied");
-  }, []);
-  const set = (patch: Partial<OnboardingInput["reminders"]>) => update({ reminders: { ...data.reminders, ...patch } });
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-body text-text-secondary">Choose what HealthMate can remind you about. You can fine-tune times and quiet hours in Settings.</p>
-      <div className="divide-y divide-separator">
-        <Switch label="Medication reminders" description="At the times in your plan, with the instructions you entered." checked={data.reminders.medication} onChange={(v) => set({ medication: v })} />
-        <Switch label="Tasks and habits" description="Things you've added to My Plan." checked={data.reminders.task} onChange={(v) => set({ task: v })} />
-        <Switch label="Appointments" description="The day before and on the day." checked={data.reminders.appointment} onChange={(v) => set({ appointment: v })} />
-        <Switch
-          label="Show health details in notifications"
-          description="Off keeps notifications generic (e.g. “You have a reminder”) on shared screens."
-          checked={data.reminders.showDetails}
-          onChange={(v) => set({ showDetails: v })}
-        />
-      </div>
-      <PermissionPrimer
-        icon={<Bell />}
-        title="Browser notifications"
-        description="Allow notifications so reminders can reach you while HealthMate is open in another tab."
-        status={permission}
-        deniedHelp="Notifications are blocked for this site. You can allow them in your browser's site settings."
-        actions={
-          permission === "prompt" ? (
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                const result = await Notification.requestPermission();
-                setPermission(result === "granted" ? "granted" : result === "denied" ? "denied" : "prompt");
-              }}
-            >
-              Allow notifications
-            </Button>
-          ) : undefined
-        }
-      />
-    </div>
   );
 }

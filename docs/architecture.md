@@ -157,8 +157,12 @@ feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► 
   - **Exposure.** The account response has `ageBand`, `ageStatus`, `ageAssessedAt`, `ageEligibility` and
     `ageDeletionScheduledAt`; `/v1/meta` has `age { enforcement, enabledBands, parentalConsent: false }`;
     the export has the current state (including `age_adult_on`) and the history.
-  - **Clients.** No client asks for a date of birth or handles the `age_*` 403s yet; the deterministic
-    on-device emergency check runs before any request, so emergency guidance doesn't depend on the server.
+  - **Clients.** Setup (web `/onboarding`, iOS `AccountSetupView`) asks for the date of birth and sends it to
+    `POST /v1/me/age` before saving anything; restricted accounts see an explanation with sign-out and deletion.
+    The web sends any `age_*` 403 to `/onboarding`; iOS routes accounts that aren't eligible to setup. iOS can
+    prefill the date from Apple Health (setup-only permission), but the person must confirm it first. Apple
+    Health import during setup uses the app-wide `HealthSyncCoordinator` and needs `health_data_sync`. The
+    deterministic on-device emergency check runs before any request, so emergency guidance doesn't depend on the server.
 - **AI context minimisation.** The profile summary sends the age in whole years, never the date of birth.
   Apple Health-derived daily data goes to the AI only while `health_data_sync` permission is current, as
   well as `ai_processing`.

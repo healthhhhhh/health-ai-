@@ -41,6 +41,46 @@ describe("preview API", () => {
     expect((await call<{ onboardingCompleted: boolean }>("me/account", "GET", undefined, token)).body.onboardingCompleted).toBe(true);
   });
 
+  it("checks age like production: adults and teens are eligible; under-13s are locked out of health data and can't unlock by retrying", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const yearsAgo = (years: number, days = 0) => {
+      const d = new Date(`${today}T00:00:00Z`);
+      d.setUTCFullYear(d.getUTCFullYear() - years);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().slice(0, 10);
+    };
+    const newAccount = async () => (await call<{ accessToken: string }>("auth/oauth", "POST", { provider: "google", timeZone: "UTC" })).body.accessToken;
+
+    const teen = await newAccount();
+    const teenResult = await call<{ ageBand: string; eligibility: string }>("me/age", "POST", { dateOfBirth: yearsAgo(13) }, teen);
+    expect(teenResult.body).toMatchObject({ ageBand: "13_15", eligibility: "eligible" });
+    expect((await call("me", "GET", undefined, teen)).status).toBe(200);
+
+    for (const bad of ["2020-02-30", "not-a-date", yearsAgo(-1)]) expect((await call("me/age", "POST", { dateOfBirth: bad }, teen)).status).toBe(400);
+
+    const child = await newAccount();
+    const childResult = await call<{ eligibility: string; deletionScheduledAt: string | null }>("me/age", "POST", { dateOfBirth: yearsAgo(13, 1) }, child);
+    expect(childResult.body.eligibility).toBe("age_not_eligible");
+    expect(childResult.body.deletionScheduledAt).toEqual(expect.any(String));
+    const blocked = await call<{ error: { code: string } }>("me", "GET", undefined, child);
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.code).toBe("age_not_eligible");
+    expect((await call("health-data/daily?from=2026-01-01&to=2026-01-02", "GET", undefined, child)).status).toBe(403);
+    // Account controls stay available.
+    expect((await call<{ ageEligibility: string; firstName: string }>("me/account", "GET", undefined, child)).body.ageEligibility).toBe("age_not_eligible");
+    expect((await call("me/consents", "GET", undefined, child)).status).toBe(200);
+    // Retrying with an adult date doesn't unlock it.
+    const retry = await call<{ eligibility: string }>("me/age", "POST", { dateOfBirth: yearsAgo(30) }, child);
+    expect(retry.body.eligibility).toBe("age_review");
+    expect((await call("me", "GET", undefined, child)).status).toBe(403);
+  });
+
+  it("returns the sign-up name with the account summary", async () => {
+    const token = await signIn();
+    const account = await call<{ firstName?: string }>("me/account", "GET", undefined, token);
+    expect(account.body.firstName).toBe("Alex");
+  });
+
   it("AI unavailable: meta says so and new messages are refused, other data still loads", async () => {
     const token = await signIn();
     const controls: PreviewControls = { state: "ai_unavailable" };

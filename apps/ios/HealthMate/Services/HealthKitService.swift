@@ -13,6 +13,10 @@ protocol HealthDataReading: Sendable {
     /// True when HealthMate should ask again (e.g. a data type was added since the person last answered).
     /// HealthKit never reveals whether *read* access was granted, only whether asking would show the sheet.
     func shouldRequestAuthorization() async -> Bool
+    /// Account setup only: the same sheet, also offering date of birth (used solely to prefill the setup form).
+    func requestAuthorizationForSetup() async throws
+    /// The date of birth Apple Health shares, if the person allowed it. Only a prefill — never proof of age.
+    func dateOfBirth() -> DateComponents?
 }
 
 extension HealthDataReading {
@@ -30,6 +34,10 @@ extension HealthDataReading {
     }
 
     func shouldRequestAuthorization() async -> Bool { false }
+
+    func requestAuthorizationForSetup() async throws { try await requestAuthorization() }
+
+    func dateOfBirth() -> DateComponents? { nil }
 }
 
 /// The sync engine's view of the reader.
@@ -72,6 +80,18 @@ final class HealthKitService: HealthDataReading, @unchecked Sendable {
 
     func requestAuthorization() async throws {
         try await store.requestAuthorization(toShare: [], read: Self.readTypes)
+    }
+
+    /// Setup also offers date of birth. It isn't part of `readTypes`, so people who skip it
+    /// aren't asked again later ("Review Apple Health access" only follows the metrics).
+    func requestAuthorizationForSetup() async throws {
+        var read = Self.readTypes
+        read.insert(HKCharacteristicType(.dateOfBirth))
+        try await store.requestAuthorization(toShare: [], read: read)
+    }
+
+    func dateOfBirth() -> DateComponents? {
+        try? store.dateOfBirthComponents()
     }
 
     func shouldRequestAuthorization() async -> Bool {

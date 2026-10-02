@@ -20,6 +20,9 @@ export class ApiError extends Error {
 
 const NETWORK_MESSAGE = "We couldn't reach HealthMate. Please try again in a moment.";
 
+/** The API's age-gate refusals (403). Setup (`/onboarding`) asks for the date of birth or explains the restriction. */
+export const AGE_GATE_CODES = new Set(["age_required", "age_review", "age_not_eligible"]);
+
 /**
  * Calls the API as the signed-in person (server components, actions and route
  * handlers only). The proxy keeps the access token fresh; a 401 here means the
@@ -30,6 +33,11 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   if (!token) redirect("/sign-in");
   const res = await rawApi(path, init, token);
   if (res.status === 401) redirect("/sign-in?expired=1");
+  if (res.status === 403) {
+    const code = ((await res.clone().json().catch(() => null)) as ApiErrorBody | null)?.error?.code;
+    // Health features are locked until the server confirms the person's age.
+    if (code && AGE_GATE_CODES.has(code)) redirect("/onboarding");
+  }
   return parse<T>(res);
 }
 

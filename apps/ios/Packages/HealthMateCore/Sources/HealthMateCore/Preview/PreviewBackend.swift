@@ -339,6 +339,69 @@ public final class PreviewBackend: @unchecked Sendable {
         }
     }
 
+    // MARK: - Age (production rules)
+
+    /// Routes a restricted account can still use (the API's `@AgeExempt` routes).
+    private static let ageExemptRoutes: Set<String> = ["me/account", "me/age", "me/consents", "me/export", "me/delete", "me/identities", "me/devices", "auth/change-password"]
+    private static let ageRefusals = [
+        "age_required": "Add your date of birth to continue.",
+        "age_review": "We need to check your age before you can continue. Please contact support.",
+        "age_not_eligible": "HealthMate isn't available for your age.",
+    ]
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    /// Stand-in for POST /v1/me/age: the band comes from the date, under-13s are restricted,
+    /// and a restricted account that answers again with an older date is held for review.
+    private func assessAge(_ value: JSONValue, ctx: inout Context) -> PreviewResponse {
+        let day = value.string ?? ""
+        guard day.count == 10, let date = Self.dayFormatter.date(from: day), Self.dayFormatter.string(from: date) == day else {
+            return fail(400, "validation_failed", "Enter a real date of birth as YYYY-MM-DD.")
+        }
+        let today = now()
+        if date > today { return fail(400, "validation_failed", "A date of birth can't be in the future.") }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let years = calendar.dateComponents([.year], from: date, to: today).year ?? 0
+        if years > 130 { return fail(400, "validation_failed", "Check the date of birth — it's too far in the past.") }
+        let band = years < 13 ? "under_13" : years < 16 ? "13_15" : years < 18 ? "16_17" : "adult"
+        let current = ctx.account["account"]["ageEligibility"].string
+        let restricted = current == "age_not_eligible" || current == "age_review"
+        let assessedAt = JSONValue.string(ctx.now)
+        if restricted, band != "under_13" {
+            ctx.account["account"]["ageStatus"] = "review"
+            ctx.account["account"]["ageEligibility"] = "age_review"
+        } else if band == "under_13" {
+            ctx.account["account"]["ageBand"] = "under_13"
+            ctx.account["account"]["ageStatus"] = "blocked_under_13"
+            ctx.account["account"]["ageEligibility"] = "age_not_eligible"
+            if ctx.account["account"]["ageDeletionScheduledAt"].isNull {
+                ctx.account["account"]["ageDeletionScheduledAt"] = .string(PreviewClock.iso(today.addingTimeInterval(72 * 3600)))
+            }
+        } else {
+            ctx.account["account"]["ageBand"] = .string(band)
+            ctx.account["account"]["ageStatus"] = "in_scope"
+            ctx.account["account"]["ageEligibility"] = "eligible"
+        }
+        ctx.account["account"]["ageAssessedAt"] = assessedAt
+        let summary = ctx.account["account"]
+        return json([
+            "ageBand": summary["ageBand"],
+            "ageStatus": summary["ageStatus"],
+            "assessedAt": assessedAt,
+            "outcome": .string(restricted && band != "under_13" ? "review" : "applied"),
+            "eligibility": summary["ageEligibility"],
+            "deletionScheduledAt": summary["ageDeletionScheduledAt"],
+        ])
+    }
+
     // MARK: - Signed-in routes
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
@@ -346,6 +409,13 @@ public final class PreviewBackend: @unchecked Sendable {
         let a = s.first ?? "", b = s.count > 1 ? s[1] : nil, c = s.count > 2 ? s[2] : nil
         let input = ctx.input
         let view = ctx.view
+
+        // Age gate (production's AGE_ENFORCEMENT=enforce): a restricted account can only use account controls.
+        if let eligibility = ctx.account["account"]["ageEligibility"].string, eligibility != "eligible",
+           !Self.ageExemptRoutes.contains(s.prefix(2).joined(separator: "/")) {
+            return fail(403, eligibility, Self.ageRefusals[eligibility] ?? "HealthMate isn't available for your age.")
+        }
+        if a == "me", b == "age", method == "POST" { return assessAge(input["dateOfBirth"], ctx: &ctx) }
 
         // Account & profile
         if a == "auth", b == "change-password", method == "POST" {
@@ -355,7 +425,12 @@ public final class PreviewBackend: @unchecked Sendable {
         }
         if a == "me" {
             if b == nil, method == "GET" { return json(view["profile"]) }
-            if b == "account", method == "GET" { return json(ctx.account["account"]) }
+            if b == "account", method == "GET" {
+                var summary = ctx.account["account"]
+                summary["firstName"] = ctx.account["profile"]["profile"]["firstName"]
+                summary["lastName"] = ctx.account["profile"]["profile"]["lastName"]
+                return json(summary)
+            }
             if b == "onboarding", method == "POST" { ctx.account["account"]["onboardingCompleted"] = true; return noContent() }
             if b == "profile", method == "PATCH" {
                 for key in ["firstName", "lastName"] where input[key].string != nil { ctx.account["profile"]["profile"][key] = .string(text(input[key], 80)) }

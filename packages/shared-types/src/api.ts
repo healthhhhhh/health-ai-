@@ -554,6 +554,9 @@ export interface AccountSummary {
   signInMethods: ("password" | OAuthProvider)[];
   createdAt: ISO;
   onboardingCompleted: boolean;
+  /** The name given at sign-up (readable before the age check, unlike the health profile). Absent from older servers. */
+  firstName?: string;
+  lastName?: string;
   /** Absent from older servers and Preview. */
   ageBand?: AgeBand;
   ageStatus?: AgeStatus;

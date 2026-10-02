@@ -133,10 +133,11 @@ export class ProfileService {
     type Row = {
       email: string; auth_provider: "local" | "supabase"; has_password: boolean; email_verified_at: Date | null; created_at: Date; onboarding_completed_at: Date | null;
       identities: { provider: OAuthProvider; created_at: string }[]; age_band: AccountAgeBand; age_status: AgeStatus; age_assessed_at: Date | null;
+      first_name: string; last_name: string;
     };
     const { rows } = await this.db.query<Row>(
       `SELECT u.email, u.auth_provider, u.password_hash IS NOT NULL AS has_password, u.email_verified_at, u.created_at, p.onboarding_completed_at,
-              u.age_band, u.age_status, u.age_assessed_at,
+              u.age_band, u.age_status, u.age_assessed_at, p.first_name, p.last_name,
               COALESCE((SELECT json_agg(json_build_object('provider', i.provider, 'created_at', i.created_at) ORDER BY i.provider) FROM auth_identities i WHERE i.user_id = u.id), '[]') AS identities
          FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.id = $1`,
       [userId],
@@ -155,6 +156,10 @@ export class ProfileService {
       signInMethods: [...(hasPassword ? (["password"] as const) : []), ...row.identities.map((i) => i.provider)],
       createdAt: row.created_at.toISOString(),
       onboardingCompleted: row.onboarding_completed_at !== null,
+      // The name given at sign-up, so setup can greet the person before their age is confirmed
+      // (this summary is available to every account; the health profile isn't until then).
+      firstName: row.first_name,
+      lastName: row.last_name,
       // As stored; ProfileController applies birthdays and adds eligibility (AgeService).
       ageBand: row.age_band,
       ageStatus: row.age_status,

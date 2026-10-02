@@ -66,10 +66,12 @@ final class HealthMateUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Create your account"].exists, "sign-up mode: \(screen(app))")
         apple.tap()
 
-        XCTAssertTrue(app.staticTexts["About you"].waitForExistence(timeout: 10), "setup: \(screen(app))")
-        // The primary action (Continue / Go to Home) waits until the account's details have loaded.
+        XCTAssertTrue(app.staticTexts["Welcome to HealthMate"].waitForExistence(timeout: 10), "setup: \(screen(app))")
+        // The primary action (Get started / Continue / Go to Home) waits until the account's details have loaded.
+        // Apple Health is skipped here (Continue without connecting), so there's no import step; the sample
+        // account's date of birth is already in its profile and is checked by the (preview) server.
         let next = app.buttons["setupPrimaryAction"]
-        for heading in ["What would help most?", "Your health details", "Your privacy choices", "Reminders", "Apple Health", "You're all set, Alex"] {
+        for heading in ["Connect Apple Health", "About you", "Your privacy choices", "You're all set, Alex"] {
             waitUntilEnabled(next)
             next.tap()
             XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5), "\(heading): \(screen(app))")

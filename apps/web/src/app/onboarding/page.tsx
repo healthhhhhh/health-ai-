@@ -10,9 +10,18 @@ import { api } from "@/lib/api/server";
 export const metadata: Metadata = { title: "Set up HealthMate" };
 export const dynamic = "force-dynamic";
 
+/**
+ * First-run setup, and where the app sends accounts whose age the server hasn't
+ * confirmed (or can't serve). Only routes every account may use are called until
+ * the age check has passed, so this page never bounces back to itself.
+ */
 export default async function OnboardingPage() {
-  const [meta, account, { profile }, consents] = await Promise.all([getMeta(), getAccount(), getProfile(), api<ConsentRecord[]>("me/consents").catch(() => [])]);
-  if (account?.onboardingCompleted) redirect("/home");
+  const [meta, account, consents] = await Promise.all([getMeta(), getAccount(), api<ConsentRecord[]>("me/consents").catch(() => [])]);
+  // Older servers don't report eligibility; they don't restrict anyone by age.
+  const eligibility = account?.ageEligibility ?? "eligible";
+  if (account?.onboardingCompleted && eligibility === "eligible") redirect("/home");
+  // The health profile is readable only once the age check has passed.
+  const profile = eligibility === "eligible" ? ((await getProfile().catch(() => null))?.profile ?? null) : null;
   const granted = (kind: ConsentKind) => consents.some((c) => c.kind === kind && c.granted);
   return (
     <div className="bg-app-gradient min-h-dvh">
@@ -23,12 +32,14 @@ export default async function OnboardingPage() {
         </div>
         <OnboardingWizard
           preview={Boolean(meta?.preview)}
+          restricted={eligibility === "age_review" || eligibility === "age_not_eligible" ? eligibility : null}
+          deletionScheduled={Boolean(account?.ageDeletionScheduledAt)}
           defaults={{
-            firstName: profile.firstName,
-            lastName: profile.lastName,
-            dateOfBirth: profile.dateOfBirth ?? "",
-            sex: profile.sex ?? "",
-            goals: profile.goals ?? [],
+            firstName: account?.firstName ?? profile?.firstName ?? "",
+            lastName: account?.lastName ?? profile?.lastName ?? "",
+            dateOfBirth: profile?.dateOfBirth ?? "",
+            sex: profile?.sex ?? "",
+            goals: profile?.goals ?? [],
             consents: { ai_processing: granted("ai_processing"), document_processing: granted("document_processing"), health_data_sync: granted("health_data_sync"), voice: granted("voice") },
           }}
         />

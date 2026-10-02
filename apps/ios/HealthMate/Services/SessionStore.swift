@@ -24,8 +24,10 @@ final class SessionStore {
     var notice: String?
     /// Set after sign-up (or a sign-in before confirming): the address waiting for its confirmation link.
     var pendingVerificationEmail: String?
-    /// The signed-in account hasn't finished first-run setup (goals, privacy, reminders).
+    /// The signed-in account hasn't finished first-run setup, or the server hasn't confirmed its age.
     private(set) var needsAccountSetup = false
+    /// What the server enforces for this account's age (`eligible` on servers that don't check age).
+    private(set) var ageEligibility: AgeEligibility = .eligible
 
     let api: APIClient
 
@@ -124,18 +126,51 @@ final class SessionStore {
     }
 
     /// Saves first-run setup; on success the app continues to Home.
-    func completeAccountSetup(_ draft: AccountSetupDraft) async -> Bool {
+    /// Sends the confirmed date of birth; the server decides whether the person can use HealthMate.
+    /// nil when it couldn't be checked (the error message says why).
+    func confirmAge(_ draft: AccountSetupDraft) async -> AgeEligibility? {
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            let eligibility = try await draft.confirmAge(using: api)
+            ageEligibility = eligibility
+            return eligibility
+        } catch {
+            handle(error)
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "We couldn't check your date of birth. Please try again."
+            return nil
+        }
+    }
+
+    /// Saves the profile and privacy choices (after the age check), so Apple Health can sync.
+    func saveAccountSetup(_ draft: AccountSetupDraft) async -> Bool {
         busy = true
         errorMessage = nil
         defer { busy = false }
         do {
             try await draft.save(using: api)
-            needsAccountSetup = false
             await loadConsents()
             return true
         } catch {
             handle(error)
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "We couldn't save your choices. Please try again."
+            return false
+        }
+    }
+
+    /// Setup is done: go to Home.
+    func finishAccountSetup() async -> Bool {
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            try await AccountSetupDraft.finish(using: api)
+            needsAccountSetup = false
+            return true
+        } catch {
+            handle(error)
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "We couldn't finish setting up. Please try again."
             return false
         }
     }
@@ -185,7 +220,11 @@ final class SessionStore {
     /// Consents plus whether first-run setup is still to do (an older server without the endpoint counts as done).
     private func loadAccount() async {
         await loadConsents()
-        needsAccountSetup = (try? await api.accountSummary())?.onboardingCompleted == false
+        let summary = try? await api.accountSummary()
+        ageEligibility = summary?.ageEligibility ?? .eligible
+        // Accounts whose age isn't confirmed (or can't be served) go through setup, which asks for it
+        // or explains the restriction; the server refuses their health features either way.
+        needsAccountSetup = summary?.onboardingCompleted == false || ageEligibility != .eligible
     }
 
     private func loadConsents() async {

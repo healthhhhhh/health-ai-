@@ -1,73 +1,68 @@
 "use server";
 
-import type { ConsentKind, NotificationPreferences } from "@healthmate/shared-types";
+import type { AgeAssessmentResponse, AgeEligibility, ConsentKind } from "@healthmate/shared-types";
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { api, ApiError, errorMessage } from "@/lib/api/server";
-import { HEALTH_GOALS } from "@/lib/onboarding";
 
 export interface OnboardingInput {
   firstName: string;
   lastName: string;
   dateOfBirth: string;
   sex: string;
+  /** Kept as they are (goals are chosen later in Profile). */
   goals: string[];
-  conditions: string[];
-  allergies: string[];
-  medications: { name: string; instruction: string }[];
   consents: Record<ConsentKind, boolean>;
-  reminders: Pick<NotificationPreferences, "medication" | "task" | "appointment" | "showDetails">;
 }
 
 const SEXES = ["female", "male", "intersex", "prefer_not_to_say"];
 const CONSENTS: ConsentKind[] = ["ai_processing", "document_processing", "health_data_sync", "voice"];
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Server-side checks for the wizard; the same rules the step UI shows inline. */
+/** Server-side checks for the wizard; the same rules the steps show inline. */
 export async function validateOnboarding(input: OnboardingInput): Promise<string | null> {
   if (!input.firstName.trim()) return "Enter your first name.";
-  if (input.dateOfBirth && !/^\d{4}-\d{2}-\d{2}$/.test(input.dateOfBirth)) return "Enter your date of birth as a full date.";
-  if (input.dateOfBirth && new Date(input.dateOfBirth) > new Date()) return "Your date of birth can't be in the future.";
+  if (!DAY.test(input.dateOfBirth)) return "Enter your date of birth.";
   if (input.sex && !SEXES.includes(input.sex)) return "Choose an option for sex.";
-  if (input.medications.some((m) => !m.name.trim() || !m.instruction.trim())) return "Each medication needs a name and its instructions exactly as written.";
   return null;
 }
 
 /**
- * Saves everything chosen during onboarding, then marks it complete. Health
- * details are stored as "you added" (user_reported), never as confirmed by a clinician.
+ * Sends the date of birth the person confirmed to the API, which decides whether
+ * they can use HealthMate (the server is the only judge of age). Nothing else is
+ * saved until the last step, so a person who can't use HealthMate leaves nothing behind.
  */
+export async function confirmAge(dateOfBirth: string): Promise<{ eligibility: AgeEligibility } | { error: string }> {
+  if (!DAY.test(dateOfBirth)) return { error: "Enter your date of birth." };
+  try {
+    const result = await api<AgeAssessmentResponse>("me/age", { method: "POST", json: { dateOfBirth } });
+    return { eligibility: result.eligibility ?? "eligible" };
+  } catch (error) {
+    unstable_rethrow(error);
+    // Servers without age assessment (older, or turned off) don't restrict anyone by age.
+    if (error instanceof ApiError && (error.status === 404 || error.status === 501)) return { eligibility: "eligible" };
+    return { error: errorMessage(error) };
+  }
+}
+
+/** Saves the profile and privacy choices, then marks setup done. Runs only after the age check passed. */
 export async function completeOnboarding(input: OnboardingInput): Promise<{ error: string } | undefined> {
   const invalid = await validateOnboarding(input);
   if (invalid) return { error: invalid };
-  const goals = input.goals.filter((g) => HEALTH_GOALS.some((x) => x.id === g));
   try {
     await api("me/profile", {
       method: "PATCH",
       json: {
         firstName: input.firstName.trim().slice(0, 80),
         lastName: input.lastName.trim().slice(0, 80),
-        dateOfBirth: input.dateOfBirth || null,
+        dateOfBirth: input.dateOfBirth,
         sex: input.sex || null,
-        goals,
+        goals: input.goals,
       },
     });
-    for (const name of input.conditions.map((c) => c.trim()).filter(Boolean)) {
-      await api("me/conditions", { method: "POST", json: { name: name.slice(0, 120), source: "user_reported" } });
-    }
-    for (const substance of input.allergies.map((a) => a.trim()).filter(Boolean)) {
-      await api("me/allergies", { method: "POST", json: { substance: substance.slice(0, 120), source: "user_reported" } });
-    }
-    for (const m of input.medications) {
-      // The instruction is kept word for word; only surrounding whitespace is removed.
-      await api("me/medications", { method: "POST", json: { name: m.name.trim().slice(0, 120), instruction: m.instruction.trim().slice(0, 500), source: "user_reported" } });
-    }
     for (const kind of CONSENTS) {
       await api("me/consents", { method: "POST", json: { kind, granted: Boolean(input.consents[kind]) } });
     }
-    await optional(async () => {
-      const current = await api<NotificationPreferences>("me/notification-preferences");
-      await api("me/notification-preferences", { method: "PUT", json: { ...current, ...input.reminders } });
-    });
     await optional(() => api("me/onboarding", { method: "POST" }));
   } catch (error) {
     unstable_rethrow(error);
@@ -77,7 +72,7 @@ export async function completeOnboarding(input: OnboardingInput): Promise<{ erro
   redirect("/home?welcome=1");
 }
 
-/** Endpoints the Phase 1 UI uses that an older API server may not have yet. */
+/** Endpoints an older API server may not have yet. */
 async function optional(work: () => Promise<unknown>) {
   try {
     await work();

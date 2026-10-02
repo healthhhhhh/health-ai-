@@ -17,126 +17,157 @@ public struct HealthGoal: Identifiable, Equatable, Sendable {
     ]
 }
 
-/// First-run account setup, in order. Only "About you" needs anything (a first name).
+/// First-run account setup, in order: welcome, Apple Health (optional), name and
+/// date of birth (checked by the server), privacy choices, the Apple Health import
+/// (only when Apple Health was connected) and a summary.
 public enum AccountSetupStep: Int, CaseIterable, Sendable {
-    case about, goals, health, privacy, reminders, appleHealth, done
+    case welcome, appleHealth, about, privacy, importHealth, done
 
     public var title: String {
         switch self {
+        case .welcome: "Welcome to HealthMate"
+        case .appleHealth: "Connect Apple Health"
         case .about: "About you"
-        case .goals: "What would help most?"
-        case .health: "Your health details"
         case .privacy: "Your privacy choices"
-        case .reminders: "Reminders"
-        case .appleHealth: "Apple Health"
+        case .importHealth: "Importing your health data"
         case .done: "You're all set"
         }
     }
 
-    public var isOptional: Bool { self == .health || self == .appleHealth }
+    public var isOptional: Bool { self == .appleHealth || self == .importHealth }
 
-    /// Steps before the summary, for "Step 2 of 6".
-    public static var countedSteps: Int { allCases.count - 1 }
+    /// Steps between the welcome screen and the summary, for "Step 2 of 4".
+    public static var countedSteps: Int { allCases.count - 2 }
+    /// This step's number in "Step n of 4" (the welcome screen isn't counted).
+    public var number: Int { rawValue }
 
-    public var next: AccountSetupStep? { AccountSetupStep(rawValue: rawValue + 1) }
-    public var previous: AccountSetupStep? { AccountSetupStep(rawValue: rawValue - 1) }
-}
-
-/// Everything chosen during setup. Nothing is saved until `save(using:)`.
-public struct AccountSetupDraft: Equatable, Sendable {
-    public struct Medication: Equatable, Sendable, Identifiable {
-        public let id = UUID()
-        public var name: String
-        /// Exactly as written on the prescription or label.
-        public var instruction: String
-        public init(name: String, instruction: String) {
-            self.name = name
-            self.instruction = instruction
+    /// The step after this one. The import is shown only when Apple Health was connected
+    /// and the person kept Apple Health sync on.
+    public func next(importsHealth: Bool) -> AccountSetupStep? {
+        switch self {
+        case .privacy:
+            return importsHealth ? .importHealth : .done
+        case .done:
+            return nil
+        default:
+            return AccountSetupStep(rawValue: rawValue + 1)
         }
     }
 
+    /// Going back stops at the privacy choices: the profile is already saved by then.
+    public var previous: AccountSetupStep? {
+        switch self {
+        case .welcome, .importHealth, .done:
+            return nil
+        default:
+            return AccountSetupStep(rawValue: rawValue - 1)
+        }
+    }
+}
+
+/// Where the date of birth in the form came from.
+public enum DateOfBirthSource: Equatable, Sendable {
+    /// Typed or picked by the person, or already in their profile.
+    case person
+    /// Read from Apple Health with permission. The person must confirm it before it's sent.
+    case appleHealth
+}
+
+/// Everything chosen during setup. The date of birth is checked by the server first
+/// (`confirmAge`); the profile and privacy choices are saved after that (`save`).
+public struct AccountSetupDraft: Equatable, Sendable {
     public static let consentKinds = ["ai_processing", "document_processing", "health_data_sync", "voice"]
     public static let sexOptions: [(value: String, label: String)] = [("female", "Female"), ("male", "Male"), ("intersex", "Intersex"), ("prefer_not_to_say", "Prefer not to say")]
 
     public var firstName: String
     public var lastName: String
-    public var dateOfBirth: Date?
+    public private(set) var dateOfBirth: Date?
+    public private(set) var dateOfBirthSource: DateOfBirthSource = .person
+    /// The person said a date of birth read from Apple Health is right.
+    public var dateOfBirthConfirmed = false
     public var sex: String?
-    public var goals: Set<String>
-    public var conditions: [String] = []
-    public var allergies: [String] = []
-    public var medications: [Medication] = []
+    /// Kept as they are (goals are chosen later in Profile).
+    public var goals: [String]
     public var consents: [String: Bool]
-    public var reminders = NotificationPreferences()
 
-    public init(profile: ProfileDetails? = nil, consents: [String: Bool] = [:]) {
-        firstName = profile?.firstName ?? ""
-        lastName = profile?.lastName ?? ""
+    /// Prefills from the account (the name given at sign-up, readable before the age check)
+    /// and, when it's already readable, the health profile.
+    public init(account: AccountSummary? = nil, profile: ProfileDetails? = nil, consents: [String: Bool] = [:]) {
+        firstName = account?.firstName ?? profile?.firstName ?? ""
+        lastName = account?.lastName ?? profile?.lastName ?? ""
         dateOfBirth = profile?.dateOfBirth.flatMap(Self.dayFormatter.date(from:))
         sex = profile?.sex
-        goals = Set(profile?.goals ?? [])
+        goals = profile?.goals ?? []
         self.consents = Dictionary(uniqueKeysWithValues: Self.consentKinds.map { ($0, consents[$0] == true) })
+    }
+
+    /// The person entered or changed the date themselves.
+    public mutating func setDateOfBirth(_ date: Date?) {
+        dateOfBirth = date
+        dateOfBirthSource = .person
+        dateOfBirthConfirmed = false
+    }
+
+    /// A date of birth Apple Health shared. Used only to prefill an empty field; it isn't
+    /// proof of age and is sent to the server only after the person confirms it.
+    public mutating func prefillDateOfBirth(fromAppleHealth components: DateComponents?) {
+        guard dateOfBirth == nil, let components, let year = components.year, let month = components.month, let day = components.day else { return }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        guard let date = calendar.date(from: DateComponents(year: year, month: month, day: day)) else { return }
+        dateOfBirth = date
+        dateOfBirthSource = .appleHealth
+        dateOfBirthConfirmed = false
     }
 
     /// The message to show before leaving `step`, or nil when it can continue.
     public func problem(at step: AccountSetupStep, now: Date = Date()) -> String? {
-        switch step {
-        case .about:
-            if firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter your first name." }
-            if let dateOfBirth, dateOfBirth > now { return "Your date of birth can't be in the future." }
-            return nil
-        case .health:
-            if medications.contains(where: { $0.name.trimmed.isEmpty || $0.instruction.trimmed.isEmpty }) {
-                return "Each medication needs a name and its instructions exactly as written."
-            }
-            return nil
-        default:
-            return nil
-        }
+        guard step == .about else { return nil }
+        if firstName.trimmed.isEmpty { return "Enter your first name." }
+        guard let dateOfBirth else { return "Enter your date of birth." }
+        if dateOfBirth > now { return "Your date of birth can't be in the future." }
+        if dateOfBirthSource == .appleHealth, !dateOfBirthConfirmed { return "Check that the date of birth from Apple Health is right, then confirm it." }
+        return nil
     }
 
     public var grantedConsentCount: Int { Self.consentKinds.filter { consents[$0] == true }.count }
 
-    /// Saves the profile, health details (as "you added", never clinician-confirmed), consents and reminders, then marks setup done.
+    /// `YYYY-MM-DD`, as the API expects.
+    public var dateOfBirthDay: String? { dateOfBirth.map(Self.dayFormatter.string(from:)) }
+
+    /// Sends the confirmed date of birth to the server, which alone decides whether the
+    /// person can use HealthMate. Nothing else has been saved at this point.
+    public func confirmAge(using api: APIClient) async throws -> AgeEligibility {
+        guard let day = dateOfBirthDay else { return .ageRequired }
+        do {
+            return try await api.assessAge(dateOfBirth: day).eligibility ?? .eligible
+        } catch APIError.server(let status, _, _) where status == 404 || status == 501 {
+            // Servers without age assessment (older, or turned off) don't restrict anyone by age.
+            return .eligible
+        }
+    }
+
+    /// Saves the profile and privacy choices (after the age check passed).
     public func save(using api: APIClient, timeZone: String = TimeZone.current.identifier) async throws {
         let details = ProfileDetails(
             firstName: String(firstName.trimmed.prefix(80)),
             lastName: String(lastName.trimmed.prefix(80)),
-            dateOfBirth: dateOfBirth.map(Self.dayFormatter.string(from:)),
+            dateOfBirth: dateOfBirthDay,
             sex: sex,
             heightCm: nil,
             timeZone: timeZone,
-            goals: HealthGoal.all.map(\.id).filter(goals.contains)
+            goals: goals
         )
         _ = try await api.updateProfile(details)
-        for name in conditions.map(\.trimmed) where !name.isEmpty {
-            try await api.addCondition(name: String(name.prefix(120)), source: .userReported)
-        }
-        for substance in allergies.map(\.trimmed) where !substance.isEmpty {
-            try await api.addAllergy(substance: String(substance.prefix(120)), reaction: nil, source: .userReported)
-        }
-        for medication in medications {
-            // Only surrounding whitespace is removed; the wording is kept exactly.
-            try await api.addMedication(name: String(medication.name.trimmed.prefix(120)), instruction: String(medication.instruction.trimmed.prefix(500)), source: .userReported)
-        }
         for kind in Self.consentKinds {
             try await api.setConsent(kind, granted: consents[kind] == true)
         }
-        try await Self.optional {
-            var current = try await api.notificationPreferences()
-            current.medication = reminders.medication
-            current.task = reminders.task
-            current.appointment = reminders.appointment
-            current.showDetails = reminders.showDetails
-            try await api.updateNotificationPreferences(current)
-        }
-        try await Self.optional { try await api.completeOnboarding() }
     }
 
-    /// Endpoints the Phase 1 UI uses that an older API server may not have yet.
-    private static func optional(_ work: () async throws -> Void) async throws {
+    /// Marks setup as done (an older server without the endpoint counts as done).
+    public static func finish(using api: APIClient) async throws {
         do {
-            try await work()
+            try await api.completeOnboarding()
         } catch APIError.server(let status, _, _) where status == 404 || status == 501 {
             return
         }

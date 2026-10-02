@@ -254,10 +254,59 @@ function publicRoute(method: string, s: string[], input: Record<string, unknown>
 
 // ── Signed-in routes ────────────────────────────────────────────────────────
 
+/** Routes a restricted account can still use (the API's `@AgeExempt` routes). */
+const AGE_EXEMPT = new Set(["me/account", "me/age", "me/consents", "me/export", "me/delete", "me/identities", "me/devices", "auth/change-password"]);
+const AGE_REFUSAL: Record<string, string> = {
+  age_required: "Add your date of birth to continue.",
+  age_review: "We need to check your age before you can continue. Please contact support.",
+  age_not_eligible: "HealthMate isn't available for your age.",
+};
+
+/**
+ * Preview stand-in for POST /v1/me/age with production's rules (AGE_ENFORCEMENT=enforce):
+ * the band comes from the date, under-13s are restricted, and a restricted account that
+ * answers again with an older date is held for review rather than unlocked.
+ */
+function assessAge(account: SampleAccount, dateOfBirth: unknown): Response {
+  const day = typeof dateOfBirth === "string" ? dateOfBirth : "";
+  const parsed = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  const date = parsed ? new Date(Date.UTC(Number(parsed[1]), Number(parsed[2]) - 1, Number(parsed[3]))) : null;
+  if (!parsed || !date || date.toISOString().slice(0, 10) !== day) return fail(400, "validation_failed", "Enter a real date of birth as YYYY-MM-DD.");
+  const today = new Date().toISOString().slice(0, 10);
+  if (day > today) return fail(400, "validation_failed", "A date of birth can't be in the future.");
+  const years = Number(today.slice(0, 4)) - Number(day.slice(0, 4)) - (today.slice(5) < day.slice(5) ? 1 : 0);
+  if (years > 130) return fail(400, "validation_failed", "Check the date of birth — it's too far in the past.");
+  const band = years < 13 ? "under_13" : years < 16 ? "13_15" : years < 18 ? "16_17" : "adult";
+  const summary = account.account;
+  const restricted = summary.ageEligibility === "age_not_eligible" || summary.ageEligibility === "age_review";
+  const assessedAt = nowIso();
+  if (restricted && band !== "under_13") {
+    Object.assign(summary, { ageStatus: "review", ageEligibility: "age_review", ageAssessedAt: assessedAt });
+  } else if (band === "under_13") {
+    Object.assign(summary, { ageBand: "under_13", ageStatus: "blocked_under_13", ageEligibility: "age_not_eligible", ageAssessedAt: assessedAt, ageDeletionScheduledAt: summary.ageDeletionScheduledAt ?? new Date(Date.now() + 72 * 3_600_000).toISOString() });
+  } else {
+    Object.assign(summary, { ageBand: band, ageStatus: "in_scope", ageEligibility: "eligible", ageAssessedAt: assessedAt });
+  }
+  return json({
+    ageBand: summary.ageBand,
+    ageStatus: summary.ageStatus,
+    assessedAt,
+    outcome: restricted && band !== "under_13" ? "review" : "applied",
+    eligibility: summary.ageEligibility,
+    deletionScheduledAt: summary.ageDeletionScheduledAt ?? null,
+  });
+}
+
 function authedRoute(method: string, s: string[], ctx: Context): Response | null {
   const { session, view, input } = ctx;
   const account = session.account;
   const [a, b, c, d] = s;
+
+  const eligibility = account.account.ageEligibility;
+  if (eligibility && eligibility !== "eligible" && !AGE_EXEMPT.has(s.slice(0, 2).join("/"))) {
+    return fail(403, eligibility, AGE_REFUSAL[eligibility] ?? AGE_REFUSAL.age_not_eligible!);
+  }
+  if (a === "me" && b === "age" && method === "POST") return assessAge(account, input.dateOfBirth);
 
   // Account & profile
   if (a === "auth" && b === "change-password" && method === "POST") {
@@ -267,7 +316,10 @@ function authedRoute(method: string, s: string[], ctx: Context): Response | null
   }
   if (a === "me") {
     if (!b && method === "GET") return json(view.profile satisfies HealthProfile);
-    if (b === "account" && method === "GET") return json(account.account satisfies AccountSummary);
+    if (b === "account" && method === "GET") {
+      const { firstName, lastName } = account.profile.profile;
+      return json({ ...account.account, firstName, lastName } satisfies AccountSummary);
+    }
     if (b === "onboarding" && method === "POST") {
       account.account.onboardingCompleted = true;
       return noContent();

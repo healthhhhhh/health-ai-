@@ -20,7 +20,7 @@ app complies with any law.
 
 | # | Item | Who |
 |---|---|---|
-| 1 | **Ask for the date of birth in the apps.** Add a neutral date-of-birth question at sign-up (web and iOS) and simple screens for the `age_required`, `age_review` and `age_not_eligible` responses. Without these, production locks every account. | Eng (UI) |
+| 1 | ~~Ask for the date of birth in the apps~~ **Done (2026-10-02):** setup on web and iOS asks for the date of birth and has the server check it before saving anything; restricted accounts see a clear screen (sign out or delete). Remaining: a store-level retry block (e.g. remembered on the device) | Eng |
 | 2 | **Fill the placeholders:** legal name, contact and privacy email, postal address, provider names and regions, backup retention. | Owner |
 | 3 | **Check the AI provider's terms:** retention, no training on your data, where it processes data, and whether teen data is allowed. Then fill those details into the Privacy Policy and the Consent Notice. | Owner |
 | 4 | **Have a lawyer review the five documents**, then publish them at real URLs and link them from sign-up and Settings (replacing today's placeholder links). | Owner + Lawyer |

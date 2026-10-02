@@ -15,17 +15,18 @@ struct MainTabView: View {
     @State private var showCareFinder = false
     @State private var showCare = false
     @State private var showVoice = false
-    @State private var healthSync: HealthSyncCoordinator
+    /// App-wide Apple Health sync (owned by RootView, shared with account setup's import).
+    let healthSync: HealthSyncCoordinator
     @Environment(\.scenePhase) private var scenePhase
 
-    init(services: AppServices, session: SessionStore, onRestartOnboarding: @escaping () -> Void) {
+    init(services: AppServices, session: SessionStore, healthSync: HealthSyncCoordinator, onRestartOnboarding: @escaping () -> Void) {
         self.services = services
         self.session = session
+        self.healthSync = healthSync
         self.onRestartOnboarding = onRestartOnboarding
         _homeModel = State(initialValue: HomeViewModel(service: services.healthData))
         _planStore = State(initialValue: PlanStore(repository: services.planRepository, reminders: services.reminders))
         _chatModel = State(initialValue: ChatViewModel(api: services.api, onSessionEnded: { [session] error in session.handle(error) }))
-        _healthSync = State(initialValue: HealthSyncCoordinator(session: session, reader: services.healthReader))
         var initial = AppTab.home
         #if DEBUG
         // `-hmInitialTab plans` lets CI screenshot a specific tab.

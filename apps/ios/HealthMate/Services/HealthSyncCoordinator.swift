@@ -33,6 +33,9 @@ final class HealthSyncCoordinator {
     private let onSignedOut: () -> Void
     private var observing = false
 
+    /// Shown when a sync found nothing to upload (no data, or read access not given — HealthKit doesn't say which).
+    static let nothingNewMessage = "Nothing new to sync."
+
     /// Background runs import at most this many 30-day chunks, so they finish within HealthKit's time limit.
     static let backgroundChunkLimit = 4
 
@@ -142,7 +145,7 @@ final class HealthSyncCoordinator {
         case .skipped:
             status = .idle
         case .succeeded(let days, _):
-            status = .succeeded(days == 0 ? "Nothing new to sync." : "Synced \(days) day\(days == 1 ? "" : "s") of Apple Health data.")
+            status = .succeeded(days == 0 ? Self.nothingNewMessage : "Synced \(days) day\(days == 1 ? "" : "s") of Apple Health data.")
         case .partial:
             status = .failed(HealthSyncFailure.rejected.message)
         case .failed(let failure):

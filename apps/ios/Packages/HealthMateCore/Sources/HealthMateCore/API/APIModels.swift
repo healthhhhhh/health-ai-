@@ -159,6 +159,9 @@ public struct AccountSummary: Codable, Equatable, Sendable {
     public let signInMethods: [String]
     public let createdAt: Date
     public let onboardingCompleted: Bool
+    /// The name given at sign-up (readable before the age check, unlike the health profile). `nil` from older servers.
+    public var firstName: String? = nil
+    public var lastName: String? = nil
     /// `nil` from older servers and Preview.
     public var ageBand: AgeBand? = nil
     public var ageStatus: AgeStatus? = nil

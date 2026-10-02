@@ -170,6 +170,8 @@ describe("with AGE_ENFORCEMENT=enforce", () => {
     it("restricts every health route until a date of birth is given, keeping account controls available", async () => {
       const user = await register();
       expect(await account(user.auth)).toMatchObject({ ageBand: "unknown", ageStatus: "unknown", ageEligibility: "age_required", ageDeletionScheduledAt: null });
+      // Setup can greet the person by the name they signed up with before their age is confirmed.
+      expect(await account(user.auth)).toMatchObject({ firstName: "Sam", lastName: "" });
 
       const restricted: [string, () => ReturnType<typeof ctx.http.get>][] = [
         ["GET /v1/me", () => ctx.http.get("/v1/me")],

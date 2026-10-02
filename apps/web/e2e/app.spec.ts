@@ -120,28 +120,32 @@ test.describe("signed out", () => {
     await page.getByRole("link", { name: "Open Preview inbox" }).click();
     await page.getByRole("link", { name: "Confirm email address" }).click();
     await expect(page).toHaveURL(/\/onboarding$/);
-    await expect(page.getByRole("heading", { level: 1, name: "About you" })).toBeVisible();
-    await expect(page.getByLabel("First name")).toHaveValue("Robin");
+    await expect(page.getByRole("heading", { level: 1, name: "Welcome to HealthMate" })).toBeVisible();
 
     // The app sends unfinished accounts back to onboarding.
     await page.goto("/home");
     await expect(page).toHaveURL(/\/onboarding$/);
 
+    await page.getByRole("button", { name: "Get started" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "About you" })).toBeVisible();
+    // The name given at sign-up is filled in; the date of birth is required and checked by the server.
+    await expect(page.getByLabel("First name")).toHaveValue("Robin");
+    await page.getByLabel("Date of birth").fill("");
     await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("button", { name: /Sleep better/ }).click();
-    await expect(page.getByRole("button", { name: /Sleep better/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Enter your date of birth.")).toBeVisible();
+    await page.getByLabel("Date of birth").fill("1990-04-12");
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Your health details" })).toBeVisible();
-    await page.getByRole("button", { name: "Skip" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Your privacy choices" })).toBeVisible();
     await page.getByRole("switch", { name: "AI Health Assistant" }).click();
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Reminders" })).toBeVisible();
-    await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Apple Health" })).toBeVisible();
+    // The web can't connect Apple Health and never says it did.
+    await expect(page.getByText("This isn't available on this device.")).toBeVisible();
+    await expect(page.getByText("Connected", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "You're all set, Robin" })).toBeVisible();
     await expect(page.getByText("1 of 4 turned on")).toBeVisible();
+    await expect(page.getByText("Not connected — connect it in the iPhone app")).toBeVisible();
     await page.getByRole("button", { name: "Go to Home" }).click();
     await expect(page).toHaveURL(/\/home\?welcome=1$/);
     await expect(page.getByRole("heading", { level: 1, name: /Good (Morning|Afternoon|Evening), Robin/ })).toBeVisible();
@@ -165,14 +169,38 @@ test.describe("signed out", () => {
     await page.getByRole("button", { name: "Continue with Google" }).click();
     await expect(page).toHaveURL(/\/onboarding$/);
     // Every onboarding step is accessible.
-    for (const heading of ["About you", "What would help most?", "Your health details", "Your privacy choices", "Reminders", "Apple Health"]) {
+    for (const heading of ["Welcome to HealthMate", "About you", "Your privacy choices", "Apple Health"]) {
       await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
       const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
       expect(results.violations.map((v) => `${heading} ${v.id}: ${v.nodes.length}`)).toEqual([]);
-      if (heading === "About you") await page.getByLabel("First name").fill("Sam");
-      await page.getByRole("button", { name: "Continue" }).click();
+      if (heading === "About you") {
+        await page.getByLabel("First name").fill("Sam");
+        await page.getByLabel("Date of birth").fill("2010-01-15");
+      }
+      await page.getByRole("button", { name: heading === "Welcome to HealthMate" ? "Get started" : "Continue" }).click();
     }
     await expect(page.getByRole("heading", { level: 1, name: "You're all set, Sam" })).toBeVisible();
+  });
+
+  test("a date of birth under 13 stops setup, saves nothing and keeps health features locked", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with Google" }).click();
+    await page.getByRole("button", { name: "Get started" }).click();
+    await page.getByLabel("First name").fill("Kit");
+    const today = new Date();
+    const tenYearsAgo = `${today.getUTCFullYear() - 10}-06-15`;
+    await page.getByLabel("Date of birth").fill(tenYearsAgo);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "HealthMate isn't available for you" })).toBeVisible();
+    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+    expect(results.violations).toEqual([]);
+    // Health screens send the account back here instead of showing data.
+    await page.goto("/home");
+    await expect(page).toHaveURL(/\/onboarding$/);
+    await expect(page.getByRole("heading", { level: 1, name: "HealthMate isn't available for you" })).toBeVisible();
+    await page.goto("/health");
+    await expect(page).toHaveURL(/\/onboarding$/);
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   });
 
   test("a used or expired confirmation link explains what to do", async ({ page }) => {
