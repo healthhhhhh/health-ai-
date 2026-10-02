@@ -1049,6 +1049,21 @@ test.describe("reports, health and settings", () => {
       await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
     });
 
+    test("a page that can't load explains it, and Try again recovers (setup and signed-in pages)", async ({ page, context }) => {
+      await signInFresh(page);
+      const offline = { name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "offline" })), url: page.url() };
+      for (const path of ["/onboarding", "/timeline"]) {
+        await context.addCookies([offline]);
+        await page.goto(path);
+        await expect(page.getByRole("heading", { name: "We couldn't load this page" })).toBeVisible();
+        await expect(page.getByText("Application error")).toHaveCount(0);
+        await context.clearCookies({ name: "hm_preview_controls" });
+        await page.getByRole("button", { name: "Try again" }).click();
+        await expect(page.getByRole("heading", { name: "We couldn't load this page" })).toHaveCount(0);
+      }
+      await expect(page).toHaveURL(/\/timeline$/);
+    });
+
     test("settings show the error state for privacy choices", async ({ page, context }) => {
       await signInFresh(page);
       await context.addCookies([{ name: "hm_preview_controls", value: encodeURIComponent(JSON.stringify({ state: "error" })), url: page.url() }]);
