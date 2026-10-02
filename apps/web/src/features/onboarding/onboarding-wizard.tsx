@@ -30,9 +30,9 @@ const SEX_OPTIONS = [
 ];
 
 const CONSENT_COPY: { kind: ConsentKind; title: string; description: string }[] = [
-  { kind: "ai_processing", title: "AI Health Assistant", description: "Lets the assistant use what you share in chat to answer. Needed for AI chat." },
-  { kind: "document_processing", title: "Report and photo analysis", description: "Lets HealthMate read reports and photos you upload to explain them in plain language." },
-  { kind: "health_data_sync", title: "Health data sync", description: "Lets HealthMate store readings from Apple Health (set up in the iPhone app)." },
+  { kind: "ai_processing", title: "AI Health Assistant", description: "Send your messages and saved health details to our AI provider to answer you. Needed for AI chat." },
+  { kind: "document_processing", title: "Report and photo analysis", description: "Send files you upload to our AI provider for a plain-language summary." },
+  { kind: "health_data_sync", title: "Health data sync", description: "Store Apple Health measurements you choose in your account (set up in the iPhone app). They reach the AI only if AI Health Assistant is also on." },
   { kind: "voice", title: "Voice input", description: "Lets you speak to the assistant. Audio is transcribed and not kept." },
 ];
 
@@ -201,7 +201,7 @@ export function OnboardingWizard({
 
         {step === "privacy" && (
           <div className="flex flex-col gap-2">
-            <p className="text-body text-text-secondary">Each is off until you turn it on, and you can change them any time in Settings › Privacy.</p>
+            <p className="text-body text-text-secondary">Each is off until you turn it on, and you can change them any time in Settings › Privacy. Emergency guidance works either way.</p>
             <div className="divide-y divide-separator">
               {CONSENT_COPY.map((c) => (
                 <Switch

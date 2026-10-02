@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 const CONSENTS = [
   { kind: "ai_processing", title: "AI Health Assistant", description: "Send your messages and saved health details to our AI provider to answer you." },
   { kind: "document_processing", title: "Report & photo analysis", description: "Send files you upload to our AI provider for a plain-language summary." },
-  { kind: "health_data_sync", title: "Health data sync", description: "Store Apple Health measurements you choose in your account (set up in the iPhone app)." },
+  { kind: "health_data_sync", title: "Health data sync", description: "Store Apple Health measurements you choose in your account (set up in the iPhone app). They reach the AI only if AI Health Assistant is also on." },
 ] as const;
 
 export default async function SettingsPage() {

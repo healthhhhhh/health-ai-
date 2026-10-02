@@ -136,6 +136,11 @@ test.describe("signed out", () => {
     await page.getByLabel("Date of birth").fill("1990-04-12");
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Your privacy choices" })).toBeVisible();
+    // Consent is informed: what is sent to the AI provider, and what is only stored, is said before any switch is on.
+    await expect(page.getByText("Send your messages and saved health details to our AI provider to answer you.", { exact: false })).toBeVisible();
+    await expect(page.getByText("Send files you upload to our AI provider", { exact: false })).toBeVisible();
+    await expect(page.getByText("They reach the AI only if AI Health Assistant is also on.", { exact: false })).toBeVisible();
+    for (const name of ["AI Health Assistant", "Report and photo analysis", "Health data sync"]) await expect(page.getByRole("switch", { name })).not.toBeChecked();
     await page.getByRole("switch", { name: "AI Health Assistant" }).click();
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Apple Health" })).toBeVisible();
@@ -1054,12 +1059,14 @@ test.describe("reports, health and settings", () => {
   });
 
   test("signed-in pages have no detectable accessibility violations", async ({ page }) => {
+    test.slow(); // scans every signed-in page; close to the default 30s on slower machines
     for (const path of SIGNED_IN_PAGES) {
       await expectNoA11yViolations(page, path);
     }
   });
 
   test("signed-in pages have no detectable accessibility violations in dark mode", async ({ page }) => {
+    test.slow(); // scans every signed-in page; close to the default 30s on slower machines
     await page.emulateMedia({ colorScheme: "dark" });
     for (const path of SIGNED_IN_PAGES) {
       await expectNoA11yViolations(page, path);

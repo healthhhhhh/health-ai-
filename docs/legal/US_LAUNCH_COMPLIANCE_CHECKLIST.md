@@ -360,8 +360,9 @@ DOB kept out of AI payloads and database-error logs; Apple Health data to AI onl
 **Drafted (unpublished):** the launch documents in `docs/legal/policies/` (five user-facing drafts, incident procedure, launch checklist).
 
 **Blockers that code alone can't resolve:**
-1. **Client age screen and restricted states** (web + iOS): neutral DOB question on every sign-up path, retry
-   prevention after a block, screens for `age_required` / `age_review` / `age_not_eligible` — UI work, not done.
+1. ~~**Client age screen and restricted states**~~ **Done (2026-10-02):** web and iOS setup asks for the date of
+   birth after every sign-up path; restricted accounts see sign-out/delete screens; a 7-day device guard stops
+   retrying with another date (no date stored); a mid-session age refusal sends the app back to setup.
 2. **iOS app-store age laws** (Texas, Utah, Louisiana): Declared Age Range API, parental-consent and
    significant-change flows, consent-revocation notifications. Apple's age-assurance Q&A describes these APIs;
    the per-state status and dates must be re-checked at launch (some laws face litigation).

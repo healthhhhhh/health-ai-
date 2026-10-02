@@ -94,6 +94,8 @@ export class AccountService {
       ),
       timeline: q(`SELECT event_type, title, occurred_at, source_type, payload FROM timeline_events WHERE user_id = $1 ORDER BY occurred_at`),
       consents: q(`SELECT kind, granted, version, created_at FROM consents WHERE user_id = $1 ORDER BY created_at`),
+      // When the safety check flagged an emergency or urgent message (levels and rule ids, no message text).
+      safetyAlerts: q(`SELECT level, rule_ids, channel, created_at FROM safety_events WHERE user_id = $1 ORDER BY created_at`),
       moodCheckIns: q(`SELECT mood, recorded_at FROM mood_checkins WHERE user_id = $1 ORDER BY recorded_at`),
       plan: q(`SELECT revision, updated_at FROM plans WHERE user_id = $1`),
       planItems: q(

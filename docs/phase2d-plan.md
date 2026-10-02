@@ -81,6 +81,26 @@ yet" until the app obtains Google ID tokens (below). `HealthMateCore` already ha
 - Web: Google Identity Services returns an ID token in the browser; post it to the existing
   server action.
 
+### Status check (2026-10-02)
+
+Re-checked what can be done without credentials:
+
+- **Done and tested:** server-side verification (`GoogleIdTokenVerifier`, `test/google-auth.test.ts`
+  with locally signed tokens), linking/unlinking, Google-only sign-in methods, and deletion for
+  accounts without a password (typed `DELETE` on web and iOS, or a fresh ID token through the API).
+  Age setup runs after sign-in, so Google accounts get the same date-of-birth check as email accounts.
+- **Blocked on credentials:** the client side needs real OAuth client IDs (steps 1–3 above). Without
+  them the SDK can't return a token, so nothing can be tested end-to-end and the buttons rightly say
+  "isn't available on this server yet". Adding the GoogleSignIn package or the Google Identity
+  Services script before then would ship code that never runs in CI. Do it when the client IDs exist.
+- **Apple:** needs a paid Apple Developer Program membership (the Sign in with Apple capability isn't
+  available with free signing) and an `AppleIdTokenVerifier` (issuer `https://appleid.apple.com`,
+  audience = bundle ID or Services ID). Until then `provider: "apple"` answers 501. Whether to pay
+  for the program is an owner decision.
+- **Real-device checks still needed** once wired: Google sign-in on an iPhone (URL scheme callback),
+  first sign-in creating an account that then goes through age setup, and deleting a Google-only
+  account from Settings.
+
 ## 2. Push notifications
 
 **Registry.** `push_devices (user_id, platform 'ios', environment sandbox|production,

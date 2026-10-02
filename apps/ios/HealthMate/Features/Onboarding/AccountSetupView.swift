@@ -257,15 +257,15 @@ struct AccountSetupView: View {
     }
 
     private static let consentCopy = [
-        ConsentCopy(kind: "ai_processing", title: "AI Health Assistant", detail: "Lets the assistant use what you share in chat to answer. Needed for AI chat."),
-        ConsentCopy(kind: "document_processing", title: "Report and photo analysis", detail: "Lets HealthMate read reports and photos you upload to explain them in plain language."),
-        ConsentCopy(kind: "health_data_sync", title: "Apple Health sync", detail: "Lets HealthMate store the Apple Health measurements you allowed in your account."),
+        ConsentCopy(kind: "ai_processing", title: "AI Health Assistant", detail: "Send your messages and saved health details to our AI provider to answer you. Needed for AI chat."),
+        ConsentCopy(kind: "document_processing", title: "Report and photo analysis", detail: "Send files you upload to our AI provider for a plain-language summary."),
+        ConsentCopy(kind: "health_data_sync", title: "Apple Health sync", detail: "Store the Apple Health measurements you choose in your account. They reach the AI only if AI Health Assistant is also on."),
         ConsentCopy(kind: "voice", title: "Voice input", detail: "Lets you speak to the assistant. Audio is transcribed and not kept."),
     ]
 
     private var privacyStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Each is off until you turn it on, and you can change them any time in Settings › Privacy.")
+            Text("Each is off until you turn it on, and you can change them any time in Settings › Privacy. Emergency guidance works either way.")
                 .font(.hmBody)
                 .foregroundStyle(HM.Colors.textSecondary)
             ForEach(Self.consentCopy) { copy in

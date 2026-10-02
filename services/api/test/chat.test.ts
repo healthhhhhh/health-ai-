@@ -43,6 +43,13 @@ describe("chat safety pipeline", () => {
     expect(ctx.ai.requests).toHaveLength(0);
     const events = await ctx.db.query<{ level: string }>(`SELECT level FROM safety_events WHERE user_id = $1`, [user.userId]);
     expect(events.rows[0]?.level).toBe("emergency");
+    // The person's own download includes the alert (no message text), and only theirs.
+    const exported = await ctx.http.get("/v1/me/export").set(user.auth).expect(200);
+    expect(exported.body.safetyAlerts).toHaveLength(1);
+    expect(exported.body.safetyAlerts[0]).toMatchObject({ level: "emergency", channel: "chat" });
+    expect(Object.keys(exported.body.safetyAlerts[0]).sort()).toEqual(["channel", "created_at", "level", "rule_ids"]);
+    const other = await signUp(ctx);
+    expect((await ctx.http.get("/v1/me/export").set(other.auth).expect(200)).body.safetyAlerts).toEqual([]);
   });
 
   it("forces an urgent care recommendation when triage says urgent", async () => {

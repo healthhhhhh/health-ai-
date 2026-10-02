@@ -13,8 +13,13 @@ app complies with any law.
   off stops queued work. Emergency guidance doesn't use the AI.
 - **No date of birth goes to the AI**, and there is no parent access.
 - **Delete and download.** People can delete their account and download their data from inside the app.
+  Accounts without a password (Google only) confirm deletion by typing DELETE. The download includes
+  emergency/urgent safety alerts (levels only, no message text).
+- **Consent wording says where data goes.** The setup screens and Settings say what is sent to the AI
+  provider and what is only stored. Apple Health readings reach the AI only when AI chat is also on.
 - **Tests:** `test/age-eligibility.test.ts`, `test/age.test.ts`, `test/consent-enforcement.test.ts`,
-  `test/dob-exposure.test.ts`, `test/isolation.test.ts`, `test/rls.test.ts`.
+  `test/dob-exposure.test.ts`, `test/isolation.test.ts`, `test/rls.test.ts`, `test/chat.test.ts`;
+  web `e2e/app.spec.ts`; iOS `AgeRetryGuardTests`, `AccountDeletionTests`, `AccountSetupTests`.
 
 ## Essential before launch
 
@@ -29,6 +34,30 @@ app complies with any law.
 | 7 | **Set up a support inbox and a way to resolve age reviews**, including a mistyped under-13 date, without asking for ID. | Owner |
 | 8 | **Get a clinical review** of the emergency rules and the teen guidance given to the AI. | Clinician |
 | 9 | **Fill in the incident-response contacts.** | Owner |
+
+### Age reviews today (background for item 7)
+
+How the app behaves now (tests: `test/age.test.ts`, `test/age-eligibility.test.ts`):
+
+- **Under-13 answer:** the account is restricted at once and deletion is scheduled for 72 hours later
+  (`UNDER_13_DELETION_HOURS`). The person can only sign out or delete the account.
+- **Under-13 answer, then an older date:** the account moves to "review" but stays restricted, and the
+  deletion deadline **doesn't change**. If no one acts, it is deleted when the deadline passes.
+- **A teen who later enters an adult date:** they keep the teen setting (and its protections) until the
+  turning-18 date already on record. The account isn't blocked, but an adult who mistyped a teen date
+  stays on the teen setting.
+- **The same device** can't simply try again with another date for 7 days (no date of birth is stored).
+
+There is **no support tool**. Today, changing an account's age state means editing the database by hand,
+which leaves no audit record. Before launch, the owner (with the lawyer) decides:
+
+1. Who handles reviews, through which inbox, and how fast. Under-13 accounts are deleted after 72 hours.
+2. What a person can show to resolve a review **without collecting ID from a child** (for example, a
+   parent confirming by email).
+3. Whether support may lift a block or only correct towards the stricter band.
+
+Engineering then builds a small server-only action that records who changed what and why, with no
+date of birth. Don't build it before these decisions are made.
 
 ## Questions for the lawyer (short)
 
