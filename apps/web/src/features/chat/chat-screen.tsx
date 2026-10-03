@@ -6,6 +6,7 @@ import { AlertCircle, CloudOff, FlaskConical, LockKeyhole, MessageSquarePlus, Se
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { Mascot } from "@/components/illustrations/mascot";
+import { aiProviderPhrase } from "@/lib/ai-provider";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ChatBubble } from "@/components/ui/chat-bubble";
@@ -37,6 +38,7 @@ export function ChatScreen({
   demo,
   initialQuestion,
   missingConversation = false,
+  aiRecipients,
 }: {
   conversation: { id: string; messages: ChatMessageRecord[] } | null;
   /** Null when the list couldn't be loaded (the chat itself still works). */
@@ -48,6 +50,8 @@ export function ChatScreen({
   initialQuestion?: string;
   /** The requested conversation no longer exists. */
   missingConversation?: boolean;
+  /** Outside AI companies that receive data (`/v1/meta`), named in the consent gate. */
+  aiRecipients?: string[];
 }) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState(conversation?.id ?? null);
@@ -183,7 +187,7 @@ export function ChatScreen({
                 <LockKeyhole aria-hidden className="size-5 text-primary" /> Before we start
               </h2>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-caption text-text-secondary">
-                <li>Your messages, plus the profile details and memories you&apos;ve saved, are sent to our AI provider to write each answer.</li>
+                <li>Your messages, plus the profile details and memories you&apos;ve saved, are sent to {aiProviderPhrase(aiRecipients)} to write each answer.</li>
                 <li>You can delete conversations or your whole account at any time.</li>
                 <li>Answers are general information, not a diagnosis. In an emergency, call your local emergency number.</li>
               </ul>

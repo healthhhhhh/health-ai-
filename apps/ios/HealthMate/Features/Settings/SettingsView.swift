@@ -53,8 +53,8 @@ struct SettingsView: View {
 
             if session.isSignedIn {
                 Section {
-                    consentToggle("ai_processing", title: "AI Health Assistant", detail: "Send your messages and saved health details to our AI provider to answer you.")
-                    consentToggle("document_processing", title: "Report & photo analysis", detail: "Send files you upload to our AI provider for a plain-language summary.")
+                    consentToggle("ai_processing", title: "AI Health Assistant", detail: "Send your messages and saved health details to \(session.aiProviderPhrase) to answer you.")
+                    consentToggle("document_processing", title: "Report & photo analysis", detail: "Send files you upload to \(session.aiProviderPhrase) for a plain-language summary.")
                     consentToggle("health_data_sync", title: "Health data sync", detail: "Store Apple Health measurements you choose in your account. They reach the AI only if AI Health Assistant is also on.")
                 } header: {
                     Text("Privacy")

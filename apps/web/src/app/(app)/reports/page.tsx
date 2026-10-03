@@ -12,6 +12,7 @@ import { DocumentsConsent } from "@/features/reports/documents-consent";
 import { documentTitle, statusBadge } from "@/features/reports/labels";
 import { RefreshWhileProcessing } from "@/features/reports/refresh-while-processing";
 import { UploadPanel } from "@/features/reports/upload-panel";
+import { getMeta } from "@/lib/api/data";
 import { api, ApiError } from "@/lib/api/server";
 import { cn } from "@/lib/cn";
 import { isPreviewMode } from "@/lib/preview/mode";
@@ -59,6 +60,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   const [documents, consents] = loaded;
   const hasConsent = consents.some((c) => c.kind === "document_processing" && c.granted);
+  const meta = hasConsent ? null : await getMeta();
   const shown = filterDocuments(documents, filter, query);
 
   return (
@@ -70,7 +72,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <h2 id="upload" className="mb-4 text-card-title text-text-primary">
             Upload
           </h2>
-          {hasConsent ? <UploadPanel /> : <DocumentsConsent />}
+          {hasConsent ? <UploadPanel /> : <DocumentsConsent aiRecipients={meta?.ai.recipients} />}
           {hasConsent && isPreviewMode() && (
             <p className="mt-4 rounded-md bg-card-muted p-3 text-caption text-text-secondary">
               Preview tip: files aren&apos;t analysed. Put &ldquo;blurry&rdquo; in a file name to see the unreadable result, or &ldquo;damaged&rdquo; to see a failed upload.

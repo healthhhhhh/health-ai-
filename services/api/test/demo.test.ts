@@ -35,7 +35,7 @@ async function login() {
 describe("demo mode", () => {
   it("reports itself as a demo so clients can label it", async () => {
     const meta = (await (await fetch(`${base}/meta`)).json()) as { ai: { available: boolean; demo: boolean } };
-    expect(meta.ai).toEqual({ available: true, demo: true });
+    expect(meta.ai).toEqual({ available: true, demo: true, recipients: [] }); // scripted answers: no AI company receives anything
   });
 
   it("seeds a non-medical demo account, idempotently", async () => {

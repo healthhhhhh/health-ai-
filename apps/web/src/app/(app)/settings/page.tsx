@@ -11,7 +11,8 @@ import { SignOutButton } from "@/features/auth/sign-out-button";
 import { ConsentToggle } from "@/features/settings/consent-toggle";
 import { DeleteAccountForm } from "@/features/settings/delete-account-form";
 import { DisplayForm } from "@/features/settings/display-form";
-import { getAccount } from "@/lib/api/data";
+import { aiProviderPhrase } from "@/lib/ai-provider";
+import { getAccount, getMeta } from "@/lib/api/data";
 import { api, ApiError } from "@/lib/api/server";
 import { getDisplayPrefs } from "@/lib/display-prefs.server";
 import { isPreviewMode } from "@/lib/preview/mode";
@@ -19,13 +20,14 @@ import { isPreviewMode } from "@/lib/preview/mode";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
-const CONSENTS = [
-  { kind: "ai_processing", title: "AI Health Assistant", description: "Send your messages and saved health details to our AI provider to answer you." },
-  { kind: "document_processing", title: "Report & photo analysis", description: "Send files you upload to our AI provider for a plain-language summary." },
+const consentRows = (ai: string) => [
+  { kind: "ai_processing", title: "AI Health Assistant", description: `Send your messages and saved health details to ${ai} to answer you.` },
+  { kind: "document_processing", title: "Report & photo analysis", description: `Send files you upload to ${ai} for a plain-language summary.` },
   { kind: "health_data_sync", title: "Health data sync", description: "Store Apple Health measurements you choose in your account (set up in the iPhone app). They reach the AI only if AI Health Assistant is also on." },
 ] as const;
 
 export default async function SettingsPage() {
+  const CONSENTS = consentRows(aiProviderPhrase((await getMeta())?.ai.recipients));
   const [consents, prefs, account] = await Promise.all([
     api<ConsentRecord[]>("me/consents").catch((error) => {
       if (error instanceof ApiError && error.status !== 401) return error;

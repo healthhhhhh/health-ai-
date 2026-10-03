@@ -55,7 +55,7 @@ struct ChatView: View {
                         if !session.isSignedIn {
                             SignInGate(onSignIn: { showSignIn = true })
                         } else if !session.hasConsent("ai_processing") {
-                            ConsentGate(busy: session.busy) {
+                            ConsentGate(busy: session.busy, aiProvider: session.aiProviderPhrase) {
                                 Task { await session.setConsent("ai_processing", granted: true) }
                             }
                         } else {
@@ -389,6 +389,8 @@ private struct SignInGate: View {
 
 private struct ConsentGate: View {
     let busy: Bool
+    /// "our AI provider", plus the company's name when known.
+    let aiProvider: String
     let onAllow: () -> Void
 
     var body: some View {
@@ -398,7 +400,7 @@ private struct ConsentGate: View {
                 .font(.hmSectionHeading)
                 .foregroundStyle(HM.Colors.textPrimary)
             VStack(alignment: .leading, spacing: 8) {
-                bullet("Your messages, plus the profile details and memories you've saved, are sent to our AI provider to write each answer.")
+                bullet("Your messages, plus the profile details and memories you've saved, are sent to \(aiProvider) to write each answer.")
                 bullet("They aren't used to train AI models, and you can delete conversations or your whole account at any time.")
                 bullet("Answers are general information, not a diagnosis. For emergencies, always call your local emergency number.")
             }

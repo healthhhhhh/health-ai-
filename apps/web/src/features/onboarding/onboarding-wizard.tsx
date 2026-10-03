@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/fields";
 import { Input } from "@/components/ui/input";
 import { PermissionPrimer } from "@/components/ui/permission-primer";
+import { aiProviderPhrase } from "@/lib/ai-provider";
 import { Switch } from "@/components/ui/switch";
 import { SignOutButton } from "@/features/auth/sign-out-button";
 import { DeleteAccountForm } from "@/features/settings/delete-account-form";
@@ -29,9 +30,10 @@ const SEX_OPTIONS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
-const CONSENT_COPY: { kind: ConsentKind; title: string; description: string }[] = [
-  { kind: "ai_processing", title: "AI Health Assistant", description: "Send your messages and saved health details to our AI provider to answer you. Needed for AI chat." },
-  { kind: "document_processing", title: "Report and photo analysis", description: "Send files you upload to our AI provider for a plain-language summary." },
+/** `ai`: how the AI company is named (`aiProviderPhrase`). */
+const consentCopy = (ai: string): { kind: ConsentKind; title: string; description: string }[] => [
+  { kind: "ai_processing", title: "AI Health Assistant", description: `Send your messages and saved health details to ${ai} to answer you. Needed for AI chat.` },
+  { kind: "document_processing", title: "Report and photo analysis", description: `Send files you upload to ${ai} for a plain-language summary.` },
   { kind: "health_data_sync", title: "Health data sync", description: "Store Apple Health measurements you choose in your account (set up in the iPhone app). They reach the AI only if AI Health Assistant is also on." },
   { kind: "voice", title: "Voice input", description: "Lets you speak to the assistant. Audio is transcribed and not kept." },
 ];
@@ -67,6 +69,7 @@ export function OnboardingWizard({
   restricted: initialRestriction = null,
   deletionScheduled = false,
   hasPassword = true,
+  aiRecipients,
 }: {
   defaults: OnboardingDefaults;
   preview: boolean;
@@ -74,7 +77,10 @@ export function OnboardingWizard({
   deletionScheduled?: boolean;
   /** False for accounts that sign in with Google / Apple only (deletion is confirmed by typing DELETE). */
   hasPassword?: boolean;
+  /** Outside AI companies that receive data (`/v1/meta`), named next to the switches. */
+  aiRecipients?: string[];
 }) {
+  const CONSENT_COPY = consentCopy(aiProviderPhrase(aiRecipients));
   const [index, setIndex] = useState(0);
   const current = STEPS[index] ?? STEPS[0];
   const step: Step = current.id;

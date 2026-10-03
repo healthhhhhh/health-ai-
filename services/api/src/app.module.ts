@@ -11,6 +11,7 @@ import { AccountService } from "./modules/account/account.service";
 import { AgeService } from "./modules/account/age.service";
 import { ProcessingPolicy } from "./modules/account/processing-policy";
 import { AiGateway, registryOf, type AiProviderRegistry } from "./modules/ai/ai.gateway";
+import { aiDataRecipients } from "./modules/ai/ai.routing";
 import { AI_PROVIDERS, type AiProvider } from "./modules/ai/ai.types";
 import { AuthController, IdentitiesController } from "./modules/auth/auth.controller";
 import { ID_TOKEN_VERIFIERS, idTokenVerifiersFor, type IdTokenVerifiers } from "./modules/auth/oauth";
@@ -60,7 +61,8 @@ class HealthController {
   meta() {
     return {
       apiVersion: 1,
-      ai: { available: this.ai.available, demo: this.ai.demo },
+      // `recipients`: the outside AI companies that receive data, named on the consent screens.
+      ai: { available: this.ai.available, demo: this.ai.demo, recipients: aiDataRecipients(this.config.aiProvidersInUse) },
       // `enforce`: only enabled bands may use health features. Under-13s are never served; no parental consent exists.
       age: { enforcement: this.config.AGE_ENFORCEMENT, enabledBands: this.config.enabledAgeBands, parentalConsent: false },
     };

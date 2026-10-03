@@ -4,6 +4,18 @@ import { AI_TASKS, type AiEffort, type AiTask } from "./ai.types";
 export const AI_PROVIDER_NAMES = ["anthropic", "development", "none"] as const;
 export type AiProviderName = (typeof AI_PROVIDER_NAMES)[number];
 
+/**
+ * The outside company behind each provider that receives people's data. The
+ * offline development provider and "none" send nothing anywhere. A new provider
+ * must be added here, so consent screens keep naming who receives the data.
+ */
+const AI_PROVIDER_COMPANIES: Record<AiProviderName, string | null> = { anthropic: "Anthropic", development: null, none: null };
+
+/** Companies that receive data for AI processing with this configuration (for consent screens). */
+export function aiDataRecipients(providers: readonly AiProviderName[]): string[] {
+  return [...new Set(providers.map((p) => AI_PROVIDER_COMPANIES[p]).filter((c): c is string => c !== null))];
+}
+
 export interface AiRouteConfig {
   /** Registry name of the provider ("unavailable" for "none"). */
   provider: string;

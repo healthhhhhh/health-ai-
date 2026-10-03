@@ -58,6 +58,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       demo={meta?.preview ? "preview" : meta?.ai.demo === true ? "demo" : null}
       initialQuestion={q?.slice(0, 500)}
       missingConversation={Boolean(c) && conversation === null}
+      aiRecipients={meta?.ai.recipients}
     />
   );
 }

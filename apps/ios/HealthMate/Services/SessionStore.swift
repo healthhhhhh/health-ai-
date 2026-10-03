@@ -14,6 +14,10 @@ final class SessionStore {
     private(set) var aiAvailable: Bool?
     /// The server gives scripted demo answers; the UI must say so.
     private(set) var isDemo = false
+    /// Outside AI companies that receive data (`/v1/meta`); nil from Preview and older servers.
+    private(set) var aiRecipients: [String]?
+    /// "our AI provider", plus the company's name when known, for consent screens.
+    var aiProviderPhrase: String { AIProviderPhrase.phrase(recipients: aiRecipients) }
     /// Phase 1 Preview mode: sample account and sample AI responses, no server.
     private(set) var isPreview = false
     private(set) var consents: [String: Bool] = [:]
@@ -55,6 +59,7 @@ final class SessionStore {
         let meta = try? await api.meta()
         aiAvailable = meta?.ai.available
         isDemo = meta?.ai.demo == true
+        aiRecipients = meta?.ai.recipients
         isPreview = meta?.preview == true
     }
 

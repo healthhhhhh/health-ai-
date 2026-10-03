@@ -7,7 +7,7 @@ import { loadConfig } from "../src/config";
 import { createDatabase, migrate, type Database } from "../src/db/database";
 import { AiGateway, registryOf } from "../src/modules/ai/ai.gateway";
 import { billingPeriod, parsePrices, PriceBook } from "../src/modules/ai/ai.pricing";
-import { parseRoutes } from "../src/modules/ai/ai.routing";
+import { aiDataRecipients, AI_PROVIDER_NAMES, parseRoutes } from "../src/modules/ai/ai.routing";
 import { estimateInputTokens, SummarySchema, TaskGenerationSchema, validateTaskOutput } from "../src/modules/ai/ai.tasks";
 import { AI_TASKS, AiBudgetExceededError, AiDeclinedError, AiInvalidOutputError, AiUnavailableError, AiUnpricedModelError, type AiProvider, type AiTask } from "../src/modules/ai/ai.types";
 import { DevelopmentAiProvider } from "../src/modules/ai/development.provider";
@@ -53,6 +53,25 @@ describe("routing configuration", () => {
       providers: ["anthropic", "development", "none"],
     });
     expect(parseRoutes(undefined)).toEqual({ routes: {}, providers: [] });
+  });
+
+  it("names the outside companies that receive data, for the consent screens", async () => {
+    expect(aiDataRecipients(testConfig({ AI_PROVIDER: "development" }).aiProvidersInUse)).toEqual([]);
+    expect(aiDataRecipients(testConfig({ AI_PROVIDER: "none" }).aiProvidersInUse)).toEqual([]);
+    expect(aiDataRecipients(testConfig({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key-not-real" }).aiProvidersInUse)).toEqual(["Anthropic"]);
+    // A route counts too, even when the default provider sends nothing anywhere.
+    const routed = testConfig({ AI_PROVIDER: "development", AI_ROUTES: "complex_health=anthropic", ANTHROPIC_API_KEY: "test-key-not-real" });
+    expect(aiDataRecipients(routed.aiProvidersInUse)).toEqual(["Anthropic"]);
+    // Every provider is classified (a new one can't silently go unnamed).
+    for (const name of AI_PROVIDER_NAMES) expect(aiDataRecipients([name])).toHaveLength(name === "anthropic" ? 1 : 0);
+
+    // Served by /v1/meta. The test app uses a fake provider; only the configuration is read.
+    const ctx = await createTestContext({ env: { AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key-not-real" } });
+    try {
+      expect((await ctx.http.get("/v1/meta").expect(200)).body.ai.recipients).toEqual(["Anthropic"]);
+    } finally {
+      await ctx.close();
+    }
   });
 
   it("rejects unknown tasks and providers, duplicates and bad syntax", () => {
@@ -307,7 +326,7 @@ describe("chat through the gateway (HTTP)", () => {
     const exported = await ctx.http.get("/v1/me/export").set(user.auth).expect(200);
     expect(JSON.stringify(exported.body)).not.toMatch(/cost_usd|billing_period|ai_usage/);
     const meta = await ctx.http.get("/v1/meta").expect(200);
-    expect(meta.body).toEqual({ apiVersion: 1, ai: { available: true, demo: false }, age: { enforcement: "record", enabledBands: ["13_15", "16_17", "adult"], parentalConsent: false } });
+    expect(meta.body).toEqual({ apiVersion: 1, ai: { available: true, demo: false, recipients: [] }, age: { enforcement: "record", enabledBands: ["13_15", "16_17", "adult"], parentalConsent: false } });
   });
 });
 

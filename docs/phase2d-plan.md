@@ -8,7 +8,7 @@ unchanged. Rules: [`CLAUDE.md`](../CLAUDE.md).
 | | Free (built and tested now) | Needs the Apple Developer Program (deferred) |
 |---|---|---|
 | Google sign-in | Server-side ID-token verification, account creation/linking, Supabase path, tests | — |
-| Apple sign-in | Provider abstraction and `auth_identities` table ready (`provider = 'apple'`) | Sign in with Apple capability, Services ID, client flow, `AppleIdTokenVerifier` |
+| Apple sign-in | Provider abstraction, `auth_identities` (`provider = 'apple'`), `AppleIdTokenVerifier` (2026-10-03) | Sign in with Apple capability, Services ID, client flow, token revocation key |
 | Push | Device registry (encrypted tokens), dispatch honouring preferences, log adapter, APNs adapter (off) | APNs key (.p8), Push Notifications capability, `registerForRemoteNotifications` in the app |
 
 ## 1. Google sign-in
@@ -93,10 +93,15 @@ Re-checked what can be done without credentials:
   them the SDK can't return a token, so nothing can be tested end-to-end and the buttons rightly say
   "isn't available on this server yet". Adding the GoogleSignIn package or the Google Identity
   Services script before then would ship code that never runs in CI. Do it when the client IDs exist.
-- **Apple:** needs a paid Apple Developer Program membership (the Sign in with Apple capability isn't
-  available with free signing) and an `AppleIdTokenVerifier` (issuer `https://appleid.apple.com`,
-  audience = bundle ID or Services ID). Until then `provider: "apple"` answers 501. Whether to pay
-  for the program is an owner decision.
+- **Apple (updated 2026-10-03):** the server side now exists — `AppleIdTokenVerifier` (issuer
+  `https://appleid.apple.com`, audience = bundle ID or Services ID, nonce compared as the SHA-256 of the
+  raw nonce), turned on by `APPLE_CLIENT_IDS`, tested in `test/apple-auth.test.ts` with locally signed
+  tokens. The app side still needs the paid Apple Developer Program (the capability isn't available with
+  free signing), and account deletion must then also revoke the Apple token (needs the .p8 key).
+- **Buttons:** until the apps can get tokens, web and iOS show Continue with Apple / Google only in
+  Preview mode (`socialSignInAvailable`, `SocialSignIn.isAvailable`), so a real server never shows a
+  button that can only fail. The exact credentials needed are listed in
+  `docs/legal/policies/LAUNCH_CHECKLIST.md` (C1, C2).
 - **Real-device checks still needed** once wired: Google sign-in on an iPhone (URL scheme callback),
   first sign-in creating an account that then goes through age setup, and deleting a Google-only
   account from Settings.
@@ -147,11 +152,13 @@ The APNs adapter is tested against a fake transport only; no real notification h
 2. iOS: add the *Sign in with Apple* capability (`com.apple.developer.applesignin` entitlement)
    in `project.yml` and use `ASAuthorizationAppleIDProvider` with a SHA-256 nonce; send
    `identityToken` + raw nonce to `POST /v1/auth/oauth` with `provider: "apple"`.
-3. API: add `AppleIdTokenVerifier` implementing `IdTokenVerifier` (issuer
+3. ~~API: add `AppleIdTokenVerifier`~~ **Done (2026-10-03).** It implements `IdTokenVerifier` (issuer
    `https://appleid.apple.com`, keys `https://appleid.apple.com/auth/keys`, audience = bundle ID /
-   Services ID, nonce = SHA-256 of the raw nonce), register it in `idTokenVerifiersFor` behind an
-   `APPLE_CLIENT_IDS` setting. Handle Apple's specifics: the email (possibly a private relay
-   address) and name arrive only on the first sign-in.
+   Services ID, nonce = SHA-256 of the raw nonce) and is registered in `idTokenVerifiersFor` behind the
+   `APPLE_CLIENT_IDS` setting. The app must send the name on the first sign-in (it isn't in the
+   token); the email may be a private relay address.
+   Still to do with the program: revoke the Apple token when an account is deleted (App Store rule
+   5.1.1(v)), using the Sign in with Apple key (.p8).
 4. Supabase: enable the Apple provider with the same identifiers.
 5. App Store rule: apps offering Google sign-in must also offer Sign in with Apple (or an
    equivalent privacy-focused option) before release.
@@ -172,6 +179,7 @@ The APNs adapter is tested against a fake transport only; no real notification h
 | Variable | Free dev | Production |
 |---|---|---|
 | `GOOGLE_CLIENT_IDS` | optional (Google sign-in off without it) | set |
+| `APPLE_CLIENT_IDS` | optional (Apple sign-in off without it) | set once the Apple program exists |
 | `PUSH_PROVIDER` | unset → `log` | unset → `none`; `apns` when configured |
 | `PUSH_TOKEN_KEY` | unset → random per process (tokens from earlier runs are dropped and re-registered) | required to store tokens |
 | `APNS_*` | unset | only with `PUSH_PROVIDER=apns` |

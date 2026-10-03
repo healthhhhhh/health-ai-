@@ -43,6 +43,8 @@ public struct APIMeta: Codable, Sendable {
         public let available: Bool
         /// Scripted demo answers, not a real model (demo server only).
         public let demo: Bool?
+        /// Outside AI companies that receive data, named on consent screens (absent from older servers and Preview).
+        public let recipients: [String]?
     }
     /// How the server handles age. With "enforce" (production) only in-scope accounts may use health features.
     public struct Age: Codable, Sendable {

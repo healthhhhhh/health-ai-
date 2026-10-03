@@ -85,6 +85,10 @@ test.describe("signed out", () => {
     // Help (terms, privacy) stays public.
     await page.goto("/help");
     await expect(page.getByRole("heading", { level: 1, name: "Help & Support" })).toBeVisible();
+    // Restricted accounts are sent here to get in touch: a Contact section is always present
+    // (no address is configured in tests, so it says one will be published).
+    await expect(page.getByRole("heading", { name: "Contact us" })).toBeVisible();
+    await expect(page.getByText("The support email address will be published here before launch.")).toBeVisible();
   });
 
   test("sign-in validates and reports wrong passwords without detail", async ({ page }) => {

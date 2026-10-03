@@ -40,6 +40,7 @@ export default async function OnboardingPage() {
           restricted={eligibility === "age_review" || eligibility === "age_not_eligible" ? eligibility : deviceBlocked ? "device" : null}
           hasPassword={!account || account.signInMethods.includes("password")}
           deletionScheduled={Boolean(account?.ageDeletionScheduledAt)}
+          aiRecipients={meta?.ai.recipients}
           defaults={{
             firstName: account?.firstName ?? profile?.firstName ?? "",
             lastName: account?.lastName ?? profile?.lastName ?? "",

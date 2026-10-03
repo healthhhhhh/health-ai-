@@ -30,7 +30,7 @@ struct DocumentsView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Before you upload", systemImage: "lock.shield").font(.hmCardTitle)
-                        Text("Files you upload are stored in your account and sent to our AI provider to create a summary. You can delete any file at any time. Summaries are general information, not a diagnosis.")
+                        Text("Files you upload are stored in your account and sent to \(session.aiProviderPhrase) to create a summary. You can delete any file at any time. Summaries are general information, not a diagnosis.")
                             .font(.hmCaption)
                             .foregroundStyle(HM.Colors.textSecondary)
                         Button("Allow and continue") { Task { await session.setConsent("document_processing", granted: true) } }

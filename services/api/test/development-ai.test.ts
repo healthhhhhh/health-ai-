@@ -110,7 +110,7 @@ describe("chat with the development provider (synthetic data)", () => {
   const ask = async (message: string) => (await http.post("/v1/conversations").set(auth).send({ message }).expect(201)).body.messages[1].payload;
 
   it("reports itself as a demo so clients show their notice", async () => {
-    expect((await http.get("/v1/meta").expect(200)).body.ai).toEqual({ available: true, demo: true });
+    expect((await http.get("/v1/meta").expect(200)).body.ai).toEqual({ available: true, demo: true, recipients: [] }); // offline: no AI company receives anything
   });
 
   it("recalls, excludes and dates remembered facts without a model", async () => {

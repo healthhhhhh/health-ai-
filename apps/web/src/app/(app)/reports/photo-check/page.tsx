@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { StateView } from "@/components/ui/state-view";
 import { DocumentsConsent } from "@/features/reports/documents-consent";
 import { PhotoCheckFlow } from "@/features/reports/photo-check-flow";
+import { getMeta } from "@/lib/api/data";
 import { api, ApiError } from "@/lib/api/server";
 import { isPreviewMode } from "@/lib/preview/mode";
 import { photoPurpose } from "@/lib/photo-check";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PhotoCheckPage({ searchParams }: { searchParams: Promise<{ purpose?: string; retake?: string }> }) {
   const { purpose, retake } = await searchParams;
+  const meta = await getMeta();
   const consents = await api<ConsentRecord[]>("me/consents").catch((error) => {
     if (error instanceof ApiError && error.status !== 401) return error;
     throw error;
@@ -41,7 +43,7 @@ export default async function PhotoCheckPage({ searchParams }: { searchParams: P
         ) : consents.some((c) => c.kind === "document_processing" && c.granted) ? (
           <PhotoCheckFlow initialPurpose={photoPurpose(purpose)?.id} retake={retake === "1"} />
         ) : (
-          <DocumentsConsent />
+          <DocumentsConsent aiRecipients={meta?.ai.recipients} />
         )}
       </Card>
       {isPreviewMode() && (

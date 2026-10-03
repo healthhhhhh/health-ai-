@@ -56,7 +56,8 @@ export interface AgeAssessmentResponse {
 
 export interface ApiMeta {
   apiVersion: number;
-  ai: { available: boolean; demo?: boolean };
+  /** `recipients`: outside AI companies that receive data (named on consent screens); absent from older servers and Preview. */
+  ai: { available: boolean; demo?: boolean; recipients?: string[] };
   /** Absent from older servers and Preview. `parentalConsent` is always false: it doesn't exist. */
   age?: { enforcement: AgeEnforcement; enabledBands: Exclude<AgeBand, "unknown">[]; parentalConsent: false };
   /** Phase 1 Preview mode: sample data, no backend. */

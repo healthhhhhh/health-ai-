@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { setConsent } from "@/features/chat/actions";
+import { aiProviderPhrase } from "@/lib/ai-provider";
 
-export function DocumentsConsent() {
+/** `aiRecipients`: outside AI companies that receive the files (`/v1/meta`), named in the text. */
+export function DocumentsConsent({ aiRecipients }: { aiRecipients?: string[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +18,7 @@ export function DocumentsConsent() {
         <LockKeyhole aria-hidden className="size-5 text-primary" /> Before you upload
       </p>
       <p className="mt-2 text-caption text-text-secondary">
-        Files you upload are stored in your account and sent to our AI provider to create a summary. You can delete any file at any time. Summaries are general
+        Files you upload are stored in your account and sent to {aiProviderPhrase(aiRecipients)} to create a summary. You can delete any file at any time. Summaries are general
         information, not a diagnosis.
       </p>
       {error && (
