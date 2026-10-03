@@ -44,7 +44,9 @@ struct SignInView: View {
                     }
                     SegmentedTabs(items: [SegmentItem(value: Mode.signIn, title: "Sign in"), SegmentItem(value: Mode.signUp, title: "Create account")], selection: $mode)
 
-                    SocialSignInButtons(session: session, onSignedIn: finishSignIn)
+                    if SocialSignIn.isAvailable(serverIsPreview: session.isPreview) {
+                        SocialSignInButtons(session: session, onSignedIn: finishSignIn)
+                    }
 
                     if mode == .signUp {
                         field("First name", error: nameError, field: .name) {

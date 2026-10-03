@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { HttpStatus } from "@nestjs/common";
 import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { ApiError } from "../../common/errors";
@@ -16,12 +17,7 @@ export interface VerifiedIdentity {
   familyName: string | null;
 }
 
-/**
- * Verifies an OpenID Connect ID token from one provider. Google is implemented;
- * Apple is a second implementation of this interface (issuer
- * https://appleid.apple.com, keys at /auth/keys) once the app can obtain Apple
- * tokens — see docs/phase2d-plan.md.
- */
+/** Verifies an OpenID Connect ID token from one provider (Google, Apple) — see docs/phase2d-plan.md. */
 export interface IdTokenVerifier {
   readonly provider: OAuthProvider;
   verify(idToken: string, nonce?: string): Promise<VerifiedIdentity>;
@@ -81,7 +77,62 @@ export class GoogleIdTokenVerifier implements IdTokenVerifier {
   }
 }
 
-/** The providers this server accepts. Google only when client IDs are configured; Apple not yet. */
-export function idTokenVerifiersFor(config: AppConfig): IdTokenVerifiers {
-  return config.googleClientIds.length ? { google: new GoogleIdTokenVerifier(config.googleClientIds) } : {};
+const APPLE_ISSUER = "https://appleid.apple.com";
+const APPLE_KEYS_URL = "https://appleid.apple.com/auth/keys";
+
+/**
+ * Sign in with Apple ID tokens: RS256 signature against Apple's published keys,
+ * issuer, audience (our bundle ID or Services ID), expiry (30 s tolerance).
+ * Apple differs from Google in two ways:
+ * - the app gives Apple the SHA-256 (hex) of its nonce, so the token carries the
+ *   hash; the API receives the raw nonce and compares its hash;
+ * - the token never contains the person's name (the app sends it, once, on first
+ *   sign-in), and the email may be a private relay address.
+ * No Apple API call and no secret needed for sign-in.
+ */
+export class AppleIdTokenVerifier implements IdTokenVerifier {
+  readonly provider = "apple" as const;
+  private readonly keys: JWTVerifyGetKey;
+
+  constructor(
+    private readonly clientIds: string[],
+    options: { keys?: JWTVerifyGetKey } = {},
+  ) {
+    if (!clientIds.length) throw new Error("AppleIdTokenVerifier needs at least one client ID");
+    this.keys = options.keys ?? createRemoteJWKSet(new URL(APPLE_KEYS_URL), { cacheMaxAge: 60 * 60_000 });
+  }
+
+  async verify(idToken: string, nonce?: string): Promise<VerifiedIdentity> {
+    let payload: Record<string, unknown>;
+    try {
+      ({ payload } = await jwtVerify(idToken, this.keys, {
+        issuer: APPLE_ISSUER,
+        audience: this.clientIds,
+        algorithms: ["RS256"],
+        clockTolerance: 30,
+        requiredClaims: ["sub", "iat", "exp"],
+      }));
+    } catch (error) {
+      // Not reaching Apple's key set is an outage, not a bad token.
+      if (!(error instanceof joseErrors.JOSEError) || error instanceof joseErrors.JWKSTimeout || error instanceof joseErrors.JWKSInvalid) {
+        throw new ApiError("internal", "Apple sign-in is temporarily unavailable. Please try again.", HttpStatus.SERVICE_UNAVAILABLE);
+      }
+      throw invalidIdToken();
+    }
+    const subject = payload.sub;
+    if (typeof subject !== "string" || !subject || subject.length > 255) throw invalidIdToken();
+    if (nonce !== undefined && payload.nonce !== createHash("sha256").update(nonce).digest("hex")) throw invalidIdToken();
+
+    const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : null;
+    const emailVerified = payload.email_verified === true || payload.email_verified === "true";
+    return { provider: "apple", subject, email, emailVerified, givenName: null, familyName: null };
+  }
+}
+
+/** The providers this server accepts: each only when its client IDs are configured. */
+export function idTokenVerifiersFor(config: Pick<AppConfig, "googleClientIds" | "appleClientIds">): IdTokenVerifiers {
+  return {
+    ...(config.googleClientIds.length ? { google: new GoogleIdTokenVerifier(config.googleClientIds) } : {}),
+    ...(config.appleClientIds.length ? { apple: new AppleIdTokenVerifier(config.appleClientIds) } : {}),
+  };
 }

@@ -16,6 +16,7 @@ export function SignInForm({
   passwordReset = false,
   notice: pageNotice,
   initialMode = "sign-in",
+  socialSignIn = false,
 }: {
   next?: string;
   expired?: boolean;
@@ -23,6 +24,8 @@ export function SignInForm({
   /** One-off message from the page (signed out, account deleted). */
   notice?: string;
   initialMode?: AuthFormState["mode"];
+  /** Show Continue with Apple / Google (`socialSignInAvailable`). */
+  socialSignIn?: boolean;
 }) {
   const [mode, setMode] = useState<AuthFormState["mode"]>(initialMode);
   const [state, action, pending] = useActionState(authenticate, { mode: initialMode, errors: {} });
@@ -69,7 +72,7 @@ export function SignInForm({
           Your session ended. Please sign in again.
         </p>
       )}
-      <SocialSignIn />
+      {socialSignIn && <SocialSignIn />}
       <form noValidate action={submit} className="flex flex-col gap-4">
         <input type="hidden" name="mode" value={mode} />
         <input type="hidden" name="next" value={next ?? ""} />

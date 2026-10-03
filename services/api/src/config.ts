@@ -47,6 +47,12 @@ const schema = z.object({
    * Cloud. Unset: Google sign-in answers "not available".
    */
   GOOGLE_CLIENT_IDS: z.string().optional(),
+  /**
+   * Sign in with Apple: the identifiers Apple puts in the token's audience — the
+   * app's bundle ID (iOS) and/or a Services ID (web), comma-separated. Public
+   * identifiers. Unset: Apple sign-in answers "not available".
+   */
+  APPLE_CLIENT_IDS: z.string().optional(),
 
   /** log | apns | none. Default: log outside production (nothing is sent), none in production. */
   PUSH_PROVIDER: z.enum(["log", "apns", "none"]).optional(),
@@ -133,6 +139,7 @@ export type AppConfig = Omit<Env, "AGE_ENFORCEMENT"> & {
   aiRoutes: AiRoutes;
   aiPrices: Record<string, ModelPrice>;
   googleClientIds: string[];
+  appleClientIds: string[];
   pushProvider: "log" | "apns" | "none";
   /** 32 bytes, or null when device tokens can't be stored (production without PUSH_TOKEN_KEY). */
   pushTokenKey: Buffer | null;
@@ -174,6 +181,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   need(aiProvidersInUse.includes("anthropic") && !cfg.ANTHROPIC_API_KEY, "AI_PROVIDER=anthropic (or an AI_ROUTES entry using it) needs ANTHROPIC_API_KEY");
 
   const googleClientIds = (cfg.GOOGLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+  const appleClientIds = (cfg.APPLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
   const pushProvider = cfg.PUSH_PROVIDER ?? (production ? "none" : "log");
   const pushTokenKey = cfg.PUSH_TOKEN_KEY ? Buffer.from(cfg.PUSH_TOKEN_KEY, "base64") : production ? null : randomBytes(32);
   need(pushTokenKey !== null && pushTokenKey.length !== 32, "PUSH_TOKEN_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)");
@@ -209,6 +217,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     aiRoutes: parsedAi.routes,
     aiPrices: parsedAi.prices,
     googleClientIds,
+    appleClientIds,
     pushProvider,
     pushTokenKey,
     authProvider,
