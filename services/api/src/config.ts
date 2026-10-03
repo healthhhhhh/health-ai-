@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { parsePrices, type ModelPrice } from "./modules/ai/ai.pricing";
 import { AGE_BANDS, AGE_ENFORCEMENT_MODES, type AgeBand, type AgeEnforcement } from "./modules/account/age";
-import { parseRoutes, type AiProviderName, type AiRoutes } from "./modules/ai/ai.routing";
+import { isFreeOpenRouterModel, parseRoutes, type AiProviderName, type AiRoutes } from "./modules/ai/ai.routing";
 
 const optionalUrl = z.string().url().optional();
 
@@ -78,7 +78,13 @@ const schema = z.object({
    * with your own key) is used only when selected here or in AI_ROUTES — never
    * by default — and is refused in production.
    */
-  AI_PROVIDER: z.enum(["anthropic", "development", "bedrock", "none"]).optional(),
+  AI_PROVIDER: z.enum(["anthropic", "development", "bedrock", "openrouter", "none"]).optional(),
+  /** OpenRouter API key (server-side only; never shipped to clients or shown in /v1/meta). "openrouter" is for development testing and refused in production. */
+  OPENROUTER_API_KEY: z.string().optional(),
+  /** OpenRouter model: "openrouter/free" (free models only) or a ":free" model; paid models need OPENROUTER_ALLOW_PAID. */
+  OPENROUTER_MODEL: z.string().default("openrouter/free"),
+  /** "true" allows paid OpenRouter models (they then also need AI_PRICES entries). Off by default. */
+  OPENROUTER_ALLOW_PAID: z.enum(["true", "false", ""]).optional(),
   /** Amazon Bedrock API key (server-side only; never shipped to clients or shown in /v1/meta). */
   AWS_BEARER_TOKEN_BEDROCK: z.string().optional(),
   /** AWS Region the Bedrock model is invoked in, e.g. us-east-1. */
@@ -191,6 +197,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     aiProvidersInUse.includes("bedrock") && (!cfg.AWS_BEARER_TOKEN_BEDROCK || !cfg.AWS_REGION || !cfg.BEDROCK_MODEL_ID),
     "AI_PROVIDER=bedrock (or an AI_ROUTES entry using it) needs AWS_BEARER_TOKEN_BEDROCK, AWS_REGION and BEDROCK_MODEL_ID",
   );
+  if (aiProvidersInUse.includes("openrouter")) {
+    need(!cfg.OPENROUTER_API_KEY, "AI_PROVIDER=openrouter (or an AI_ROUTES entry using it) needs OPENROUTER_API_KEY");
+    need(cfg.OPENROUTER_ALLOW_PAID !== "true" && !isFreeOpenRouterModel(cfg.OPENROUTER_MODEL), `OPENROUTER_MODEL "${cfg.OPENROUTER_MODEL}" isn't free: use openrouter/free or a ":free" model, or set OPENROUTER_ALLOW_PAID=true`);
+  }
 
   const googleClientIds = (cfg.GOOGLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
   const appleClientIds = (cfg.APPLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
@@ -219,6 +229,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     need(aiProvidersInUse.includes("development"), "The development AI provider is for development only");
     // Temporary testing with a personal key: production keeps its explicitly chosen provider.
     need(aiProvidersInUse.includes("bedrock"), "The Bedrock AI provider is enabled for development testing only");
+    // Free models may log or train on prompts: never with real people's data.
+    need(aiProvidersInUse.includes("openrouter"), "The OpenRouter AI provider is enabled for development testing only");
   }
   return {
     ...cfg,

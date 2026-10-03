@@ -206,6 +206,8 @@ feature ──► AiGateway ──► route (AI_ROUTES / AI_PROVIDER) ──► 
   apps show their demo notice) that list the context retrieval selected; refused in production.
 - `AI_PROVIDER=bedrock` (Amazon Bedrock, Converse API) is an extra provider for development testing with
   your own key; it's never the default and is refused in production. See `docs/bedrock-testing.md`.
+- `AI_PROVIDER=openrouter` (OpenRouter, OpenAI-compatible API, free models only unless explicitly allowed) is
+  another development-only provider; refused in production. See `docs/openrouter-testing.md`.
 - Every route except `auth/*` requires a session; every query filters by the caller's user ID, and
   Postgres Row Level Security enforces the same isolation independently. Every route is
   rate-limited. Audit logs record actions, never health content.

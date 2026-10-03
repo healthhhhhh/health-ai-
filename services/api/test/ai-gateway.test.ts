@@ -63,7 +63,7 @@ describe("routing configuration", () => {
     const routed = testConfig({ AI_PROVIDER: "development", AI_ROUTES: "complex_health=anthropic", ANTHROPIC_API_KEY: "test-key-not-real" });
     expect(aiDataRecipients(routed.aiProvidersInUse)).toEqual(["Anthropic"]);
     // Every provider is classified (a new one can't silently go unnamed).
-    for (const name of AI_PROVIDER_NAMES) expect(aiDataRecipients([name])).toHaveLength(name === "anthropic" || name === "bedrock" ? 1 : 0);
+    for (const name of AI_PROVIDER_NAMES) expect(aiDataRecipients([name])).toHaveLength(name === "anthropic" || name === "bedrock" || name === "openrouter" ? 1 : 0);
     expect(aiDataRecipients(["bedrock"])).toEqual(["Amazon Web Services"]);
 
     // Served by /v1/meta. The test app uses a fake provider; only the configuration is read.

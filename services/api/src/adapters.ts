@@ -3,6 +3,7 @@ import type { AppConfig } from "./config";
 import { InProcessJobQueue, type JobQueue } from "./modules/documents/job-queue";
 import { AnthropicProvider, UnavailableProvider } from "./modules/ai/anthropic.provider";
 import { BedrockProvider } from "./modules/ai/bedrock.provider";
+import { OpenRouterProvider } from "./modules/ai/openrouter.provider";
 import type { AiProvider } from "./modules/ai/ai.types";
 import { DevelopmentAiProvider } from "./modules/ai/development.provider";
 import { registryOf, type AiProviderRegistry } from "./modules/ai/ai.gateway";
@@ -37,6 +38,8 @@ function buildProvider(config: AppConfig, name: AiProviderName): AiProvider {
       return new AnthropicProvider(config.ANTHROPIC_API_KEY!, config.AI_MODEL);
     case "development":
       return new DevelopmentAiProvider();
+    case "openrouter":
+      return new OpenRouterProvider({ apiKey: config.OPENROUTER_API_KEY!, model: config.OPENROUTER_MODEL, allowPaid: config.OPENROUTER_ALLOW_PAID === "true" });
     case "bedrock":
       return new BedrockProvider({ apiKey: config.AWS_BEARER_TOKEN_BEDROCK!, region: config.AWS_REGION!, modelId: config.BEDROCK_MODEL_ID! });
     default:
