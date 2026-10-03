@@ -469,6 +469,21 @@ test.describe("chat", () => {
     await expect(page.getByText(/^Sample response in Preview mode/)).toHaveCount(2);
   });
 
+  test("a follow-up typed while the first answer loads isn't lost when the chat gets its address", async ({ page }) => {
+    await page.goto("/chat", { waitUntil: "networkidle" });
+    await page.getByLabel("Message").fill("I get headaches after long days on my laptop");
+    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByLabel("Message").fill("They usually start in the afternoon");
+    await expect(page).toHaveURL(/\/chat\?c=[0-9a-f-]{36}$/);
+    await expect(page.getByText(/^Sample response in Preview mode/)).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByLabel("Message")).toHaveValue("They usually start in the afternoon");
+    // Starting a new chat still starts empty.
+    await page.getByRole("link", { name: "New chat" }).or(page.getByRole("button", { name: "New chat" })).first().click();
+    await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.getByLabel("Message")).toHaveValue("");
+  });
+
   test("a deleted conversation's link explains itself", async ({ page }) => {
     await page.goto("/chat?c=00000000-0000-4000-8000-00000000dead");
     await expect(page.getByText("That conversation was deleted or isn't available.")).toBeVisible();

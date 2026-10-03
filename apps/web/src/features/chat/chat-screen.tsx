@@ -30,6 +30,13 @@ function itemsFrom(messages: ChatMessageRecord[]): Item[] {
   return messages.map((m) => (m.role === "user" ? { type: "user", id: m.id, text: m.content } : { type: "assistant", message: m }));
 }
 
+/**
+ * What's typed in a new chat when it gets its id. The page is keyed by the conversation, so it
+ * remounts once the URL becomes /chat?c=<id>; this carries the unsent text across that remount
+ * (only into the same conversation). It mirrors that conversation's draft, so a sent message clears it.
+ */
+let carriedDraft: { conversationId: string; draft: string } | null = null;
+
 export function ChatScreen({
   conversation,
   conversations,
@@ -56,7 +63,15 @@ export function ChatScreen({
   const router = useRouter();
   const [conversationId, setConversationId] = useState(conversation?.id ?? null);
   const [items, setItems] = useState<Item[]>(() => itemsFrom(conversation?.messages ?? []));
-  const [draft, setDraft] = useState(initialQuestion ?? "");
+  const [draft, setDraft] = useState(() => (carriedDraft && carriedDraft.conversationId === conversation?.id ? carriedDraft.draft : (initialQuestion ?? "")));
+  // The latest draft, for the moment a new chat gets its id (read in the send callback, not in render).
+  const draftRef = useRef(draft);
+  /** Set when this screen's new chat gets its id, before that state update has rendered. */
+  const createdIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    draftRef.current = draft;
+    if (carriedDraft && carriedDraft.conversationId === (conversationId ?? createdIdRef.current)) carriedDraft.draft = draft;
+  }, [draft, conversationId]);
   const [error, setError] = useState<SendError | null>(null);
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
@@ -94,6 +109,8 @@ export function ChatScreen({
       }
       if (!conversationId) {
         setConversationId(res.data.conversationId);
+        createdIdRef.current = res.data.conversationId;
+        carriedDraft = { conversationId: res.data.conversationId, draft: draftRef.current };
         window.history.replaceState(null, "", `/chat?c=${res.data.conversationId}`);
         router.refresh(); // the new conversation appears in the list
       }

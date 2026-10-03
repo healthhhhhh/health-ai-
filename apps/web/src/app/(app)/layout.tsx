@@ -35,7 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {meta?.preview ? (
           <SampleDataNotice>Preview mode — a sample account with sample AI responses. Not real health data or medical advice.</SampleDataNotice>
         ) : (
-          meta?.ai.demo && <SampleDataNotice>Demo server — AI answers are scripted examples and the account holds example content.</SampleDataNotice>
+          meta?.ai.demo && <SampleDataNotice>Demo AI — answers are scripted examples, not a real AI and not medical advice.</SampleDataNotice>
         )}
         {offline && (
           <p role="status" className="bg-error-soft px-4 py-1.5 text-center text-xs font-medium text-error">

@@ -29,8 +29,9 @@ export async function sendChatMessage(conversationId: string | null, text: strin
       const res = await api<{ messages: ChatMessageRecord[] }>(`conversations/${encodeURIComponent(conversationId)}/messages`, { method: "POST", json: { message } });
       return { conversationId, messages: res.messages };
     }
+    // No revalidatePath here: the chat screen refreshes itself once it has the new address. Doing both
+    // raced, and Next.js sometimes reloaded the whole page.
     const res = await api<ConversationDetail>("conversations", { method: "POST", json: { message } });
-    revalidatePath("/chat");
     return { conversationId: res.conversation.id, messages: res.messages };
   });
 }

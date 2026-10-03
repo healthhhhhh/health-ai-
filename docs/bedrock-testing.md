@@ -85,6 +85,7 @@ When it fails, the server log names the AWS error and the likely cause, never th
 | `ResourceNotFoundException` | Model ID not found in this Region |
 | `ValidationException` | Wrong ID type (try the inference profile ID), or the model doesn't support tool use |
 | `ThrottlingException` | Quota reached; wait, or request a quota increase |
+| `…not authorized to perform: bedrock:CallWithBearerToken … explicit deny in a service control policy` | Your AWS Organization blocks Bedrock API keys for this account. Only an Organization administrator can allow it; until then the key can't be used, even for free calls |
 
 ## 4. A safe test with synthetic data
 
