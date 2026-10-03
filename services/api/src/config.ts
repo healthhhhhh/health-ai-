@@ -74,9 +74,17 @@ const schema = z.object({
    * anthropic | development | none. Defaults to anthropic when ANTHROPIC_API_KEY
    * is set, otherwise none (the assistant says it's unavailable). "development"
    * is an offline, scripted provider that needs no key and costs nothing; it is
-   * refused in production.
+   * refused in production. "bedrock" (Amazon Bedrock, for development testing
+   * with your own key) is used only when selected here or in AI_ROUTES — never
+   * by default — and is refused in production.
    */
-  AI_PROVIDER: z.enum(["anthropic", "development", "none"]).optional(),
+  AI_PROVIDER: z.enum(["anthropic", "development", "bedrock", "none"]).optional(),
+  /** Amazon Bedrock API key (server-side only; never shipped to clients or shown in /v1/meta). */
+  AWS_BEARER_TOKEN_BEDROCK: z.string().optional(),
+  /** AWS Region the Bedrock model is invoked in, e.g. us-east-1. */
+  AWS_REGION: z.string().optional(),
+  /** Bedrock model ID, inference profile ID or ARN: the model every Bedrock task uses. */
+  BEDROCK_MODEL_ID: z.string().optional(),
   /** Per-task routing: `task=provider[:model][@effort]`, comma-separated (see ai.routing.ts). */
   AI_ROUTES: z.string().optional(),
   /** Price overrides, USD per million tokens: `model=input/output[/cacheRead/cacheWrite]`. */
@@ -133,7 +141,7 @@ export type AppConfig = Omit<Env, "AGE_ENFORCEMENT"> & {
   AGE_ENFORCEMENT: AgeEnforcement;
   jwtSecret: string;
   aiEnabled: boolean;
-  aiProvider: "anthropic" | "development" | "none";
+  aiProvider: AiProviderName;
   /** Every provider some task can use (the default first). */
   aiProvidersInUse: AiProviderName[];
   aiRoutes: AiRoutes;
@@ -179,6 +187,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   })();
   const aiProvidersInUse = [...new Set<AiProviderName>([aiProvider, ...parsedAi.providers])];
   need(aiProvidersInUse.includes("anthropic") && !cfg.ANTHROPIC_API_KEY, "AI_PROVIDER=anthropic (or an AI_ROUTES entry using it) needs ANTHROPIC_API_KEY");
+  need(
+    aiProvidersInUse.includes("bedrock") && (!cfg.AWS_BEARER_TOKEN_BEDROCK || !cfg.AWS_REGION || !cfg.BEDROCK_MODEL_ID),
+    "AI_PROVIDER=bedrock (or an AI_ROUTES entry using it) needs AWS_BEARER_TOKEN_BEDROCK, AWS_REGION and BEDROCK_MODEL_ID",
+  );
 
   const googleClientIds = (cfg.GOOGLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
   const appleClientIds = (cfg.APPLE_CLIENT_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
@@ -205,6 +217,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     need(embeddingsProvider === "hash", "The hash embeddings provider is for development only");
     need(authProvider === "local" && !cfg.JWT_SECRET, "JWT_SECRET is required for local auth in production");
     need(aiProvidersInUse.includes("development"), "The development AI provider is for development only");
+    // Temporary testing with a personal key: production keeps its explicitly chosen provider.
+    need(aiProvidersInUse.includes("bedrock"), "The Bedrock AI provider is enabled for development testing only");
   }
   return {
     ...cfg,

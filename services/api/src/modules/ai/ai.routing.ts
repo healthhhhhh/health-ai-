@@ -1,7 +1,7 @@
 import { AI_TASKS, type AiEffort, type AiTask } from "./ai.types";
 
 /** Provider names a route can use. "none" means the honest "unavailable" provider. */
-export const AI_PROVIDER_NAMES = ["anthropic", "development", "none"] as const;
+export const AI_PROVIDER_NAMES = ["anthropic", "development", "bedrock", "none"] as const;
 export type AiProviderName = (typeof AI_PROVIDER_NAMES)[number];
 
 /**
@@ -9,7 +9,7 @@ export type AiProviderName = (typeof AI_PROVIDER_NAMES)[number];
  * offline development provider and "none" send nothing anywhere. A new provider
  * must be added here, so consent screens keep naming who receives the data.
  */
-const AI_PROVIDER_COMPANIES: Record<AiProviderName, string | null> = { anthropic: "Anthropic", development: null, none: null };
+const AI_PROVIDER_COMPANIES: Record<AiProviderName, string | null> = { anthropic: "Anthropic", development: null, bedrock: "Amazon Web Services", none: null };
 
 /** Companies that receive data for AI processing with this configuration (for consent screens). */
 export function aiDataRecipients(providers: readonly AiProviderName[]): string[] {

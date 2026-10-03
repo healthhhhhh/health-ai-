@@ -2,6 +2,7 @@ import { MemoryRateLimitStore, RedisRateLimitStore, type RateLimitStore } from "
 import type { AppConfig } from "./config";
 import { InProcessJobQueue, type JobQueue } from "./modules/documents/job-queue";
 import { AnthropicProvider, UnavailableProvider } from "./modules/ai/anthropic.provider";
+import { BedrockProvider } from "./modules/ai/bedrock.provider";
 import type { AiProvider } from "./modules/ai/ai.types";
 import { DevelopmentAiProvider } from "./modules/ai/development.provider";
 import { registryOf, type AiProviderRegistry } from "./modules/ai/ai.gateway";
@@ -36,6 +37,8 @@ function buildProvider(config: AppConfig, name: AiProviderName): AiProvider {
       return new AnthropicProvider(config.ANTHROPIC_API_KEY!, config.AI_MODEL);
     case "development":
       return new DevelopmentAiProvider();
+    case "bedrock":
+      return new BedrockProvider({ apiKey: config.AWS_BEARER_TOKEN_BEDROCK!, region: config.AWS_REGION!, modelId: config.BEDROCK_MODEL_ID! });
     default:
       return new UnavailableProvider();
   }

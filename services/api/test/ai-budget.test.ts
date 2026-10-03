@@ -341,6 +341,7 @@ describe("architecture", () => {
       const text = readFileSync(file, "utf8");
       if (rel !== "modules/ai/ai.gateway.ts") expect(text, rel).not.toMatch(/provider\.generate\(|providers\.\w+.*\.generate\(/);
       if (rel !== "modules/ai/anthropic.provider.ts") expect(text, rel).not.toMatch(/new Anthropic\(|from "@anthropic-ai\/sdk"/);
+      if (rel !== "modules/ai/bedrock.provider.ts") expect(text, rel).not.toMatch(/from "@aws-sdk\/client-bedrock-runtime"|new BedrockRuntimeClient\(/);
     }
   });
 });

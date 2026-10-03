@@ -12,10 +12,12 @@
     "test": "vitest run",
     "demo": "node dist/demo.js",
     "worker": "node --env-file-if-exists=../../.env dist/worker.js",
-    "db:migrate": "node --env-file-if-exists=../../.env dist/migrate.js"
+    "db:migrate": "node --env-file-if-exists=../../.env dist/migrate.js",
+    "bedrock:check": "tsc -p tsconfig.build.json && node --env-file-if-exists=../../.env dist/bedrock-check.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1146.0",
     "@electric-sql/pglite": "^0.5.8",
     "@electric-sql/pglite-pgvector": "^0.0.9",
     "@healthmate/safety": "0.1.0",
