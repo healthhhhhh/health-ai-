@@ -155,7 +155,11 @@ final class PreviewBackendTests: XCTestCase {
         XCTAssertEqual(failed["status"].string, "failed")
         XCTAssertEqual(failed["failureReason"].string, PreviewBackend.failureReason)
         XCTAssertTrue(failed["result"].isNull)
-        XCTAssertEqual(call("GET", "notifications", token: token).1["notifications"].array.first?["title"].string, "Couldn't read: damaged scan.pdf")
+        // Look it up by title: the sample account has notifications dated later today (e.g. 08:56 local), so
+        // before then the new one isn't first in the newest-first list.
+        let notice = call("GET", "notifications", token: token).1["notifications"].array.first { $0["title"].string == "Couldn't read: damaged scan.pdf" }
+        XCTAssertNotNil(notice, "a notification explains the failure")
+        XCTAssertEqual(notice?["readAt"].isNull, true)
     }
 }
 
