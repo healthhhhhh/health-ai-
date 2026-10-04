@@ -182,6 +182,35 @@ describe("OpenRouter configuration", () => {
   });
 });
 
+describe("OpenRouter with the workspace proxy adding the key (OPENROUTER_AUTH=proxy)", () => {
+  const proxyEnv = (values: Record<string, string> = {}) => env({ OPENROUTER_API_KEY: "", OPENROUTER_AUTH: "proxy", HTTPS_PROXY: "http://127.0.0.1:9", NODE_USE_ENV_PROXY: "1", ...values });
+
+  it("needs no key, refuses one in the process, and refuses to run where requests wouldn't reach the proxy", () => {
+    expect(loadConfig(env()).OPENROUTER_AUTH).toBe("key"); // the default is unchanged
+    expect(loadConfig(proxyEnv()).OPENROUTER_AUTH).toBe("proxy");
+    expect(() => loadConfig(proxyEnv({ OPENROUTER_API_KEY: KEY }))).toThrow(/leave OPENROUTER_API_KEY unset/);
+    expect(() => loadConfig(proxyEnv({ HTTPS_PROXY: "" }))).toThrow(/HTTPS_PROXY isn't set/);
+    expect(() => loadConfig(proxyEnv({ NODE_USE_ENV_PROXY: "" }))).toThrow(/NODE_USE_ENV_PROXY=1/);
+    // Still free-only, and still never in production.
+    expect(() => loadConfig(proxyEnv({ OPENROUTER_MODEL: "example/paid-model" }))).toThrow(/isn't free/);
+    const prod = { NODE_ENV: "production", DATABASE_URL: "postgres://x", JWT_SECRET: "x".repeat(40), STORAGE_PROVIDER: "supabase", SUPABASE_URL: "https://x.supabase.co", SUPABASE_SECRET_KEY: "s", SUPABASE_PUBLISHABLE_KEY: "p" };
+    expect(() => loadConfig(proxyEnv(prod))).toThrow(/development testing only/);
+  });
+
+  it("sends no Authorization header (the proxy adds it); everything else is unchanged", async () => {
+    const built = aiProvidersFor(loadConfig(proxyEnv())).default as OpenRouterProvider;
+    expect(built).toBeInstanceOf(OpenRouterProvider);
+    const fake = fakeOpenRouter(completion(chatAnswer()));
+    const res = await new OpenRouterProvider({ model: "openrouter/free", allowPaid: false, fetch: fake.fetch }).generate(providerRequest());
+    expect(fake.seen[0]!.authorization).toBeUndefined();
+    expect(fake.seen[0]!.body.model).toBe("openrouter/free");
+    expect(res.data).toEqual(chatAnswer());
+    // The free-only guard still applies before anything is sent.
+    await expect(new OpenRouterProvider({ model: "example/paid-model", allowPaid: false, fetch: fake.fetch }).generate(providerRequest("example/paid-model"))).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(fake.seen).toHaveLength(1);
+  });
+});
+
 describe("OpenRouter through the AI Gateway", () => {
   let db: Database;
   beforeAll(async () => {

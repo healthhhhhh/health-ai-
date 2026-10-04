@@ -39,7 +39,7 @@ function buildProvider(config: AppConfig, name: AiProviderName): AiProvider {
     case "development":
       return new DevelopmentAiProvider();
     case "openrouter":
-      return new OpenRouterProvider({ apiKey: config.OPENROUTER_API_KEY!, model: config.OPENROUTER_MODEL, allowPaid: config.OPENROUTER_ALLOW_PAID === "true" });
+      return new OpenRouterProvider({ apiKey: config.OPENROUTER_AUTH === "proxy" ? undefined : config.OPENROUTER_API_KEY!, model: config.OPENROUTER_MODEL, allowPaid: config.OPENROUTER_ALLOW_PAID === "true" });
     case "bedrock":
       return new BedrockProvider({ apiKey: config.AWS_BEARER_TOKEN_BEDROCK!, region: config.AWS_REGION!, modelId: config.BEDROCK_MODEL_ID! });
     default:

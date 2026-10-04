@@ -20,7 +20,25 @@ request for any other model, and logs an error if OpenRouter ever reports a non-
 
 ### Where to put the key
 
-- **This cloud workspace:** open the environment settings (the cloud environment menu in the session's title bar,
+**Cloud workspace with an API credential (recommended there):** keep `OPENROUTER_API_KEY` only under the
+environment's **API credentials**, scoped to `openrouter.ai`, and not under Environment variables. The workspace
+proxy then adds the `Authorization` header to requests to that host. Verified behaviour: for `openrouter.ai` the
+proxy removes any `Authorization` header a program sends, and other hosts are unaffected. Credentials apply to
+**new sessions** only. Run the API with:
+
+```bash
+AI_PROVIDER=openrouter OPENROUTER_AUTH=proxy NODE_USE_ENV_PROXY=1 npm run start -w @healthmate/api
+```
+
+HealthMate then holds no key and sends no `Authorization` header. It refuses to start if `OPENROUTER_API_KEY` is
+also set, or if its requests wouldn't go through the proxy (`HTTPS_PROXY` unset or `NODE_USE_ENV_PROXY` not `1`).
+To confirm the proxy adds the key, use one free request that returns only the key's limits:
+`curl -s https://openrouter.ai/api/v1/key -o /dev/null -w "%{http_code}\n"` should print `200`, not `401`.
+Don't print the response body: its `label` field can contain part of the key.
+
+**Otherwise:**
+
+- **A cloud workspace without API credentials:** open the environment settings (the cloud environment menu in the session's title bar,
   then **Edit**), add an environment variable `OPENROUTER_API_KEY` with your key, and allow network access to
   `openrouter.ai` (Network access → Custom → add `openrouter.ai` to Allowed domains, keeping the package-manager
   defaults). Start a new session so both take effect.

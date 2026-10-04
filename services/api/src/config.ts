@@ -85,6 +85,12 @@ const schema = z.object({
   OPENROUTER_MODEL: z.string().default("openrouter/free"),
   /** "true" allows paid OpenRouter models (they then also need AI_PRICES entries). Off by default. */
   OPENROUTER_ALLOW_PAID: z.enum(["true", "false", ""]).optional(),
+  /**
+   * "key" (default): send OPENROUTER_API_KEY. "proxy": development only — the API holds no key and
+   * sends no Authorization header; a workspace egress proxy adds it (e.g. a cloud environment's API
+   * credential scoped to openrouter.ai). Needs HTTPS_PROXY and NODE_USE_ENV_PROXY=1.
+   */
+  OPENROUTER_AUTH: z.enum(["key", "proxy"]).default("key"),
   /** Amazon Bedrock API key (server-side only; never shipped to clients or shown in /v1/meta). */
   AWS_BEARER_TOKEN_BEDROCK: z.string().optional(),
   /** AWS Region the Bedrock model is invoked in, e.g. us-east-1. */
@@ -198,7 +204,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     "AI_PROVIDER=bedrock (or an AI_ROUTES entry using it) needs AWS_BEARER_TOKEN_BEDROCK, AWS_REGION and BEDROCK_MODEL_ID",
   );
   if (aiProvidersInUse.includes("openrouter")) {
-    need(!cfg.OPENROUTER_API_KEY, "AI_PROVIDER=openrouter (or an AI_ROUTES entry using it) needs OPENROUTER_API_KEY");
+    if (cfg.OPENROUTER_AUTH === "proxy") {
+      // The key stays with the proxy: refuse a copy in the process, and refuse to run where requests wouldn't reach the proxy.
+      need(Boolean(cfg.OPENROUTER_API_KEY), "OPENROUTER_AUTH=proxy: leave OPENROUTER_API_KEY unset (the proxy adds the key)");
+      need(!(env.HTTPS_PROXY || env.https_proxy), "OPENROUTER_AUTH=proxy needs the workspace proxy (HTTPS_PROXY isn't set)");
+      need(env.NODE_USE_ENV_PROXY !== "1", "OPENROUTER_AUTH=proxy: start the API with NODE_USE_ENV_PROXY=1 so its requests go through the proxy");
+    } else {
+      need(!cfg.OPENROUTER_API_KEY, "AI_PROVIDER=openrouter (or an AI_ROUTES entry using it) needs OPENROUTER_API_KEY");
+    }
     need(cfg.OPENROUTER_ALLOW_PAID !== "true" && !isFreeOpenRouterModel(cfg.OPENROUTER_MODEL), `OPENROUTER_MODEL "${cfg.OPENROUTER_MODEL}" isn't free: use openrouter/free or a ":free" model, or set OPENROUTER_ALLOW_PAID=true`);
   }
 

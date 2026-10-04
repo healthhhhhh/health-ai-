@@ -5,8 +5,11 @@ import { AiDeclinedError, AiInvalidOutputError, AiUnavailableError, type AiConte
 
 
 export interface OpenRouterProviderOptions {
-  /** `OPENROUTER_API_KEY`: sent as a bearer token; never logged. */
-  apiKey: string;
+  /**
+   * `OPENROUTER_API_KEY`: sent as a bearer token; never logged. Undefined with OPENROUTER_AUTH=proxy:
+   * no Authorization header is sent and the workspace proxy adds it.
+   */
+  apiKey?: string;
   /** `OPENROUTER_MODEL`, e.g. "openrouter/free". */
   model: string;
   /** Paid models only with `OPENROUTER_ALLOW_PAID=true` (config.ts also checks this at startup). */
@@ -92,7 +95,7 @@ export class OpenRouterProvider implements AiProvider {
     try {
       res = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${this.options.apiKey}`, "Content-Type": "application/json", "X-Title": "HealthMate (development)" },
+        headers: { ...(this.options.apiKey ? { Authorization: `Bearer ${this.options.apiKey}` } : {}), "Content-Type": "application/json", "X-Title": "HealthMate (development)" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 100_000),
       });
