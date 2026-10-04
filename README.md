@@ -18,6 +18,7 @@ server, and nothing is real AI or medical advice.
 
 ```bash
 npm install
+npm run safety:build   # once per fresh clone, and after changing packages/safety: the web app imports its build
 npm run dev            # web on http://localhost:3000 — sign in with any email and a password of 8+ characters
 cd apps/ios && xcodegen generate && open HealthMate.xcodeproj   # ⌘R: the iOS app runs on the same sample account
 ```
@@ -28,7 +29,7 @@ cd apps/ios && xcodegen generate && open HealthMate.xcodeproj   # ⌘R: the iOS 
   send (email confirmation, password reset), so those flows can be completed.
 - The password `wrong-password` shows the sign-in error.
 
-To run against the real API instead: web `HEALTHMATE_DATA_SOURCE=api`, iOS `-hmDataSource live`
+To run against the real API instead: web `HEALTHMATE_DATA_SOURCE=api` in `apps/web/.env.local`, iOS `-hmDataSource live`
 (scheme launch argument) or `HM_DATA_SOURCE: live` in `apps/ios/project.yml`, and start the API
 (below; `npm run demo -w @healthmate/api` runs a local demo server).
 
