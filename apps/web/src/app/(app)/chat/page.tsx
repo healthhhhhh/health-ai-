@@ -50,7 +50,6 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   const detail = conversation instanceof ApiError ? null : conversation;
   return (
     <ChatScreen
-      key={detail?.conversation.id ?? "new"}
       conversation={detail ? { id: detail.conversation.id, messages: detail.messages } : null}
       conversations={conversations instanceof ApiError ? null : conversations}
       hasConsent={consents.some((x) => x.kind === "ai_processing" && x.granted)}
